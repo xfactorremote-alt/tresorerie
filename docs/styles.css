@@ -326,3 +326,97 @@ details.rubrique[open] .chevron{transform:rotate(180deg)}
 .banniere-ajout{display:flex;align-items:center;gap:6px;min-height:36px}
 @media (max-width:699px){.banniere-ajout span{display:none}.banniere-ajout{padding:8px;border-radius:50%}
   .banniere-indic{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.banniere-indic span{padding:8px 10px;font-size:11px}.banniere-indic b{font-size:15px;white-space:nowrap}}
+
+/* ---------- Navigation : rail défilant, Paramètres en bas, contenu centré ---------- */
+.cadre{flex:1;min-width:0;display:flex;flex-direction:column}
+.entete-reglages{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--texte-2);flex:none}
+.entete-reglages:hover,.entete-reglages[aria-current=page]{background:var(--primaire-clair);color:var(--sur-primaire-clair)}
+@media (min-width:900px){
+  .entete{display:none}
+  .rail{gap:0;padding:12px 0;overflow:hidden}
+  .rail-logo{padding:0 !important;margin-bottom:8px}
+  .rail-logo img{margin:0 !important}
+  .rail-liens{flex:1;min-height:0;width:100%;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:4px 0;scrollbar-width:thin}
+  .rail-bas{width:100%;padding-top:8px;border-top:1px solid var(--bord)}
+  .contenu{width:100%;max-width:1280px;margin:0 auto;padding:28px 32px 56px}
+}
+@media (min-width:900px) and (max-height:760px){
+  .rail-logo img{width:44px !important;height:44px !important}
+  .rail a .pastille{height:28px}
+  .rail a{font-size:11px}
+}
+@media (min-width:1600px){.contenu{max-width:1360px}}
+
+/* ---------- Mon compte ---------- */
+.identite{display:flex;align-items:center;gap:14px}
+.identite>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.identite b{font-size:17px}
+.identite .puce{align-self:flex-start;margin-top:4px}
+.actions-gauche{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.carte-sortie{justify-content:space-between}
+.btn-sortie{align-self:flex-start;background:var(--erreur-clair);color:var(--sur-erreur-clair);font-weight:700}
+.btn-sortie:hover{background:#ffc9c3}
+
+/* ---------- Membres : bureau, fonctions, accès ---------- */
+.info-action{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between}
+.info-action span{flex:1;min-width:220px}
+.liste-membres li{flex-wrap:wrap}
+.liste-membres li.inactif{opacity:.55}
+.membre-etats{display:flex;gap:6px;flex-wrap:wrap}
+.membre-actions{display:flex;gap:4px;align-items:center}
+.liste-membres li{flex-wrap:nowrap;align-items:flex-start}
+.liste-membres li>.avatar{margin-top:2px}
+.membre-etats:empty{display:none}
+.membre-etats{margin-top:6px}
+@media (max-width:699px){
+  .membre-actions{flex-direction:column;align-items:flex-end;gap:0}
+  .membre-actions .btn-petit{min-height:36px;padding:0 4px}
+}
+.etat-acces{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.aide-bas{font-size:13px;margin:0}
+.acces-champs{display:flex;gap:8px;flex-wrap:wrap}
+.acces-champs select{width:auto;min-height:40px;max-width:220px}
+@media (max-width:699px){.acces-champs{width:100%;margin-left:56px}.acces-champs select{flex:1;max-width:none}}
+
+/* ---------- Bien démarrer ---------- */
+.etapes-demarrage{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;counter-reset:etape}
+.etapes-demarrage li{display:flex;align-items:center;gap:12px;min-height:44px}
+.etapes-demarrage .coche{width:26px;height:26px;border-radius:50%;border:2px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex:none;color:#fff}
+.etapes-demarrage li.fait .coche{background:var(--bleu);border-color:var(--bleu)}
+.etapes-demarrage li.fait a{color:var(--texte-3);text-decoration:line-through}
+.etapes-demarrage a{color:var(--texte);font-weight:600;text-decoration:none}
+.etapes-demarrage a:hover{text-decoration:underline}
+.rub-demarrer{box-shadow:inset 4px 0 0 var(--bleu)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* Bandeau de démonstration : le rail reste entièrement visible */
+#demo-banner{position:sticky;top:0;z-index:40}
+@media (min-width:900px){.rail{top:var(--bandeau,0px);height:calc(100vh - var(--bandeau,0px))}}
+@media (min-width:900px) and (max-height:900px){
+  .rail-liens{gap:0}
+  .rail a .pastille{height:28px}
+  .rail a{font-size:11px;gap:2px}
+  .rail-logo img{width:44px !important;height:44px !important}
+}
+
+/* Tableaux en cartes sur téléphone */
+@media (max-width:599px){
+  .table-cartes thead{display:none}
+  .table-cartes,.table-cartes tbody,.table-cartes tr,.table-cartes td{display:block;width:100%}
+  .table-cartes tr{padding:12px 0;border-bottom:1px solid var(--surface-2)}
+  .table-cartes td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 0;border:0;text-align:right}
+  .table-cartes td[data-label]::before{content:attr(data-label);font-size:13px;font-weight:600;color:var(--texte-3);text-align:left}
+  .table-cartes td:first-child{font-weight:700;text-align:left}
+  .table-cartes td:first-child::before{display:none}
+  .table-cartes td.td-actions{justify-content:flex-end}
+  .table-cartes td .barre{flex:1;max-width:160px}
+  .table-cartes input[type=number]{width:130px !important}
+}
+.champ,.champs>*{min-width:0}
+input,select,textarea{max-width:100%;min-width:0}
+.page:has(> .fab){padding-bottom:88px}
+.champs > .btn-tonal.btn-petit,.champs > .btn-primaire.btn-petit{justify-self:end;width:auto}
+.param-compte .carte{gap:14px}
+
+@media (max-width:899px){.entete{top:var(--bandeau,0px)}}
+@media (max-width:699px){.onglets-defile{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px 8px}.onglets-defile::-webkit-scrollbar{display:none}.onglets-defile button{flex:none}}

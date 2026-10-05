@@ -34,6 +34,7 @@ function seed() {
     ['Ruth', 'Diallo', 19, 7, 'Comptable', true], ['Jonathan', 'Mabiala', 8, 11, null, true],
     ['Déborah', 'Tshibangu', 30, 4, 'Aide-soignante', true], ['Élie', 'Bamba', 14, 9, 'Chauffeur', false],
     ['Naomie', 'Kabongo', 22, 1, null, true], ['Josué', 'Mensah', 1, 6, 'Ingénieur', true],
+    ['Jean-Marc', 'Ilunga', 17, 3, 'Enseignant', true], ['Marthe', 'Kalala', 9, 12, 'Secrétaire médicale', true],
   ];
   const members = noms.map(([prenom, nom, j, m, profession, consent], i) => ({
     id: 'm' + i, prenom, nom, naissance_jour: j, naissance_mois: m, profession, whatsapp: i % 3 ? '06 12 34 56 7' + i : null,
@@ -105,8 +106,8 @@ function seed() {
   });
   const profiles = [
     { id: ids.t, nom: 'Paul Ndongo', role: 'tresorier', member_id: null, actif: true },
-    { id: ids.p, nom: 'Jean-Marc Ilunga', role: 'president', member_id: null, actif: true },
-    { id: ids.b, nom: 'Marthe Kalala', role: 'bureau', member_id: null, actif: true },
+    { id: ids.p, nom: 'Jean-Marc Ilunga', role: 'president', member_id: 'm10', actif: true },
+    { id: ids.b, nom: 'Marthe Kalala', role: 'bureau', member_id: 'm11', actif: true },
     { id: ids.a, nom: 'Grâce Mbala', role: 'adherent', member_id: 'm0', actif: true },
   ];
   const dem = (id, demandeur, objet, montant, nomCat, statut, extra = {}) => ({
@@ -368,6 +369,11 @@ export function createMockClient() {
       if (!db.session) return ko('Non connecté');
       const d = db.droits();
       if (nom === 'mes_droits') return ok([...d].sort());
+      if (nom === 'modifier_mon_nom') {
+        const p = t.profiles.find((x) => x.id === db.moi());
+        if (!String(args.p_nom || '').trim()) return ko('Nom obligatoire');
+        p.nom = String(args.p_nom).trim().slice(0, 80); return ok(null);
+      }
       if (nom === 'anniversaires_du_mois') {
         const bureau = d.has('voir_membres') || d.has('gerer_membres');
         const mois = args.p_mois || moisCourant;

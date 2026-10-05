@@ -121,6 +121,8 @@ function afficherBandeauDemo() {
   const b = $('#demo-banner'); b.hidden = false;
   b.innerHTML = `<span><b>Mode démonstration</b> : données fictives, rien n’est enregistré.</span>
     <label>Voir en tant que <select id="demo-role">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>`;
+  const hauteur = () => document.documentElement.style.setProperty('--bandeau', `${b.offsetHeight}px`);
+  hauteur(); addEventListener('resize', hauteur);
   $('#demo-role').addEventListener('change', async (e) => {
     sb.__setRole(e.target.value);
     const { data } = await sb.auth.getSession(); S.session = data.session;
@@ -164,7 +166,19 @@ async function chargerReferentiels() {
   S.membres = peut('voir_membres', 'gerer_membres', 'gerer_cotisations') ? await q(sb.from('members').select('*').order('nom')) : [];
   S.tiers = peut('consulter_finances', 'saisir_ecritures', 'gerer_cotisations', 'payer_depenses') ? await q(sb.from('tiers').select('*').order('nom')) : [];
   S.collectes = peut('consulter_finances', 'gerer_cotisations', 'gerer_activites', 'saisir_ecritures') ? await q(sb.from('collectes').select('*').order('created_at', { ascending: false })) : [];
+  await chargerAcces();
   await chargerPhotos(S.membres);
+}
+
+// Comptes et invitations rattachés aux fiches de membre : fonction de chacun, accès à la plateforme
+async function chargerAcces() {
+  S.profils = []; S.invitations = []; S.liens = {};
+  try {
+    if (peut('administrer', 'consulter_finances', 'valider_depenses', 'payer_depenses')) S.profils = await q(sb.from('profiles').select('*').order('nom'));
+    if (peut('administrer')) S.invitations = await q(sb.from('invitations').select('*').order('created_at', { ascending: false }));
+  } catch (e) { console.warn(e); }
+  S.profils.forEach((p) => { if (p.member_id) S.liens[p.member_id] = { profil: p }; });
+  S.invitations.forEach((i) => { if (i.member_id && !S.liens[i.member_id]) S.liens[i.member_id] = { invitation: i }; });
 }
 
 async function chargerPhotos(liste) {
@@ -283,14 +297,16 @@ function pagesAutorisees() {
     ['membres', 'Membres', peut('voir_membres', 'gerer_membres')],
     ['rapprochement', 'Rapprochement', peut('consulter_finances', 'rapprocher')],
     ['rapports', 'Rapports', finances],
-    ['parametres', 'Paramètres', peut('administrer')],
+    ['parametres', 'Paramètres', true],
   ].filter((x) => x[2]).map(([k, l]) => [k, l]);
 }
 
 function coquille(page, contenu) {
   const pages = pagesAutorisees();
   const lien = ([k, l]) => `<a href="#${k}" ${k === page ? 'aria-current="page"' : ''}><span class="pastille">${icone(k)}</span>${l}</a>`;
-  const nav = pages.map(lien).join('');
+  // Ordinateur : rail défilant, Paramètres toujours visible en bas
+  const principales = pages.filter(([k]) => k !== 'parametres');
+  const nav = principales.map(lien).join('');
   // Téléphone : 4 entrées + « Plus » si la liste est longue
   const courtes = pages.length > 5 ? pages.slice(0, 4) : pages;
   const autres = pages.length > 5 ? pages.slice(4) : [];
@@ -298,28 +314,21 @@ function coquille(page, contenu) {
   const navMobile = courtes.map(lien).join('') + (autres.length ? `<a href="#" id="b-plus" ${enPlus ? 'aria-current="page"' : ''}><span class="pastille">${icone('plus')}</span>Plus</a>` : '');
   $('#app').innerHTML = `
   <div class="shell">
-    <nav class="rail" aria-label="Navigation"><img src="${esc(S.logoUrl)}" alt="">${nav}</nav>
-    <div style="flex:1;min-width:0">
+    <nav class="rail" aria-label="Navigation">
+      <a href="#tableau" class="rail-logo" aria-label="Accueil"><img src="${esc(S.logoUrl)}" alt=""></a>
+      <div class="rail-liens">${nav}</div>
+      <div class="rail-bas">${lien(['parametres', 'Paramètres'])}</div>
+    </nav>
+    <div class="cadre">
       <header class="entete">
         <img class="logo-mobile" src="${esc(S.logoUrl)}" alt="">
         <div class="titre"><b>${esc(S.org?.nom || 'Trésorerie')}</b></div>
-        <div class="profil-menu">
-          <button class="avatar-bouton" id="b-profil" aria-haspopup="true" aria-expanded="false" aria-label="Mon compte">${esc(initiales({ prenom: S.profil.nom.split(' ')[0], nom: S.profil.nom.split(' ')[1] || '' }))}</button>
-          <div class="menu" id="menu-profil" hidden>
-            <b>${esc(S.profil.nom)}</b><span class="muted">${esc(nomRole(S.profil.role))}</span>
-            ${S.profil.member_id && peut('consulter_finances', 'gerer_cotisations') ? '<a class="btn btn-texte" href="#moi">Ma cotisation</a>' : ''}
-            <button class="btn-texte" id="b-deconnexion">Se déconnecter</button>
-          </div>
-        </div>
+        <a class="entete-reglages" href="#parametres" aria-label="Paramètres" title="Paramètres" ${page === 'parametres' ? 'aria-current="page"' : ''}>${icone('parametres')}</a>
       </header>
       <main class="contenu">${contenu}</main>
     </div>
     <nav class="barre-nav" aria-label="Navigation">${navMobile}</nav>
   </div>`;
-  $('#b-deconnexion').addEventListener('click', () => sb.auth.signOut());
-  const menu = $('#menu-profil'), bp = $('#b-profil');
-  bp.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; bp.setAttribute('aria-expanded', !menu.hidden); });
-  document.addEventListener('click', (e) => { if (!menu.contains(e.target)) { menu.hidden = true; bp.setAttribute('aria-expanded', 'false'); } });
   $('#b-plus')?.addEventListener('click', (e) => {
     e.preventDefault();
     ouvrirFeuille(`<h2>Plus</h2><ul class="liste">${autres.map(([k, l]) => `<li><a href="#${k}" class="lien-plus" style="display:flex;align-items:center;gap:12px;width:100%;color:inherit;text-decoration:none;font-weight:600;min-height:44px">${icone(k)}${l}</a></li>`).join('')}</ul>`,
@@ -372,7 +381,8 @@ function brancherRubriques() {
 // Bannière : photo de l'association (Paramètres > Association), sinon aplat aux couleurs du logo
 function banniere(contenu) {
   const fond = S.banniereUrl ? ` style="--photo:url('${esc(S.banniereUrl)}')"` : '';
-  const premier = esc(S.profil.nom.split(' ')[0]);
+  const fiche = S.profil.member_id ? (S.membres || []).find((m) => m.id === S.profil.member_id) : null;
+  const premier = esc(fiche ? fiche.prenom : S.profil.nom.split('@')[0].split(' ')[0]);
   const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return `<section class="banniere ${S.banniereUrl ? 'avec-photo' : ''}"${fond} aria-label="${esc(S.org?.nom || 'Association')}">
     <div class="banniere-tete"><img src="${esc(S.logoUrl)}" alt=""><div><b>${esc(S.org?.nom || '')}</b><span>Bonjour ${premier} · ${date}</span></div>
@@ -459,14 +469,30 @@ async function pageTableau() {
       <a class="btn btn-texte" href="#ecritures" style="align-self:flex-start">Toutes les opérations</a>`
     : `<div class="vide">Aucune opération.${peut('saisir_ecritures') ? '<a class="btn btn-primaire" href="#ecritures">Nouvelle opération</a>' : ''}</div>`;
 
+  // Bien démarrer : étapes de mise en route, cochées automatiquement
+  const etapesDemarrage = peut('administrer') ? [
+    ['Créer votre fiche de membre', !!S.profil.member_id, '#membres', 'b-dem-fiche'],
+    ['Renseigner l’association : nom, logo, photo', !!(S.org?.logo_path || S.org?.banniere_path), '#parametres', 'b-dem-asso'],
+    ['Saisir les soldes de départ de la caisse et de la banque', S.comptes.some((c) => Number(c.solde_initial)), '#parametres', 'b-dem-soldes'],
+    ['Ajouter les membres (un par un ou par import)', S.membres.length > 1, '#membres'],
+    ['Désigner le bureau : président, secrétaire…', (S.profils?.length || 0) > 1 || (S.invitations?.length || 0) > 0, '#membres'],
+    ['Générer les cotisations de l’année', cotis.length > 0, '#cotisations'],
+  ] : [];
+  const faites = etapesDemarrage.filter((e) => e[1]).length;
+  const demarrage = etapesDemarrage.length && faites < etapesDemarrage.length
+    ? rubrique('demarrer', 'Bien démarrer', `${faites} sur ${etapesDemarrage.length}`, `<ol class="etapes-demarrage">${etapesDemarrage.map(([t, fait, lien, id]) => `<li class="${fait ? 'fait' : ''}"><span class="coche" aria-hidden="true">${fait ? '✓' : ''}</span><a href="${lien}" ${id ? `id="${id}"` : ''}>${t}</a>${fait ? '<span class="sr-only"> (fait)</span>' : ''}</li>`).join('')}</ol>`, { classe: 'rub-demarrer' })
+    : '';
+  const sansOperations = !toutes.length;
   rendre(`<div class="page accueil">
     ${situation}
     ${comptes}
     <div class="rub-outils"><button class="btn-texte btn-petit" id="b-rubriques">Tout replier</button></div>
+    ${demarrage}
     ${taches.length ? rubrique('traiter', 'À traiter', pl(taches.length, 'action'), `<ul class="liste">${taches.join('')}</ul>`, { classe: retards.length ? 'rub-alerte' : '' }) : ''}
+    ${sansOperations ? rubrique('indicateurs', `Chiffres ${an}`, 'Aucune opération', `<div class="vide">Les chiffres et les graphiques apparaissent dès la première opération.${peut('saisir_ecritures') ? '<a class="btn btn-primaire" href="#ecritures">Nouvelle opération</a>' : ''}</div>`) : `
     ${rubrique('indicateurs', `Chiffres ${an}`, `Recettes ${eur0(rec)} · Dépenses ${eur0(dep)}`, indicateurs)}
     ${rubrique('evolution', 'Évolution sur 12 mois', `Trésorerie ${signeEur(ecart12)}`, evolution)}
-    ${rubrique('repartition', `Répartition ${an}`, depCat.length ? `Premier poste de dépense&nbsp;: ${esc(depCat[0].nom)}` : '', repartition)}
+    ${rubrique('repartition', `Répartition ${an}`, depCat.length ? `Premier poste de dépense&nbsp;: ${esc(depCat[0].nom)}` : '', repartition)}`}
     <div class="grille grille-2 rub-grille">
       ${rubrique('anniversaires', `Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}`, anniv.length ? pl(anniv.length, 'personne') : 'Aucun', listeAnniversaires(anniv, mois))}
       ${rubrique('operations', 'Dernières opérations', '', operations)}
@@ -474,6 +500,9 @@ async function pageTableau() {
   </div>`);
   brancherInfobulles($('.contenu'));
   brancherRubriques();
+  $('#b-dem-fiche')?.addEventListener('click', (e) => { e.preventDefault(); feuilleMembre(null, { lierAMoi: true, apres: () => router() }); });
+  $('#b-dem-soldes')?.addEventListener('click', () => { S.ongletParam = 'finances'; });
+  $('#b-dem-asso')?.addEventListener('click', () => { S.ongletParam = 'association'; });
   document.querySelectorAll('[data-compte]').forEach((a) => a.addEventListener('click', () => {
     S.filtres = { periode: 'annee', compte: a.dataset.compte };
   }));
@@ -761,45 +790,150 @@ function contrePasser(t) {
 }
 
 // ---------- Membres ----------
+// Fonction d'un membre dans l'association : rôle de son compte, ou de son invitation en attente
+function fonctionMembre(m) {
+  const l = S.liens?.[m.id];
+  if (l?.profil) return { role: l.profil.role, etat: l.profil.actif ? 'compte' : 'desactive' };
+  if (l?.invitation) return { role: l.invitation.role, etat: 'invite' };
+  return null;
+}
+const ORDRE_ROLES = ['president', 'vice_president', 'tresorier', 'tresorier_adjoint', 'secretaire', 'bureau'];
+const rangRole = (r) => { const i = ORDRE_ROLES.indexOf(r); return i < 0 ? (r === 'adherent' ? 99 : 50) : i; };
+
 async function pageMembres() {
+  const admin = peut('administrer');
   const actifs = S.membres.filter((m) => m.actif);
   const inactifs = S.membres.length - actifs.length;
+  const bureau = S.membres.filter((m) => { const f = fonctionMembre(m); return f && f.role !== 'adherent'; })
+    .sort((x, y) => rangRole(fonctionMembre(x).role) - rangRole(fonctionMembre(y).role));
+  const autres = S.membres.filter((m) => !bureau.includes(m));
+  const pucesFonction = (m) => {
+    const f = fonctionMembre(m);
+    if (!f) return '';
+    if (f.etat === 'invite') return `<span class="puce puce-partiel" title="Invitation en attente">${esc(nomRole(f.role))} · invité</span>`;
+    if (f.etat === 'desactive') return `<span class="puce puce-neutre">${esc(nomRole(f.role))} · accès coupé</span>`;
+    return f.role === 'adherent' ? '<span class="puce puce-neutre">Accès adhérent</span>' : `<span class="puce puce-ok">${esc(nomRole(f.role))}</span>`;
+  };
+  const ligne = (m) => `
+        <li data-nom="${esc(sansAccents(nomComplet(m)))}" ${m.actif ? '' : 'class="inactif"'}>
+          ${avatar(m)}
+          <div class="corps"><b>${esc(nomComplet(m))}${m.id === S.profil.member_id ? ' <span class="muted">(vous)</span>' : ''}</b><span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}${m.profession ? ' · ' + esc(m.profession) : ''}${m.actif ? '' : ' · inactif'}</span>
+            <div class="membre-etats">${pucesFonction(m)}${m.consent_anniversaire ? '' : '<span class="puce puce-neutre" title="Anniversaire visible uniquement par le bureau">Sans accord</span>'}</div></div>
+          <div class="membre-actions">
+            ${admin ? `<button class="btn-texte btn-petit" data-acces="${m.id}">Fonction</button>` : ''}
+            ${peut('gerer_membres') ? `<button class="btn-texte btn-petit" data-modif="${m.id}">Modifier</button>` : ''}
+          </div>
+        </li>`;
+  const moiSansFiche = !S.profil.member_id && peut('gerer_membres');
   rendre(`<div class="page">
     <div class="page-titre"><h1>Membres</h1>
       <span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? `, ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
       ${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-import">Importer (CSV, Excel)</button>' : ''}
       <button class="btn-bleu btn-petit" id="b-export-m">Exporter</button>
     </div>
-    <input type="search" id="recherche" placeholder="Rechercher un membre" aria-label="Rechercher un membre">
+    ${moiSansFiche ? `<div class="info info-action"><span><b>Vous n’êtes pas encore dans la liste.</b> Créez votre fiche : on est d’abord membre, puis on reçoit une fonction.</span><button class="btn-primaire btn-petit" id="b-ma-fiche">Créer ma fiche</button></div>` : ''}
+    ${S.membres.length ? '<input type="search" id="recherche" placeholder="Rechercher un membre" aria-label="Rechercher un membre">' : ''}
+    ${bureau.length ? `<section class="carte"><h2>Bureau</h2><ul class="liste liste-membres">${bureau.map(ligne).join('')}</ul></section>` : ''}
     <section class="carte">
-      ${S.membres.length ? `<ul class="liste" id="liste-membres">${S.membres.map((m) => `
-        <li data-nom="${esc(sansAccents(nomComplet(m)))}" ${m.actif ? '' : 'style="opacity:.55"'}>
-          ${avatar(m)}
-          <div class="corps"><b>${esc(nomComplet(m))}</b><span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}${m.profession ? ' · ' + esc(m.profession) : ''}${m.actif ? '' : ' · inactif'}</span></div>
-          ${m.consent_anniversaire ? '' : '<span class="puce puce-neutre" title="Anniversaire visible uniquement par le bureau">Sans accord</span>'}
-          ${peut('gerer_membres') ? `<button class="btn-texte btn-petit" data-modif="${m.id}">Modifier</button>` : ''}
-        </li>`).join('')}</ul>`
+      ${bureau.length ? '<h2>Membres</h2>' : ''}
+      ${autres.length ? `<ul class="liste liste-membres">${autres.map(ligne).join('')}</ul>`
+      : S.membres.length ? '<div class="vide">Tous les membres font partie du bureau.</div>'
       : `<div class="vide">Aucun membre.${peut('gerer_membres') ? '<span>Ajoutez-les un par un ou importez votre liste.</span>' : ''}</div>`}
     </section>
+    ${admin ? '<p class="muted aide-bas">Pour désigner un membre du bureau : « Fonction » sur sa ligne, puis choisissez sa fonction. Les fonctions et leurs droits se règlent dans Paramètres, Rôles et droits.</p>' : ''}
     ${peut('gerer_membres') ? `<button class="fab" id="b-ajout" aria-label="Ajouter un membre" title="Ajouter un membre"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
   </div>`);
-  $('#recherche').addEventListener('input', (e) => {
+  $('#recherche')?.addEventListener('input', (e) => {
     const v = sansAccents(e.target.value);
-    document.querySelectorAll('#liste-membres li').forEach((li) => { li.hidden = v && !li.dataset.nom.includes(v); });
+    document.querySelectorAll('.liste-membres li').forEach((li) => { li.hidden = v && !li.dataset.nom.includes(v); });
   });
   $('#b-ajout')?.addEventListener('click', () => feuilleMembre());
+  $('#b-ma-fiche')?.addEventListener('click', () => feuilleMembre(null, { lierAMoi: true }));
   $('#b-import')?.addEventListener('click', feuilleImport);
   document.querySelectorAll('[data-modif]').forEach((b) => b.addEventListener('click', () => feuilleMembre(S.membres.find((m) => m.id === b.dataset.modif))));
+  document.querySelectorAll('[data-acces]').forEach((b) => b.addEventListener('click', () => feuilleAcces(S.membres.find((m) => m.id === b.dataset.acces))));
   $('#b-export-m').addEventListener('click', () => telechargerCsv('membres.csv',
-    ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Accord anniversaire', 'Actif'],
-    S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, m.consent_anniversaire ? 'Oui' : 'Non', m.actif ? 'Oui' : 'Non'])));
+    ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Fonction', 'Accord anniversaire', 'Actif'],
+    S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.consent_anniversaire ? 'Oui' : 'Non', m.actif ? 'Oui' : 'Non'])));
 }
 
-function feuilleMembre(m = null) {
+// Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
+function feuilleAcces(m) {
+  const l = S.liens[m.id] || {};
+  const rolesTries = [...S.roles].sort((a, b) => rangRole(a.code) - rangRole(b.code));
+  const options = (choisi) => rolesTries.map((r) => `<option value="${esc(r.code)}" ${r.code === choisi ? 'selected' : ''}>${esc(r.nom)}</option>`).join('');
+  const comptesLibres = S.profils.filter((p) => !p.member_id);
+  const adresseSite = location.origin + location.pathname;
+  const etat = l.profil
+    ? `<div class="etat-acces"><span class="puce ${l.profil.actif ? 'puce-ok' : 'puce-neutre'}">${l.profil.actif ? 'Compte actif' : 'Accès coupé'}</span><span class="muted">${esc(l.profil.nom)}</span></div>
+      <label class="champ">Fonction<select name="role">${options(l.profil.role)}</select></label>
+      <label class="case"><input type="checkbox" name="actif" ${l.profil.actif ? 'checked' : ''} ${l.profil.id === S.profil.id ? 'disabled' : ''}> Accès à la plateforme</label>`
+    : l.invitation
+    ? `<div class="etat-acces"><span class="puce puce-partiel">Invitation en attente</span><span class="muted">${esc(l.invitation.email)}</span></div>
+      <label class="champ">Fonction<select name="role">${options(l.invitation.role)}</select></label>
+      <p class="muted" style="margin:0">La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création.</p>`
+    : `<div class="etat-acces"><span class="puce puce-neutre">Sans accès</span></div>
+      <label class="champ"><span class="obligatoire">E-mail de connexion</span><input name="email" type="email" required value="${esc(m.email || '')}" autocomplete="off"></label>
+      <label class="champ">Fonction<select name="role">${options('adherent')}</select></label>
+      ${comptesLibres.length ? `<label class="champ">Ou rattacher un compte déjà créé<select name="compte"><option value="">Aucun</option>${comptesLibres.map((p) => `<option value="${p.id}">${esc(p.nom)}</option>`).join('')}</select></label>` : ''}`;
+  ouvrirFeuille(`<form id="f-acces" class="champs">
+    <h2>Accès et fonction</h2>
+    <div class="identite">${avatar(m)}<div><b>${esc(nomComplet(m))}</b><span class="muted">${m.profession ? esc(m.profession) : 'Membre'}</span></div></div>
+    ${etat}
+    <div class="actions">
+      ${l.invitation ? '<button type="button" class="btn-texte" id="b-annuler-invit">Annuler l’invitation</button>' : '<button type="button" class="btn-texte" id="b-annuler">Fermer</button>'}
+      <button class="btn-primaire">${l.profil || l.invitation ? 'Enregistrer' : 'Donner l’accès'}</button>
+    </div>
+    <div id="apres-invit"></div>
+  </form>`, (root) => {
+    const f = $('#f-acces', root);
+    $('#b-annuler', root)?.addEventListener('click', fermerFeuille);
+    $('#b-annuler-invit', root)?.addEventListener('click', async () => {
+      try { await q(sb.from('invitations').delete().eq('email', l.invitation.email)); await chargerAcces(); fermerFeuille(); toast('Invitation annulée'); pageMembres(); } catch (err) { erreur(err); }
+    });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = f.querySelector('.btn-primaire'); btn.disabled = true;
+      try {
+        if (l.profil) {
+          await q(sb.from('profiles').update({ role: f.role.value, actif: f.actif.disabled ? true : f.actif.checked }).eq('id', l.profil.id));
+          if (l.profil.id === S.profil.id) { S.profil.role = f.role.value; S.droits = new Set(await q(sb.rpc('mes_droits'))); }
+          toast('Fonction enregistrée');
+        } else if (l.invitation) {
+          await q(sb.from('invitations').update({ role: f.role.value }).eq('email', l.invitation.email));
+          toast('Fonction enregistrée');
+        } else if (f.compte?.value) {
+          await q(sb.from('profiles').update({ role: f.role.value }).eq('id', f.compte.value));
+          await lierProfil(f.compte.value, m.id);
+          toast('Compte rattaché');
+        } else {
+          const email = f.email.value.trim().toLowerCase();
+          if (S.profils.some((p) => p.nom.toLowerCase() === email)) { btn.disabled = false; return toast('Un compte existe déjà avec cette adresse : rattachez-le'); }
+          await q(sb.from('invitations').insert({ email, nom: nomComplet(m), role: f.role.value, member_id: m.id }));
+          if (!m.email) await q(sb.from('members').update({ email }).eq('id', m.id));
+          await chargerAcces();
+          const texte = `Bonjour ${m.prenom}, votre accès à la trésorerie ${S.org?.nom || ''} est prêt. Créez votre compte sur ${adresseSite} avec l’adresse ${email}.`;
+          const wa = numeroWa(m.whatsapp || '');
+          $('#apres-invit', root).innerHTML = `<div class="info"><b>Accès accordé.</b> ${esc(m.prenom)} crée son compte sur le site avec ${esc(email)}.
+            <div class="actions-gauche" style="margin-top:8px">${wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(texte)}">Prévenir par WhatsApp</a>` : ''}
+            <a class="btn btn-texte btn-petit" href="mailto:${esc(email)}?subject=${encodeURIComponent('Accès à la trésorerie')}&body=${encodeURIComponent(texte)}">Prévenir par e-mail</a></div></div>`;
+          f.querySelector('.actions').hidden = true;
+          pageMembresEnFond();
+          return;
+        }
+        await chargerAcces(); fermerFeuille(); pageMembres();
+      } catch (err) { btn.disabled = false; erreur(err); }
+    });
+  });
+}
+// Rafraîchit la liste sous la feuille ouverte
+function pageMembresEnFond() { if ((location.hash.slice(1) || 'tableau') === 'membres') pageMembres(); }
+
+function feuilleMembre(m = null, opts = {}) {
   const v = m || { prenom: '', nom: '', naissance_jour: '', naissance_mois: '', profession: '', whatsapp: '', email: '', consent_anniversaire: false, actif: true };
   let photoBlob = null;
   ouvrirFeuille(`<form id="f-membre" class="champs">
-    <h2>${m ? 'Modifier la fiche' : 'Nouveau membre'}</h2>
+    <h2>${m ? 'Modifier la fiche' : opts.lierAMoi ? 'Ma fiche de membre' : 'Nouveau membre'}</h2>
     <div style="display:flex;align-items:center;gap:16px">
       <span id="apercu">${avatar(v)}</span>
       <label class="btn btn-tonal btn-petit">Ajouter une photo<input type="file" name="photo" accept="image/*" hidden></label>
@@ -858,8 +992,10 @@ function feuilleMembre(m = null) {
           delete S.photos[chemin];
         }
         S.membres = await q(sb.from('members').select('*').order('nom'));
+        if (opts.lierAMoi && !m) await lierProfil(S.profil.id, ligne.id);
         await chargerPhotos(S.membres);
-        fermerFeuille(); toast(m ? 'Fiche modifiée' : 'Membre ajouté'); pageMembres();
+        fermerFeuille(); toast(opts.lierAMoi ? 'Votre fiche est créée' : m ? 'Fiche modifiée' : 'Membre ajouté');
+        if (opts.apres) opts.apres(); else pageMembres();
       } catch (err) { btn.disabled = false; erreur(err); }
     });
   });
@@ -1330,14 +1466,78 @@ function feuilleTiers(t, apres) {
 
 // ---------- Paramètres (trésorier) ----------
 async function pageParametres() {
-  const onglets = [['association', 'Association'], ['finances', 'Montants et comptes'], ['roles', 'Rôles et droits'], ['personnes', 'Personnes']];
-  if (!S.ongletParam) S.ongletParam = 'association';
-  const corps = { association: paramAssociation, finances: paramFinances, roles: paramRoles, personnes: paramPersonnes };
-  rendre(`<div class="page"><h1>Paramètres</h1>
-    <div class="onglets" role="tablist">${onglets.map(([k, l]) => `<button role="tab" aria-selected="${S.ongletParam === k}" data-onglet="${k}">${l}</button>`).join('')}</div>
+  const admin = peut('administrer');
+  const onglets = [['compte', 'Mon compte'], ...(admin ? [['association', 'Association'], ['finances', 'Montants et comptes'], ['roles', 'Rôles et droits'], ['personnes', 'Accès']] : [])];
+  if (!onglets.some(([k]) => k === S.ongletParam)) S.ongletParam = 'compte';
+  const corps = { compte: paramCompte, association: paramAssociation, finances: paramFinances, roles: paramRoles, personnes: paramPersonnes };
+  rendre(`<div class="page"><div class="page-titre"><h1>Paramètres</h1></div>
+    ${onglets.length > 1 ? `<div class="onglets onglets-defile" role="tablist">${onglets.map(([k, l]) => `<button role="tab" aria-selected="${S.ongletParam === k}" data-onglet="${k}">${l}</button>`).join('')}</div>` : ''}
     <div id="param-corps"></div></div>`);
   document.querySelectorAll('[data-onglet]').forEach((b) => b.addEventListener('click', () => { S.ongletParam = b.dataset.onglet; pageParametres().catch(erreur); }));
   await corps[S.ongletParam]($('#param-corps'));
+}
+
+// Mon compte : nom affiché, fiche de membre rattachée, mot de passe, déconnexion
+async function paramCompte(zone) {
+  const fiche = S.profil.member_id ? S.membres.find((m) => m.id === S.profil.member_id) : null;
+  const email = S.session?.user?.email || '';
+  const libres = peut('administrer') ? S.membres.filter((m) => m.actif && !(S.liens || {})[m.id]) : [];
+  zone.innerHTML = `<div class="grille grille-2 param-compte">
+    <section class="carte">
+      <div class="identite">${fiche ? avatar(fiche) : `<span class="avatar" aria-hidden="true">${esc(initiales({ prenom: S.profil.nom.split(' ')[0], nom: S.profil.nom.split(' ')[1] || '' }))}</span>`}
+        <div><b>${esc(S.profil.nom)}</b><span class="muted">${esc(email)}</span><span class="puce puce-ok">${esc(nomRole(S.profil.role))}</span></div></div>
+      <form id="f-nom" class="champs">
+        <label class="champ">Nom affiché<input name="nom" value="${esc(S.profil.nom)}" maxlength="80" required autocomplete="name"></label>
+        <button class="btn-tonal btn-petit" style="align-self:flex-end">Enregistrer</button>
+      </form>
+    </section>
+    <section class="carte">
+      <h2>Ma fiche de membre</h2>
+      ${fiche ? `<div class="identite">${avatar(fiche)}<div><b>${esc(nomComplet(fiche))}</b><span class="muted">${fiche.naissance_jour} ${MOIS[fiche.naissance_mois - 1]}${fiche.profession ? ' · ' + esc(fiche.profession) : ''}</span></div></div>
+        <div class="actions-gauche">${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-ma-fiche">Modifier ma fiche</button>' : ''}<a class="btn btn-texte btn-petit" href="#cotisations">Ma cotisation</a></div>`
+      : peut('gerer_membres') ? `<p class="muted" style="margin:0">Aucune fiche rattachée à votre compte.</p>
+        <div class="actions-gauche"><button class="btn-primaire btn-petit" id="b-creer-fiche">Créer ma fiche</button></div>
+        ${libres.length ? `<label class="champ">Ou rattacher une fiche existante<select id="s-rattacher"><option value="">Choisir un membre</option>${libres.map((m) => `<option value="${m.id}">${esc(nomComplet(m))}</option>`).join('')}</select></label>` : ''}`
+      : '<p class="muted" style="margin:0">Aucune fiche rattachée à votre compte. Le trésorier peut la rattacher.</p>'}
+    </section>
+    <section class="carte">
+      <h2>Mot de passe</h2>
+      <form id="f-mdp2" class="champs">
+        <label class="champ">Nouveau mot de passe (8 caractères minimum)<input type="password" name="mdp" minlength="8" autocomplete="new-password" required></label>
+        <button class="btn-tonal btn-petit" style="align-self:flex-end">Modifier</button>
+      </form>
+    </section>
+    <section class="carte carte-sortie">
+      <h2>Session</h2>
+      <p class="muted" style="margin:0">Connecté avec ${esc(email)}</p>
+      <button class="btn-sortie" id="b-deconnexion">Se déconnecter</button>
+    </section>
+  </div>`;
+  $('#f-nom', zone).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await q(sb.rpc('modifier_mon_nom', { p_nom: e.target.nom.value })); S.profil.nom = e.target.nom.value.trim(); toast('Nom enregistré'); paramCompte(zone); }
+    catch (err) { erreur(err); }
+  });
+  $('#f-mdp2', zone).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await q(sb.auth.updateUser({ password: e.target.mdp.value })); e.target.reset(); toast('Mot de passe modifié'); }
+    catch (err) { erreur(err); }
+  });
+  $('#b-deconnexion', zone).addEventListener('click', () => sb.auth.signOut());
+  $('#b-ma-fiche', zone)?.addEventListener('click', () => feuilleMembre(fiche, { apres: () => router() }));
+  $('#b-creer-fiche', zone)?.addEventListener('click', () => feuilleMembre(null, { lierAMoi: true, apres: () => router() }));
+  $('#s-rattacher', zone)?.addEventListener('change', async (e) => {
+    if (!e.target.value) return;
+    try { await lierProfil(S.profil.id, e.target.value); toast('Fiche rattachée'); router(); } catch (err) { erreur(err); }
+  });
+}
+
+// Rattache un compte à une fiche de membre ; le nom affiché reprend celui de la fiche
+async function lierProfil(profilId, memberId) {
+  const m = S.membres.find((x) => x.id === memberId);
+  await q(sb.from('profiles').update({ member_id: memberId, ...(m ? { nom: nomComplet(m) } : {}) }).eq('id', profilId));
+  if (profilId === S.profil.id) { S.profil.member_id = memberId; if (m) S.profil.nom = nomComplet(m); }
+  await chargerAcces();
 }
 
 async function paramAssociation(zone) {
@@ -1525,12 +1725,15 @@ async function paramPersonnes(zone) {
   ]);
   const optionsRoles = (choisi) => S.roles.map((r) => `<option value="${esc(r.code)}" ${r.code === choisi ? 'selected' : ''}>${esc(r.nom)}</option>`).join('');
   zone.innerHTML = `<section class="carte">
-    <div class="page-titre"><h2 style="flex:1">Personnes</h2><button class="btn-primaire btn-petit" id="b-inviter">Inviter</button></div>
+    <div class="page-titre"><h2 style="flex:1">Comptes et accès</h2><button class="btn-primaire btn-petit" id="b-inviter">Inviter</button></div>
     <ul class="liste">
       ${profils.map((p) => `<li>
         <span class="avatar" aria-hidden="true">${esc(initiales({ prenom: p.nom.split(' ')[0], nom: p.nom.split(' ')[1] || '' }))}</span>
         <div class="corps"><b>${esc(p.nom)}${p.id === S.profil.id ? ' (vous)' : ''}</b><span>${p.actif ? 'Accès actif' : 'Accès désactivé'}</span></div>
-        <select data-role="${p.id}" style="width:auto;min-height:40px" aria-label="Rôle de ${esc(p.nom)}">${optionsRoles(p.role)}</select>
+        <div class="acces-champs">
+          <select data-fiche="${p.id}" aria-label="Fiche de membre de ${esc(p.nom)}"><option value="">Sans fiche de membre</option>${S.membres.filter((m) => m.actif && (!S.liens[m.id]?.profil || m.id === p.member_id)).map((m) => `<option value="${m.id}" ${m.id === p.member_id ? 'selected' : ''}>${esc(nomComplet(m))}</option>`).join('')}</select>
+          <select data-role="${p.id}" aria-label="Rôle de ${esc(p.nom)}">${optionsRoles(p.role)}</select>
+        </div>
         <label class="case"><input type="checkbox" data-actif="${p.id}" ${p.actif ? 'checked' : ''}> Actif</label></li>`).join('')}
       ${invitations.map((i) => `<li style="opacity:.75"><span class="avatar" aria-hidden="true">@</span>
         <div class="corps"><b>${esc(i.nom || i.email)}</b><span>${esc(i.email)} · invitation en attente</span></div>
@@ -1539,8 +1742,15 @@ async function paramPersonnes(zone) {
     </ul></section>`;
   zone.querySelectorAll('[data-role]').forEach((s) => s.addEventListener('change', async () => {
     try {
-      await q(sb.from('profiles').update({ role: s.value }).eq('id', s.dataset.role)); toast('Rôle attribué');
+      await q(sb.from('profiles').update({ role: s.value }).eq('id', s.dataset.role)); await chargerAcces(); toast('Rôle attribué');
       if (s.dataset.role === S.profil.id) { S.profil.role = s.value; S.droits = new Set(await q(sb.rpc('mes_droits'))); router(); }
+    } catch (err) { erreur(err); paramPersonnes(zone); }
+  }));
+  zone.querySelectorAll('[data-fiche]').forEach((s) => s.addEventListener('change', async () => {
+    try {
+      if (s.value) await lierProfil(s.dataset.fiche, s.value);
+      else { await q(sb.from('profiles').update({ member_id: null }).eq('id', s.dataset.fiche)); if (s.dataset.fiche === S.profil.id) S.profil.member_id = null; await chargerAcces(); }
+      toast('Fiche rattachée'); paramPersonnes(zone);
     } catch (err) { erreur(err); paramPersonnes(zone); }
   }));
   zone.querySelectorAll('[data-actif]').forEach((c) => c.addEventListener('change', async () => {
@@ -1548,7 +1758,7 @@ async function paramPersonnes(zone) {
     catch (err) { erreur(err); paramPersonnes(zone); }
   }));
   zone.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', async () => {
-    try { await q(sb.from('invitations').delete().eq('email', b.dataset.retirer)); toast('Invitation retirée'); paramPersonnes(zone); } catch (err) { erreur(err); }
+    try { await q(sb.from('invitations').delete().eq('email', b.dataset.retirer)); await chargerAcces(); toast('Invitation retirée'); paramPersonnes(zone); } catch (err) { erreur(err); }
   }));
   $('#b-inviter', zone).addEventListener('click', () => ouvrirFeuille(`<form id="f-invit" class="champs"><h2>Inviter</h2>
     <label class="champ"><span class="obligatoire">E-mail</span><input name="email" type="email" required></label>
@@ -1566,7 +1776,7 @@ async function paramPersonnes(zone) {
       e.preventDefault();
       try {
         await q(sb.from('invitations').insert({ email: fi.email.value.trim().toLowerCase(), nom: fi.nom.value.trim(), role: fi.role.value, member_id: fi.membre.value || null }));
-        fermerFeuille(); toast('Invitation enregistrée'); paramPersonnes(zone);
+        await chargerAcces(); fermerFeuille(); toast('Invitation enregistrée'); paramPersonnes(zone);
       } catch (err) { erreur(err); }
     });
   }));
@@ -1939,13 +2149,13 @@ async function pageBudget() {
     const l = ligneDe(s); const taux = Number(s.taux_pct || 0);
     const etat = s.sens === 'depense' && taux > 100 ? '<span class="puce puce-ko">Dépassé</span>' : s.alerte ? '<span class="puce puce-partiel">Alerte</span>' : '';
     return `<tr>
-      <td>${esc(s.categorie)}${s.project_id ? `<br><span class="muted">${esc(nomProjet(s.project_id))}</span>` : ''}</td>
-      <td class="droite">${peut('gerer_budget') && l ? `<input type="number" step="0.01" min="0" value="${Number(s.montant_prevu).toFixed(2)}" data-prevu="${l.id}" aria-label="Prévu ${esc(s.categorie)}" style="width:120px;min-height:40px;text-align:right">` : `<span class="num">${eur(s.montant_prevu)}</span>`}</td>
-      <td class="droite num">${eur(s.realise)}</td>
-      <td style="min-width:120px"><div class="barre"><span style="width:${Math.min(100, taux)}%;background:${s.sens === 'recette' ? 'var(--bleu)' : taux > 100 ? 'var(--erreur)' : s.alerte ? 'var(--jaune)' : 'var(--primaire)'}"></span></div><span class="muted">${taux.toLocaleString('fr-FR')}&nbsp;%</span></td>
-      <td>${etat}${peut('gerer_budget') && l ? ` <button class="btn-texte btn-petit" data-suppr="${l.id}" aria-label="Retirer la ligne ${esc(s.categorie)}">Retirer</button>` : ''}</td></tr>`;
+      <td data-label="Poste">${esc(s.categorie)}${s.project_id ? `<br><span class="muted">${esc(nomProjet(s.project_id))}</span>` : ''}</td>
+      <td class="droite" data-label="Prévu">${peut('gerer_budget') && l ? `<input type="number" step="0.01" min="0" value="${Number(s.montant_prevu).toFixed(2)}" data-prevu="${l.id}" aria-label="Prévu ${esc(s.categorie)}" style="width:120px;min-height:40px;text-align:right">` : `<span class="num">${eur(s.montant_prevu)}</span>`}</td>
+      <td class="droite num" data-label="Réalisé">${eur(s.realise)}</td>
+      <td style="min-width:120px" data-label="Taux"><div class="barre"><span style="width:${Math.min(100, taux)}%;background:${s.sens === 'recette' ? 'var(--bleu)' : taux > 100 ? 'var(--erreur)' : s.alerte ? 'var(--jaune)' : 'var(--primaire)'}"></span></div><span class="muted">${taux.toLocaleString('fr-FR')}&nbsp;%</span></td>
+      <td class="td-actions">${etat}${peut('gerer_budget') && l ? ` <button class="btn-texte btn-petit" data-suppr="${l.id}" aria-label="Retirer la ligne ${esc(s.categorie)}">Retirer</button>` : ''}</td></tr>`;
   };
-  const table = (l) => `<div class="tableau-wrap"><table><thead><tr><th>Poste</th><th class="droite">Prévu</th><th class="droite">Réalisé</th><th>Taux</th><th></th></tr></thead><tbody>${l.map(ligneHtml).join('')}</tbody></table></div>`;
+  const table = (l) => `<div class="tableau-wrap"><table class="table-cartes"><thead><tr><th>Poste</th><th class="droite">Prévu</th><th class="droite">Réalisé</th><th>Taux</th><th></th></tr></thead><tbody>${l.map(ligneHtml).join('')}</tbody></table></div>`;
   const resPrevu = tot(general, 'recette', 'montant_prevu') - tot(general, 'depense', 'montant_prevu');
   const resReel = txs.reduce((t, x) => t + (x.sens === 'recette' ? 1 : -1) * Number(x.montant), 0);
 
@@ -2246,9 +2456,9 @@ async function pageSuiviActivites(vues) {
 async function pageRapprochement() {
   const historique = await q(sb.from('reconciliations').select('*').order('periode_fin', { ascending: false }));
   const nomCompte = (id) => S.comptes.find((c) => c.id === id)?.nom || '';
-  const tableHist = historique.length ? `<div class="tableau-wrap"><table><thead><tr><th>Compte</th><th>Période</th><th class="droite">Solde du relevé</th><th>Relevé</th><th>Terminé le</th></tr></thead><tbody>
-    ${historique.map((r) => `<tr><td>${esc(nomCompte(r.account_id))}</td><td>${dateFr(r.periode_debut)} au ${dateFr(r.periode_fin)}</td><td class="droite num">${eur(r.solde_releve)}</td>
-      <td>${r.statement_path ? `<button class="btn-texte btn-petit" data-voir="${esc(r.statement_path)}" data-bucket="releves">Voir</button>` : ''}</td><td>${r.termine_le ? dateFr(String(r.termine_le).slice(0, 10)) : '<span class="puce puce-partiel">En cours</span>'}</td></tr>`).join('')}</tbody></table></div>`
+  const tableHist = historique.length ? `<div class="tableau-wrap"><table class="table-cartes"><thead><tr><th>Compte</th><th>Période</th><th class="droite">Solde du relevé</th><th>Relevé</th><th>Terminé le</th></tr></thead><tbody>
+    ${historique.map((r) => `<tr><td data-label="Compte">${esc(nomCompte(r.account_id))}</td><td data-label="Période">${dateFr(r.periode_debut)} au ${dateFr(r.periode_fin)}</td><td class="droite num" data-label="Solde du relevé">${eur(r.solde_releve)}</td>
+      <td data-label="Relevé">${r.statement_path ? `<button class="btn-texte btn-petit" data-voir="${esc(r.statement_path)}" data-bucket="releves">Voir</button>` : ''}</td><td data-label="Terminé le">${r.termine_le ? dateFr(String(r.termine_le).slice(0, 10)) : '<span class="puce puce-partiel">En cours</span>'}</td></tr>`).join('')}</tbody></table></div>`
     : '<p class="muted">Aucun rapprochement terminé.</p>';
   if (!peut('rapprocher')) {
     rendre(`<div class="page"><h1>Rapprochement</h1><section class="carte"><h2>Historique</h2>${tableHist}</section></div>`);
