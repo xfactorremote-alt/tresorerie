@@ -26,8 +26,9 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 | Analyse sur l’accueil : résultat, dépenses comparées à l’an passé, réserve en mois, jauge des cotisations, recettes et dépenses par mois, évolution de la trésorerie, diagrammes circulaires (origine des recettes, destination des dépenses) ; code couleur unique : bleu pour les recettes, orange pour les dépenses, gris pour la trésorerie | Oui | Oui |
 | Rapport d’assemblée générale synthétique : l’essentiel, faits marquants, graphiques, trésorerie par compte, cotisations, participations, budget, contrôle interne, signatures | Oui | Oui |
 | Rapports PDF, exports Excel, sauvegarde | Oui | Oui |
-| Paramètres : association, comptes, catégories, **rôles et droits**, personnes et invitations | Oui | Oui |
-| Menu du profil (en haut à droite) : ma cotisation, déconnexion | Oui | Oui |
+| Paramètres (roue dentée, en bas du menu ou en haut à droite sur téléphone) : **Mon compte** pour tous (nom, fiche de membre, mot de passe, déconnexion) ; pour l’administrateur : association, comptes, catégories, **rôles et droits**, accès | Oui | Oui |
+| Membre d’abord, fonction ensuite : groupe Bureau en tête de la liste des membres, bouton « Fonction » pour donner un accès et désigner président, trésorier, bureau… | Oui | Oui |
+| Accueil : « Bien démarrer » coche les étapes de mise en route au fur et à mesure | Oui | Oui |
 
 ## Rôles et droits
 
@@ -93,12 +94,17 @@ Le **premier compte créé devient trésorier**, avec le droit d’administrer. 
 
 ### 4. Paramétrer
 
-1. **Paramètres** : nom, logo, cotisation (20 € par mois par défaut ; périodicité mensuelle, trimestrielle, semestrielle ou annuelle), délai du justificatif (7 jours après paiement).
-2. **Membres** > **Importer** : téléchargez le modèle, remplissez-le dans Excel, enregistrez en CSV ou laissez en .xlsx, puis importez. Les lignes sans prénom, nom, jour ou mois sont refusées avec la raison.
-3. **Cotisations** > **Générer les cotisations** de l’année : une ligne par membre et par période, à partir de son mois d’adhésion. Réglez la périodicité avant de générer l’année : les périodes déjà créées ne bougent pas.
-4. **Paramètres** > **Comptes** : montant compté dans la caisse et montant du dernier relevé bancaire, au jour du démarrage. Ce ne sont pas des recettes, ils ne gonflent donc pas le résultat de l’année.
-5. **Paramètres** > **Personnes** > **Inviter** : le président (rôle Président), les membres du bureau (Bureau), puis les adhérents (Adhérent, avec leur fiche liée). Chaque personne crée ensuite son compte sur le site avec la même adresse.
-6. Si besoin, **Paramètres** > **Rôles et droits** : créez d’autres rôles et ajustez les droits.
+L’accueil affiche **Bien démarrer** : chaque étape se coche toute seule une fois faite.
+
+1. **Créer votre fiche de membre** : on est d’abord membre, puis on reçoit une fonction. **Membres** > **Créer ma fiche** (ou **Paramètres** > **Mon compte**). Votre compte y est rattaché et vous apparaissez dans le groupe **Bureau**.
+2. **Paramètres** > **Association** : nom, logo, photo de la bannière.
+3. **Paramètres** > **Montants et comptes** : cotisation (20 € par mois par défaut ; périodicité mensuelle, trimestrielle, semestrielle ou annuelle), délai du justificatif (7 jours après paiement), puis montant compté dans la caisse et montant du dernier relevé bancaire au jour du démarrage. Ces soldes de départ ne sont pas des recettes : ils ne gonflent pas le résultat de l’année.
+4. **Membres** : ajoutez-les un par un (bouton +) ou **Importer** (CSV ou Excel). Les lignes sans prénom, nom, jour ou mois sont refusées avec la raison.
+5. **Désigner le bureau** : dans **Membres**, bouton **Fonction** sur la ligne du membre, saisissez son e-mail, choisissez sa fonction (Président, Bureau…), puis **Donner l’accès**. La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création. Un lien permet de la prévenir par WhatsApp.
+6. **Cotisations** > **Générer les cotisations** de l’année : une ligne par membre et par période, à partir de son mois d’adhésion. Réglez la périodicité avant : les périodes déjà créées ne bougent pas.
+7. Si besoin, **Paramètres** > **Rôles et droits** : créez d’autres fonctions (Secrétaire, Vice-président, Trésorier adjoint…) et ajustez leurs droits.
+
+Pour se déconnecter : **Paramètres** > **Mon compte** > **Se déconnecter**.
 
 Limite de l’offre gratuite : Supabase envoie environ 2 e-mails de confirmation par heure. Pour inviter beaucoup d’adhérents d’un coup, branchez un service d’e-mail gratuit (Brevo, 300 e-mails par jour) dans **Authentication** > **Emails** > **SMTP Settings**, ou étalez les invitations.
 
