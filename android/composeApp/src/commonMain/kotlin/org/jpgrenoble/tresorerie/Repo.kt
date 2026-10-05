@@ -87,9 +87,15 @@ object Repo {
         if (demo) Demo.ecritures()
         else client.from("transactions").select { order("date_op", Order.ASCENDING) }.decodeList()
 
-    suspend fun ajouter(e: NouvelleEcriture) {
-        if (demo) { Demo.ajouter(e, profilDemo.value); return }
-        client.from("transactions").insert(e)
+    suspend fun ajouter(e: NouvelleEcriture): String {
+        if (demo) return Demo.ajouter(e, profilDemo.value)
+        return client.from("transactions").insert(e) { select() }.decodeSingle<Ecriture>().id
+    }
+
+    // Dépense saisie directement : le président la valide après coup
+    suspend fun demanderValidation(transactionId: String) {
+        if (demo) { Demo.demanderValidation(transactionId, profilDemo.value); return }
+        client.postgrest.rpc("demander_validation_operation", buildJsonObject { put("p_transaction", transactionId) })
     }
 
     suspend fun anniversaires(mois: Int? = null): List<Anniversaire> =
@@ -183,10 +189,28 @@ object Repo {
         else client.from("projects").select { order("date_debut", Order.DESCENDING) }.decodeList()
 
     // ---------- Membres ----------
-    suspend fun ajouterMembre(m: NouveauMembre) {
-        if (demo) { Demo.ajouterMembre(m, profilDemo.value); return }
-        client.from("members").insert(m)
+    suspend fun ajouterMembre(m: NouveauMembre): String {
+        if (demo) return Demo.ajouterMembre(m, profilDemo.value)
+        return client.from("members").insert(m) { select() }.decodeSingle<Membre>().id
     }
+
+    // Rattache un compte à une fiche de membre ; le nom affiché reprend celui de la fiche
+    suspend fun lierProfil(profilId: String, membreId: String?, nom: String?) {
+        if (demo) { Demo.lierProfil(profilId, membreId, nom, profilDemo.value); return }
+        client.from("profiles").update({ set<String?>("member_id", membreId); if (nom != null) set("nom", nom) }) { filter { eq("id", profilId) } }
+    }
+
+    suspend fun modifierMonNom(nom: String) {
+        if (demo) { Demo.modifierNom(profilDemo.value?.id, nom); return }
+        client.postgrest.rpc("modifier_mon_nom", buildJsonObject { put("p_nom", nom) })
+    }
+
+    suspend fun changerMotDePasse(motDePasse: String) {
+        if (demo) return
+        client.auth.updateUser { password = motDePasse }
+    }
+
+    fun emailConnecte(): String = if (demo) Demo.emailDe(profilDemo.value?.id) else client.auth.currentUserOrNull()?.email ?: ""
 
     // ---------- Rapprochement ----------
     suspend fun rapprochements(): List<Rapprochement> =
@@ -293,6 +317,11 @@ object Repo {
     suspend fun inviter(i: Invitation) {
         if (demo) { Demo.inviter(i, profilDemo.value); return }
         client.from("invitations").insert(i)
+    }
+
+    suspend fun majInvitation(email: String, role: String) {
+        if (demo) { val i = Demo.invitations.indexOfFirst { it.email == email }; if (i >= 0) Demo.invitations[i] = Demo.invitations[i].copy(role = role); return }
+        client.from("invitations").update({ set("role", role) }) { filter { eq("email", email) } }
     }
 
     suspend fun retirerInvitation(email: String) {

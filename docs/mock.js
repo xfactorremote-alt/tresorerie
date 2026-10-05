@@ -288,6 +288,11 @@ export function createMockClient() {
         if (v.statut === 'validee') {
           if (!v.signature_path) throw new Error('Signature obligatoire');
           v.validee_par = db.moi(); v.validee_le = new Date().toISOString();
+          if (r.regularisation) {
+            const tx = tables.transactions.find((x) => x.request_id === r.id);
+            v.statut = tables.attachments.some((a) => a.transaction_id === tx?.id) ? 'justifiee' : 'payee';
+            v.payee_le = r.payee_le || new Date().toISOString();
+          }
         }
       } else if (r.statut === 'soumise' && v.statut === 'annulee') {
         if (r.demandeur !== db.moi()) throw new Error('Seul le demandeur annule sa demande');
@@ -369,6 +374,17 @@ export function createMockClient() {
       if (!db.session) return ko('Non connecté');
       const d = db.droits();
       if (nom === 'mes_droits') return ok([...d].sort());
+      if (nom === 'demander_validation_operation') {
+        if (!d.has('saisir_ecritures')) return ko('Droit « saisir les écritures » requis');
+        const tx = t.transactions.find((x) => x.id === args.p_transaction);
+        if (!tx || tx.sens !== 'depense' || tx.montant <= 0 || tx.contrepasse_de) return ko('Seule une dépense peut être soumise au président');
+        if (tx.request_id) return ko('Cette dépense a déjà une demande de validation');
+        const r = { id: uid(), demandeur: db.moi(), objet: tx.libelle, montant: tx.montant, category_id: tx.category_id, project_id: tx.project_id, account_id: tx.account_id,
+          statut: 'soumise', regularisation: true, validee_par: null, validee_le: null, signature_path: null, signature_hash: null, motif_refus: null,
+          payee_par: tx.created_by, payee_le: new Date(tx.date_op).toISOString(), created_at: new Date().toISOString() };
+        t.expense_requests.push(r); tx.request_id = r.id;
+        return ok(r.id);
+      }
       if (nom === 'modifier_mon_nom') {
         const p = t.profiles.find((x) => x.id === db.moi());
         if (!String(args.p_nom || '').trim()) return ko('Nom obligatoire');
@@ -460,6 +476,7 @@ export function createMockClient() {
         async createSignedUrls(chemins) { return ok(chemins.map((p) => ({ path: p, signedUrl: fichiers[bucket + '/' + p] || null }))); },
         async createSignedUrl(chemin) { return ok({ signedUrl: fichiers[bucket + '/' + chemin] || DOC_DEMO }); },
         getPublicUrl(chemin) { return { data: { publicUrl: fichiers[bucket + '/' + chemin] || 'logo.jpg' } }; },
+        async download(chemin) { const r = await fetch(fichiers[bucket + '/' + chemin] || DOC_DEMO); return ok(await r.blob()); },
       }),
     },
     auth: {

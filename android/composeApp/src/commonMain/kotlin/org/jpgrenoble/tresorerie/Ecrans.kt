@@ -2,6 +2,7 @@ package org.jpgrenoble.tresorerie
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -64,6 +65,10 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     var comptesTous by remember { mutableStateOf<List<Compte>>(emptyList()) }
     var cotis by remember { mutableStateOf<List<Cotisation>>(emptyList()) }
     val voitSoldes = d.peut("consulter_finances")
+    var nbComptes by remember { mutableStateOf(1) }
+    LaunchedEffect(Unit) {
+        if (d.peut("administrer")) try { nbComptes = Repo.profilsComplets().size + Repo.invitations().size } catch (_: Exception) { }
+    }
     LaunchedEffect(Unit) {
         try {
             anniv = Repo.anniversaires()
@@ -105,7 +110,18 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
         .map { (id, l) -> Element(d.categories.firstOrNull { it.id == id }?.nom ?: "", l.sumOf { it.montant }) }.sortedByDescending { it.valeur }
     val reserveTxt = reserve?.let { "${(kotlin.math.round(it * 10) / 10).toString().replace('.', ',').removeSuffix(",0")}$NBSP" + "mois" } ?: "–"
     val ecart12 = serie.firstOrNull()?.let { serie.last().solde - (it.solde - it.rec + it.dep) } ?: 0.0
+    // Bien démarrer : étapes de mise en route, cochées automatiquement
+    val etapesDemarrage = if (d.peut("administrer")) listOf(
+        "Créer votre fiche de membre" to (d.profil.memberId != null),
+        "Renseigner l’association : nom, logo, photo" to (d.organisation.logo != null || d.organisation.banniere != null),
+        "Saisir les soldes de départ des comptes" to comptesTous.ifEmpty { d.comptes }.any { it.soldeInitial != 0.0 },
+        "Ajouter les membres" to (d.membres.size > 1),
+        "Désigner le bureau : président, secrétaire…" to (nbComptes > 1),
+        "Générer les cotisations de l’année" to cotis.isNotEmpty(),
+    ) else emptyList()
+    val faites = etapesDemarrage.count { it.second }
     val rubriques = buildList {
+        if (etapesDemarrage.isNotEmpty() && faites < etapesDemarrage.size) add("demarrer")
         if (taches.isNotEmpty()) add("traiter")
         if (voitSoldes && operations.isNotEmpty()) addAll(listOf("chiffres", "evolution", "repartition"))
         add("anniversaires")
@@ -142,6 +158,22 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { val v = !toutOuvert; rubriques.forEach { EtatAccueil.ouvertes[it] = v } }) {
                     Text(if (toutOuvert) "Tout replier" else "Tout déplier")
+                }
+            }
+        }
+        if (etapesDemarrage.isNotEmpty() && faites < etapesDemarrage.size) item {
+            Rubrique("demarrer", "Bien démarrer", "$faites sur ${etapesDemarrage.size}") {
+                etapesDemarrage.forEachIndexed { i, (titre, fait) ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                        onAller(when (i) { 0, 3, 4 -> "membres"; 5 -> "cotisations"; else -> "parametres" })
+                    }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.size(26.dp).background(if (fait) Couleurs.Bleu else Color.Transparent, CircleShape)
+                            .then(if (fait) Modifier else Modifier.border(2.dp, Color(0xFFD9D3D0), CircleShape)), contentAlignment = Alignment.Center) {
+                            if (fait) Text("✓", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                        }
+                        Text(titre, fontWeight = FontWeight.SemiBold, color = if (fait) Couleurs.Texte2 else Couleurs.Texte,
+                            textDecoration = if (fait) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
+                    }
                 }
             }
         }
@@ -226,7 +258,7 @@ private fun Banniere(d: Donnees, contenu: @Composable ColumnScope.() -> Unit) {
                 Box(Modifier.size(48.dp).clip(CircleShape).background(Color.White)) { LogoAsso(Modifier.fillMaxSize()) }
                 Column(Modifier.weight(1f)) {
                     Text(d.organisation.nom, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("Bonjour ${d.profil.nom.substringBefore(' ')} · ${dateFr(aujourdhui().toString())}", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Bonjour ${d.membres.firstOrNull { it.id == d.profil.memberId }?.prenom ?: d.profil.nom.substringBefore('@').substringBefore(' ')} · ${dateFr(aujourdhui().toString())}", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             contenu()
@@ -440,7 +472,8 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
             else {
                 item { Text("${vues.size} opération${if (vues.size > 1) "s" else ""}", fontSize = 13.sp, color = Couleurs.Texte2) }
                 items(vues, key = { it.id }) { e ->
-                    LigneOperation(d, e, aPiece(e), e.id in contrepassees, nomTiers(e, d.membres, tiers), nomRubrique(e, collectes)) { detail = e }
+                    LigneOperation(d, e, aPiece(e), e.id in contrepassees, nomTiers(e, d.membres, tiers), nomRubrique(e, collectes),
+                        demandes.firstOrNull { it.id == e.demandeId }?.statut) { detail = e }
                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 }
             }
@@ -477,7 +510,7 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
 }
 
 @Composable
-private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepassee: Boolean, tiers: String, rubrique: String, onClick: () -> Unit) {
+private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepassee: Boolean, tiers: String, rubrique: String, statutDemande: String?, onClick: () -> Unit) {
     val cat = d.categories.firstOrNull { it.id == e.categorieId }?.nom ?: ""
     val compte = d.comptes.firstOrNull { it.id == e.compteId }?.nom ?: ""
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -486,7 +519,9 @@ private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepasse
                 color = if (contrepassee || e.contrepasseDe != null) Couleurs.Texte2 else Color.Unspecified)
             Text(listOf(dateFr(e.date), tiers, rubrique.ifBlank { cat }, compte).filter { it.isNotBlank() }.joinToString(" · "), fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (aPiece) Icon(Icons.Outlined.AttachFile, contentDescription = "Pièce jointe", tint = Couleurs.Texte2, modifier = Modifier.size(18.dp))
+        if (statutDemande == "soumise") Pastille("À valider", Couleurs.JauneClair, Couleurs.SurJaune)
+        else if (statutDemande == "refusee" && !contrepassee) Pastille("Refusée", Couleurs.ErreurClair, Color(0xFF410002))
+        if (aPiece) Icon(Icons.Outlined.AttachFile, contentDescription = "Pièce jointe", tint = Couleurs.Texte2, modifier = Modifier.padding(start = 6.dp).size(18.dp))
         Spacer(Modifier.width(8.dp))
         val v = e.signe
         Text((if (v >= 0) "+ " else "− ") + euros(kotlin.math.abs(v)),
@@ -528,6 +563,7 @@ internal fun LigneInfo(titre: String, valeur: String?) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pieces: List<Piece>, demandes: List<Demande>, projets: List<Projet>,
                             tiers: String, rubrique: String, message: (String) -> Unit, onFini: (Boolean) -> Unit) {
@@ -559,16 +595,25 @@ private fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pie
         LigneInfo("Activité", projets.firstOrNull { it.id == e.projetId }?.nom)
         LigneInfo("Tiers", tiers)
         LigneInfo("Rubrique", rubrique)
-        LigneInfo("Demande", demande?.let { x -> x.objet + (x.valideeLe?.let { ", validée le " + dateFr(it) } ?: "") })
+        LigneInfo("Validation", demande?.let { x -> when (x.statut) {
+            "soumise" -> "À valider par le président"
+            "refusee" -> "Refusée" + (x.motifRefus?.let { " : $it" } ?: "")
+            "annulee" -> "Demande annulée"
+            else -> "Validée" + (x.valideeLe?.let { " le " + dateFr(it.take(10)) } ?: "") + if (x.regularisation) " (après paiement)" else ""
+        } })
         LigneInfo("Rapprochée", if (e.rapproche || e.rapprochementId != null) "Oui" else "Non")
         LigneInfo("Corrige", origine?.let { "${it.libelle} du ${dateFr(it.date)}" })
         LigneInfo("Corrigée par", correction?.let { "Contre-passation du ${dateFr(it.date)}" })
         Spacer(Modifier.height(8.dp))
         PiecesVue(siennes, demande?.signature)
         Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (d.peut("saisir_ecritures") && e.contrepasseDe == null && correction == null)
                 TextButton(onClick = { confirmer = true }) { Text("Contre-passer", color = Couleurs.Erreur) }
+            if (d.peut("saisir_ecritures") && demande == null && e.sens == "depense" && e.montant > 0 && e.contrepasseDe == null && correction == null && !e.rapproche)
+                FilledTonalButton(onClick = {
+                    scope.launch { try { Repo.demanderValidation(e.id); message("Dépense envoyée au président pour validation"); onFini(true) } catch (x: Exception) { message(traduireErreur(x)) } }
+                }) { Text("Faire valider") }
             if (d.peut("saisir_ecritures", "payer_depenses"))
                 FilledTonalButton(onClick = choix) { Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Joindre une pièce") }
         }

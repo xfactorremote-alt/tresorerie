@@ -775,3 +775,87 @@ create policy "releves depot" on storage.objects for insert with check (bucket_i
 create policy "photos lecture" on storage.objects for select using (bucket_id = 'photos' and est_connecte());
 create policy "photos gestion" on storage.objects for all
   using (bucket_id = 'photos' and a_droit('gerer_membres')) with check (bucket_id = 'photos' and a_droit('gerer_membres'));
+
+-- =====================================================================
+-- 8. Compléments (mise en production)
+-- =====================================================================
+-- Nom affiché modifiable par chaque personne connectée
+create or replace function public.modifier_mon_nom(p_nom text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not est_connecte() then raise exception 'Non connecté'; end if;
+  if coalesce(trim(p_nom), '') = '' then raise exception 'Nom obligatoire'; end if;
+  update profiles set nom = left(trim(p_nom), 80) where id = auth.uid();
+end $$;
+
+-- Dépense saisie directement : validation du président a posteriori
+alter table expense_requests add column if not exists regularisation boolean not null default false;
+
+create or replace function public.demander_validation_operation(p_transaction uuid) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare t transactions; r_id uuid;
+begin
+  if not a_droit('saisir_ecritures') then raise exception 'Droit « saisir les écritures » requis'; end if;
+  select * into t from transactions where id = p_transaction for update;
+  if t.id is null then raise exception 'Opération introuvable'; end if;
+  if t.sens <> 'depense' or t.montant <= 0 or t.contrepasse_de is not null then raise exception 'Seule une dépense peut être soumise au président'; end if;
+  if t.request_id is not null then raise exception 'Cette dépense a déjà une demande de validation'; end if;
+  if exists (select 1 from transactions c where c.contrepasse_de = t.id) then raise exception 'Dépense annulée par contre-passation'; end if;
+  insert into expense_requests(demandeur, objet, montant, category_id, project_id, account_id, statut, regularisation, payee_par, payee_le, created_at)
+  values (auth.uid(), t.libelle, t.montant, t.category_id, t.project_id, t.account_id, 'soumise', true, t.created_by, t.date_op::timestamptz, now())
+  returning id into r_id;
+  update transactions set request_id = r_id where id = t.id;
+  return r_id;
+end $$;
+
+create or replace function check_transition() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.statut = old.statut then return new; end if;
+  if old.statut = 'soumise' and new.statut in ('validee','refusee') then
+    if not a_droit('valider_depenses') then raise exception 'Droit « valider les dépenses » requis'; end if;
+    if new.statut = 'validee' then
+      if new.signature_path is null then raise exception 'Signature obligatoire'; end if;
+      new.validee_par := auth.uid(); new.validee_le := now();
+      if old.regularisation then
+        new.statut := case when exists (select 1 from attachments a join transactions t on t.id = a.transaction_id where t.request_id = old.id)
+                           then 'justifiee'::statut_demande else 'payee'::statut_demande end;
+        new.payee_le := coalesce(old.payee_le, now());
+      end if;
+    end if;
+  elsif old.statut = 'validee' and new.statut = 'payee' then
+    if not a_droit('payer_depenses') then raise exception 'Droit « payer les dépenses » requis'; end if;
+    if old.validee_par = auth.uid() then raise exception 'La personne qui a validé ne peut pas payer'; end if;
+    new.payee_par := auth.uid(); new.payee_le := now();
+  elsif old.statut = 'payee' and new.statut = 'justifiee' then
+    if not (a_droit('saisir_ecritures') or a_droit('payer_depenses') or old.demandeur = auth.uid()) then
+      raise exception 'Le justificatif est déposé par le demandeur ou par la personne qui paie';
+    end if;
+    if not exists (select 1 from attachments a where a.request_id = old.id)
+       and not exists (select 1 from attachments a join transactions t on t.id = a.transaction_id where t.request_id = old.id)
+    then raise exception 'Justificatif manquant'; end if;
+  elsif old.statut = 'soumise' and new.statut = 'annulee' then
+    if old.demandeur <> auth.uid() then raise exception 'Seul le demandeur annule sa demande'; end if;
+  else
+    raise exception 'Changement de statut non autorisé';
+  end if;
+  return new;
+end $$;
+
+-- Fonctions fermées aux visiteurs non connectés ; déclencheurs jamais appelables directement
+revoke execute on function public.check_transition(), public.garde_administrateur(), public.lock_reconciled(), public.log_change(), public.handle_new_user()
+  from public, anon, authenticated;
+revoke execute on function
+  public.generer_cotisations(int), public.payer_demande(uuid, uuid, public.mode_paiement, date),
+  public.justifier_demande(uuid, text, text, int), public.solde_pointe(uuid),
+  public.terminer_rapprochement(uuid, date, date, numeric, text, text, int, uuid[]),
+  public.anniversaires_du_mois(int), public.ma_cotisation(), public.mes_participations(),
+  public.planning_activites(date, date), public.mes_droits(), public.modifier_mon_nom(text), public.demander_validation_operation(uuid)
+  from public, anon;
+grant execute on function
+  public.generer_cotisations(int), public.payer_demande(uuid, uuid, public.mode_paiement, date),
+  public.justifier_demande(uuid, text, text, int), public.solde_pointe(uuid),
+  public.terminer_rapprochement(uuid, date, date, numeric, text, text, int, uuid[]),
+  public.anniversaires_du_mois(int), public.ma_cotisation(), public.mes_participations(),
+  public.planning_activites(date, date), public.mes_droits(), public.modifier_mon_nom(text), public.demander_validation_operation(uuid)
+  to authenticated;

@@ -13,8 +13,8 @@ object Demo {
 
     val comptesTest = listOf(
         CompteDemo("tresorier@demo.jp", Profil("u-t", "Paul Ndongo", "tresorier")),
-        CompteDemo("president@demo.jp", Profil("u-p", "Jean-Marc Ilunga", "president")),
-        CompteDemo("bureau@demo.jp", Profil("u-b", "Marthe Kalala", "bureau")),
+        CompteDemo("president@demo.jp", Profil("u-p", "Jean-Marc Ilunga", "president", memberId = "m10")),
+        CompteDemo("bureau@demo.jp", Profil("u-b", "Marthe Kalala", "bureau", memberId = "m11")),
         CompteDemo("adherent@demo.jp", Profil("u-a", "Grâce Mbala", "adherent", memberId = "m0")),
     )
 
@@ -115,6 +115,20 @@ object Demo {
         try { verifierAdministrateur() } catch (e: Exception) { profils[i] = avant; throw e }
     }
 
+    fun lierProfil(id: String, membreId: String?, nom: String?, profil: Profil?) {
+        exiger(profil, "administrer")
+        val i = profils.indexOfFirst { it.id == id }
+        if (i >= 0) profils[i] = profils[i].copy(memberId = membreId, nom = nom ?: profils[i].nom)
+    }
+
+    fun modifierNom(id: String?, nom: String) {
+        val i = profils.indexOfFirst { it.id == id }
+        if (nom.isBlank()) throw IllegalStateException("Nom obligatoire")
+        if (i >= 0) profils[i] = profils[i].copy(nom = nom.trim().take(80))
+    }
+
+    fun emailDe(id: String?): String = comptesTest.firstOrNull { it.profil.id == id }?.email ?: ""
+
     fun inviter(i: Invitation, profil: Profil?) {
         exiger(profil, "administrer")
         if (invitations.any { it.email.equals(i.email, true) }) throw IllegalStateException("duplicate key")
@@ -174,6 +188,8 @@ object Demo {
         Membre("m7", "Élie", "Bamba", 14, 9, "Chauffeur", "06 12 34 56 77"),
         Membre("m8", "Naomie", "Kabongo", 22, 1),
         Membre("m9", "Josué", "Mensah", 1, 6, "Ingénieur", "06 12 34 56 79"),
+        Membre("m10", "Jean-Marc", "Ilunga", 17, 3, "Enseignant", "06 12 34 56 80"),
+        Membre("m11", "Marthe", "Kalala", 9, 12, "Secrétaire médicale"),
     )
     // Accord pour afficher l'anniversaire aux adhérents
     init {
@@ -260,7 +276,7 @@ object Demo {
         Solde(c.id, c.nom, c.type, (soldesDepart[c.id] ?: 0.0) + lignes.filter { it.e.compteId == c.id }.sumOf { it.e.signe })
     }
 
-    fun ajouter(n: NouvelleEcriture, profil: Profil?) {
+    fun ajouter(n: NouvelleEcriture, profil: Profil?): String {
         val d = droitsDe(profil)
         val rubrique = n.sens == "recette" && (n.estCotisation || n.collecteId != null) && "gerer_cotisations" in d
         if ("saisir_ecritures" !in d && !rubrique) throw IllegalStateException("row-level security")
@@ -270,6 +286,22 @@ object Demo {
         lignes += Ligne(Ecriture("e${compteur++}", n.date, n.compteId, n.sens, n.montant, n.categorieId, n.libelle, n.mode,
             projetId = n.projetId, contrepasseDe = n.contrepasseDe, membreId = n.membreId, tiersId = n.tiersId,
             estCotisation = n.estCotisation, collecteId = n.collecteId))
+        return lignes.last().e.id
+    }
+
+    // Dépense saisie directement : demande de validation a posteriori, rattachée à l'opération
+    fun demanderValidation(transactionId: String, profil: Profil?): String {
+        exiger(profil, "saisir_ecritures")
+        val i = lignes.indexOfFirst { it.e.id == transactionId }
+        if (i < 0) throw IllegalStateException("Opération introuvable")
+        val t = lignes[i].e
+        if (t.sens != "depense" || t.montant <= 0 || t.contrepasseDe != null) throw IllegalStateException("Seule une dépense peut être soumise au président")
+        if (t.demandeId != null) throw IllegalStateException("Cette dépense a déjà une demande de validation")
+        val id = "r${compteur++}"
+        demandesListe += Demande(id, profil!!.id, t.libelle, t.montant, t.categorieId, t.projetId, "soumise", payeeLe = t.date,
+            creeLe = aujourdhui().toString(), regularisation = true)
+        lignes[i].e = t.copy(demandeId = id)
+        return id
     }
 
     // Comme la vue v_cotisations_periodes : versements imputés sur les périodes les plus anciennes
@@ -434,7 +466,9 @@ object Demo {
             }
             "annulee" -> if (d.demandeur != profil?.id || d.statut != "soumise") throw IllegalStateException("Seul le demandeur annule sa demande")
         }
-        demandesListe[i] = d.copy(statut = statut, signature = signature ?: d.signature, motifRefus = motif,
+        val final = if (statut == "validee" && d.regularisation)
+            (if (pieces.any { p -> lignes.any { it.e.demandeId == d.id && it.e.id == p.transactionId } }) "justifiee" else "payee") else statut
+        demandesListe[i] = d.copy(statut = final, signature = signature ?: d.signature, motifRefus = motif,
             valideeLe = if (statut == "validee") aujourdhui().toString() else d.valideeLe,
             valideePar = if (statut == "validee") profil?.id else d.valideePar)
     }
@@ -527,12 +561,13 @@ object Demo {
     fun sauvegardeJson(): String = """{"format":"tresorerie-jp-v1","demonstration":true,"membres":${membres.size},"ecritures":${lignes.size}}"""
 
     // ---------- Membres ----------
-    fun ajouterMembre(n: NouveauMembre, profil: Profil?) {
+    fun ajouterMembre(n: NouveauMembre, profil: Profil?): String {
         exiger(profil, "gerer_membres")
         val m = Membre("m${compteur++}", n.prenom, n.nom, n.jour, n.mois, n.profession, n.whatsapp, consentement = n.consentement, email = n.email)
         membres += m
         val auj = aujourdhui()
         for (mo in auj.monthNumber..12) cotisationsDues[m.id to "${auj.year}-${p2(mo)}-01"] = reglages["cotisation_montant"] ?: 20.0
+        return m.id
     }
 
     fun majMembre(id: String, n: NouveauMembre, actif: Boolean, photo: String?, profil: Profil?) {

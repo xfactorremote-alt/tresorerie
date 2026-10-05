@@ -13,9 +13,10 @@ import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -53,11 +54,23 @@ fun App() = Theme {
             val p = profil
             if (p == null) Connexion() else Principal(cle = p.id)
         } else {
+            // Au retour dans l'application (choix d'une photo, d'un fichier…), Supabase revérifie la
+            // session : l'état passe un instant par « Initializing » ou « RefreshFailure » (réseau).
+            // L'écran principal reste affiché tant que la personne ne s'est pas déconnectée.
             val statut by Repo.client.auth.sessionStatus.collectAsState()
-            when (statut) {
-                is SessionStatus.Authenticated -> Principal(cle = "supabase")
-                is SessionStatus.NotAuthenticated, is SessionStatus.RefreshFailure -> Connexion()
-                else -> Chargement()
+            var connecte by rememberSaveable { mutableStateOf<Boolean?>(null) }
+            LaunchedEffect(statut) {
+                when (statut) {
+                    is SessionStatus.Authenticated -> connecte = true
+                    is SessionStatus.NotAuthenticated -> connecte = false
+                    is SessionStatus.RefreshFailure -> if (connecte == null) connecte = false
+                    else -> {}
+                }
+            }
+            when (connecte) {
+                true -> Principal(cle = "supabase")
+                false -> Connexion()
+                null -> Chargement()
             }
         }
     }
@@ -144,7 +157,7 @@ fun Connexion() {
     }
 }
 
-private enum class Onglet(val titre: String) { Accueil("Accueil"), Operations("Opérations"), Depenses("Dépenses"), Cotisations("Cotisations"), Plus("Plus") }
+private enum class Onglet(val titre: String) { Accueil("Accueil"), Operations("Opérations"), Depenses("Demandes"), Cotisations("Cotisations"), Plus("Plus") }
 
 @Composable
 fun Principal(cle: String) {
@@ -195,12 +208,10 @@ private fun MessagePlein(titre: String, texte: String, action: String = "Se déc
     }
 }
 
-// Barre du haut : logo et nom de l'association, retour, menu du profil (déconnexion discrète)
+// Barre du haut : logo et nom de l'association, retour ; Paramètres (compte, déconnexion) à droite
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BarreHaut(d: Donnees, retour: (() -> Unit)?, onMonEspace: (() -> Unit)?) {
-    var menu by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+private fun BarreHaut(d: Donnees, retour: (() -> Unit)?, surReglages: Boolean, onReglages: () -> Unit) {
     TopAppBar(
         navigationIcon = {
             if (retour != null) IconButton(onClick = retour) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour") }
@@ -208,19 +219,8 @@ private fun BarreHaut(d: Donnees, retour: (() -> Unit)?, onMonEspace: (() -> Uni
         },
         title = { Text(d.organisation.nom, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         actions = {
-            Box {
-                IconButton(onClick = { menu = true }) { Avatar(d.profil.nom.substringBefore(' '), d.profil.nom.substringAfter(' ', ""), taille = 34) }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text(d.profil.nom, fontWeight = FontWeight.Bold)
-                        Text(d.nomRole(d.profil.role), fontSize = 13.sp, color = Couleurs.Texte2)
-                    }
-                    HorizontalDivider()
-                    if (onMonEspace != null) DropdownMenuItem(text = { Text("Ma cotisation") }, onClick = { menu = false; onMonEspace() },
-                        leadingIcon = { Icon(Icons.Outlined.Person, null) })
-                    DropdownMenuItem(text = { Text("Se déconnecter") }, onClick = { menu = false; scope.launch { Repo.deconnecter() } },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null) })
-                }
+            IconButton(onClick = onReglages, colors = if (surReglages) IconButtonDefaults.iconButtonColors(containerColor = Couleurs.OrangeClair, contentColor = Couleurs.SurOrangeClair) else IconButtonDefaults.iconButtonColors()) {
+                Icon(Icons.Outlined.Settings, contentDescription = "Paramètres")
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -237,15 +237,15 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
             Onglet.Cotisations -> d.peut("gerer_cotisations", "consulter_finances")
         }
     }
-    var onglet by remember { mutableStateOf(Onglet.Accueil) }
-    var sousEcran by remember { mutableStateOf<String?>(null) }
+    var onglet by rememberSaveable { mutableStateOf(Onglet.Accueil) }
+    var sousEcran by rememberSaveable { mutableStateOf<String?>(null) }
     var compteFiltre by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val message: (String) -> Unit = { m -> scope.launch { snackbar.showSnackbar(m) } }
     // Personne sans droit financier : espace adhérent seul
     val adherentSeul = d.droits.isEmpty()
-    var vueAdherent by remember { mutableStateOf(0) }   // 0 : accueil, 1 : planning
+    var vueAdherent by rememberSaveable { mutableStateOf(0) }   // 0 : accueil, 1 : planning
     val retour: (() -> Unit)? = when {
         onglet == Onglet.Plus && sousEcran != null && !adherentSeul -> { { sousEcran = null } }
         adherentSeul && sousEcran != null -> { { sousEcran = null } }
@@ -255,12 +255,12 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
         if (vueAdherent == 1) vueAdherent = 0 else if (retour != null) retour() else onglet = Onglet.Accueil
     }
     Scaffold(
-        topBar = { BarreHaut(d, retour, if (d.profil.memberId != null && !adherentSeul) ({ onglet = Onglet.Plus; sousEcran = "moi" }) else null) },
+        topBar = { BarreHaut(d, retour, sousEcran == "parametres") { if (!adherentSeul) onglet = Onglet.Plus; sousEcran = "parametres" } },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (adherentSeul) NavigationBar {
                 listOf("Accueil" to Icons.Outlined.Home, "Planning" to Icons.Outlined.Event).forEachIndexed { i, (l, ic) ->
-                    NavigationBarItem(selected = vueAdherent == i, onClick = { vueAdherent = i }, icon = { Icon(ic, contentDescription = null) }, label = { Text(l) })
+                    NavigationBarItem(selected = vueAdherent == i && sousEcran == null, onClick = { vueAdherent = i; sousEcran = null }, icon = { Icon(ic, contentDescription = null) }, label = { Text(l) })
                 }
             } else NavigationBar {
                 onglets.forEach { o ->
@@ -282,12 +282,16 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
         },
     ) { marges ->
         Box(Modifier.padding(marges).consumeWindowInsets(marges).fillMaxSize()) {
-            if (adherentSeul) { if (vueAdherent == 1) EcranPlanning(d, message) else EcranAdherent(d) { vueAdherent = 1 } }
+            if (adherentSeul) {
+                if (sousEcran == "parametres") EcranParametres(d, message, recharger)
+                else if (vueAdherent == 1) EcranPlanning(d, message) else EcranAdherent(d) { vueAdherent = 1 }
+            }
             else when (onglet) {
                 Onglet.Accueil -> EcranAccueil(d, onAller = { cible ->
                     when {
                         cible == "depenses" -> onglet = Onglet.Depenses
                         cible.startsWith("operations:") -> { compteFiltre = cible.substringAfter(':'); onglet = Onglet.Operations }
+                        cible == "cotisations" -> onglet = Onglet.Cotisations
                         else -> { sousEcran = cible; onglet = Onglet.Plus }
                     }
                 })
@@ -295,13 +299,13 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
                 Onglet.Depenses -> EcranDepenses(d, message)
                 Onglet.Cotisations -> EcranCotisations(d, message)
                 Onglet.Plus -> when (sousEcran) {
-                    "membres" -> EcranMembres(d, message)
+                    "membres" -> EcranMembres(d, message, recharger)
                     "budget" -> EcranBudget(d, message)
                     "activites" -> EcranPlanning(d, message)
                     "tiers" -> EcranTiers(d, message)
                     "rapprochement" -> EcranRapprochement(d, message)
                     "rapports" -> EcranRapports(d, message)
-                    "parametres" -> if (d.peut("administrer")) EcranParametres(d, message, recharger) else EcranPlus(d) { sousEcran = it }
+                    "parametres" -> EcranParametres(d, message, recharger)
                     "moi" -> EcranAdherent(d)
                     else -> EcranPlus(d) { sousEcran = it }
                 }

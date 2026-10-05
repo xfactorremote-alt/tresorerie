@@ -420,3 +420,32 @@ input,select,textarea{max-width:100%;min-width:0}
 
 @media (max-width:899px){.entete{top:var(--bandeau,0px)}}
 @media (max-width:699px){.onglets-defile{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px 8px}.onglets-defile::-webkit-scrollbar{display:none}.onglets-defile button{flex:none}}
+
+/* ---------- Documents PDF ---------- */
+.doc-entete{display:flex;gap:16px;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:3px solid #C23E10}
+.doc-entete img{width:58px;height:58px;border-radius:50%;object-fit:cover}
+.doc-entete>div:nth-child(2){flex:1;display:flex;flex-direction:column;gap:2px}
+.doc-asso{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#C23E10}
+.doc-entete h1{font-size:20px;margin:0;line-height:1.2}
+.doc-periode{font-size:12px;color:#5A5350}
+.doc-edition{font-size:10.5px;color:#5A5350;text-align:right;line-height:1.4}
+.doc-synthese{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:16px}
+.doc-synthese div{background:#F6F6F6;border-radius:10px;padding:8px 10px;display:flex;flex-direction:column}
+.doc-synthese span{font-size:10.5px;color:#5A5350}.doc-synthese b{font-size:15px;font-variant-numeric:tabular-nums}
+.doc-table{width:100%;border-collapse:collapse;font-size:11px}
+.doc-table th{background:#1C1B1A;color:#fff;font-weight:600;text-align:left;padding:6px;font-size:10.5px}
+.doc-table td{padding:5px 6px;border-bottom:1px solid #E5E0DE;vertical-align:top}
+.doc-table tbody tr:nth-child(even) td{background:#FAF8F7}
+.doc-table tfoot td{border-top:2px solid #1C1B1A;border-bottom:0;background:#fff;padding-top:7px}
+.doc-table .d{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.doc-table thead{display:table-header-group}.doc-table tr{break-inside:avoid}
+.empreinte{font-family:ui-monospace,monospace;font-size:9.5px;color:#5A5350}
+.choix-format{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.choix-format .choix{display:flex;flex-direction:column;gap:4px;text-align:left;align-items:flex-start;border:1px solid var(--bord);cursor:pointer;min-height:96px}
+.choix-format .choix b{font-size:18px}
+.choix-format .choix:hover{border-color:var(--primaire)}
+.docs-pdf{display:flex;flex-wrap:wrap;gap:8px}
+@media print{.doc-synthese div{background:#F6F6F6 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.doc-table th{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media print{.rapport-page table.doc-table{break-inside:auto}html,body,body.avec-rapport{background:#fff !important}.doc-synthese,.doc-entete{break-inside:avoid}}
+.doc-table .nw{white-space:nowrap}.doc-table td.large{min-width:150px}
+@media print{.doc-table tfoot{display:table-row-group}}

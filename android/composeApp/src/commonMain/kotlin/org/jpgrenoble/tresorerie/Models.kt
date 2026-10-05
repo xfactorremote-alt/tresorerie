@@ -184,6 +184,8 @@ data class Demande(
     @SerialName("signature_path") val signature: String? = null,
     @SerialName("created_at") val creeLe: String = "",
     @SerialName("validee_par") val valideePar: String? = null,
+    val regularisation: Boolean = false,
+    @SerialName("signature_hash") val empreinte: String? = null,
 )
 
 @Serializable
@@ -234,6 +236,7 @@ data class Rapprochement(
     @SerialName("solde_releve") val soldeReleve: Double,
     val statut: String,
     @SerialName("termine_le") val termineLe: String? = null,
+    @SerialName("statement_path") val releve: String? = null,
 )
 
 @Serializable

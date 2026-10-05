@@ -46,25 +46,107 @@ private fun nombre(s: String) = s.replace(',', '.').replace(" ", "").replace(NBS
 // =====================================================================
 // Paramètres (droit « administrer ») : quatre onglets
 // =====================================================================
-private val ONGLETS_PARAM = listOf("Association", "Comptes", "Rôles et droits", "Personnes")
+private val ONGLETS_PARAM = listOf("Mon compte", "Association", "Comptes", "Rôles et droits", "Accès")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit) {
-    var onglet by remember { mutableStateOf(0) }
+    var onglet by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         Text("Paramètres", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp))
-        ScrollableTabRow(selectedTabIndex = onglet, edgePadding = 16.dp, containerColor = MaterialTheme.colorScheme.background) {
+        val admin = d.peut("administrer")
+        if (admin) ScrollableTabRow(selectedTabIndex = onglet, edgePadding = 16.dp, containerColor = MaterialTheme.colorScheme.background) {
             ONGLETS_PARAM.forEachIndexed { i, t -> Tab(selected = onglet == i, onClick = { onglet = i }, text = { Text(t, maxLines = 1) }) }
         }
         Box(Modifier.weight(1f)) {
-            when (onglet) {
-                0 -> ParamAssociation(d, message, recharger)
-                1 -> ParamComptes(d, message, recharger)
-                2 -> ParamRoles(d, message, recharger)
+            when (if (admin) onglet else 0) {
+                0 -> ParamCompte(d, message, recharger)
+                1 -> ParamAssociation(d, message, recharger)
+                2 -> ParamComptes(d, message, recharger)
+                3 -> ParamRoles(d, message, recharger)
                 else -> ParamPersonnes(d, message)
             }
         }
+    }
+}
+
+// Mon compte : nom affiché, fiche de membre, mot de passe, déconnexion
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ParamCompte(d: Donnees, message: (String) -> Unit, recharger: () -> Unit) {
+    var nom by remember { mutableStateOf(d.profil.nom) }
+    var mdp by remember { mutableStateOf("") }
+    var creerFiche by remember { mutableStateOf(false) }
+    var modifierFiche by remember { mutableStateOf(false) }
+    var profils by remember { mutableStateOf<List<Profil>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+    val action = rememberAction(message, recharger)
+    val fiche = d.membres.firstOrNull { it.id == d.profil.memberId }
+    val email = remember { Repo.emailConnecte() }
+    LaunchedEffect(Unit) { if (d.peut("administrer")) try { profils = Repo.profilsComplets() } catch (_: Exception) { } }
+    val libres = d.membres.filter { m -> m.actif && profils.none { it.memberId == m.id } }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            CarteBlanche {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Avatar(d.profil.nom.substringBefore(' '), d.profil.nom.substringAfter(' ', ""), taille = 52)
+                    Column {
+                        Text(d.profil.nom, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        if (email.isNotBlank()) Text(email, color = Couleurs.Texte2, fontSize = 14.sp)
+                        Text(d.nomRole(d.profil.role), color = Couleurs.SurBleuClair, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 4.dp).background(Couleurs.BleuClair, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 3.dp))
+                    }
+                }
+                OutlinedTextField(nom, { nom = it.take(80) }, label = { Text("Nom affiché") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                FilledTonalButton(enabled = nom.isNotBlank() && nom.trim() != d.profil.nom, modifier = Modifier.align(Alignment.End),
+                    onClick = { action({ Repo.modifierMonNom(nom.trim()) }, "Nom enregistré") }) { Text("Enregistrer") }
+            }
+        }
+        item {
+            CarteBlanche {
+                Text("Ma fiche de membre", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (fiche != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Avatar(fiche.prenom, fiche.nom)
+                        Column {
+                            Text(fiche.nomComplet, fontWeight = FontWeight.SemiBold)
+                            Text("${fiche.jour} ${MOIS[fiche.mois - 1]}" + (fiche.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
+                        }
+                    }
+                    if (d.peut("gerer_membres")) FilledTonalButton(onClick = { modifierFiche = true }) { Text("Modifier ma fiche") }
+                } else if (d.peut("gerer_membres")) {
+                    Text("Aucune fiche rattachée à votre compte.", color = Couleurs.Texte2)
+                    Button(onClick = { creerFiche = true }) { Text("Créer ma fiche") }
+                    if (libres.isNotEmpty()) ChoixListe("Ou rattacher une fiche existante", "Choisir un membre", libres.map { it.nomComplet }) { i ->
+                        val m = libres[i]; action({ Repo.lierProfil(d.profil.id, m.id, m.nomComplet) }, "Fiche rattachée")
+                    }
+                } else Text("Aucune fiche rattachée à votre compte. Le trésorier peut la rattacher.", color = Couleurs.Texte2)
+            }
+        }
+        item {
+            CarteBlanche {
+                Text("Mot de passe", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                OutlinedTextField(mdp, { mdp = it }, label = { Text("Nouveau mot de passe (8 caractères minimum)") }, singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+                FilledTonalButton(enabled = mdp.length >= 8, modifier = Modifier.align(Alignment.End), onClick = {
+                    scope.launch { try { Repo.changerMotDePasse(mdp); mdp = ""; message("Mot de passe modifié") } catch (e: Exception) { message(traduireErreur(e)) } }
+                }) { Text("Modifier") }
+            }
+        }
+        item {
+            CarteBlanche {
+                Text("Session", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (email.isNotBlank()) Text("Connecté avec $email", color = Couleurs.Texte2)
+                Button(onClick = { scope.launch { Repo.deconnecter() } },
+                    colors = ButtonDefaults.buttonColors(containerColor = Couleurs.ErreurClair, contentColor = Color(0xFF410002))) { Text("Se déconnecter", fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+    if (creerFiche || modifierFiche) ModalBottomSheet(onDismissRequest = { creerFiche = false; modifierFiche = false }) {
+        FicheMembre(if (modifierFiche) fiche else null, d.membres, titre = if (creerFiche) "Ma fiche de membre" else null,
+            onCree = { id, n -> Repo.lierProfil(d.profil.id, id, n) },
+            onFini = { ok -> if (ok) { message(if (creerFiche) "Votre fiche est créée" else "Fiche modifiée"); recharger() }; creerFiche = false; modifierFiche = false }, message = message)
     }
 }
 
@@ -687,8 +769,13 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
 // =====================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EcranMembres(d: Donnees, message: (String) -> Unit) {
+fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = {}) {
     var membres by remember { mutableStateOf(d.membres) }
+    var profils by remember { mutableStateOf<List<Profil>>(emptyList()) }
+    var invitations by remember { mutableStateOf<List<Invitation>>(emptyList()) }
+    var fonction by remember { mutableStateOf<Membre?>(null) }
+    var maFiche by remember { mutableStateOf(false) }
+    val admin = d.peut("administrer")
     var recherche by remember { mutableStateOf("") }
     var fiche by remember { mutableStateOf<Membre?>(null) }
     var ajout by remember { mutableStateOf(false) }
@@ -702,35 +789,74 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit) {
     LaunchedEffect(version) {
         try {
             if (version > 0) membres = Repo.membres()
+            if (d.peut("administrer", "consulter_finances", "valider_depenses", "payer_depenses")) profils = Repo.profilsComplets()
+            if (admin) invitations = Repo.invitations()
             photos = membres.mapNotNull { m -> m.photo?.let { ch -> try { Repo.telecharger("photos", ch)?.let { imageDepuisOctets(it) }?.let { m.id to it } } catch (_: Exception) { null } } }.toMap()
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
+    // Fonction de chaque membre : rôle de son compte ou de son invitation
+    fun fonctionDe(m: Membre): Pair<String, String>? =
+        profils.firstOrNull { it.memberId == m.id }?.let { it.role to (if (it.actif) "compte" else "coupe") }
+            ?: invitations.firstOrNull { it.membreId == m.id }?.let { it.role to "invite" }
     val vus = membres.filter { recherche.isBlank() || it.nomComplet.lowercase().contains(recherche.trim().lowercase()) }
+    val bureau = vus.filter { fonctionDe(it)?.first?.let { r -> r != "adherent" } == true }.sortedBy { rangRole(fonctionDe(it)!!.first) }
+    val autres = vus - bureau.toSet()
+    val sansFiche = d.profil.memberId == null && d.peut("gerer_membres")
+    val ligne: @Composable (Membre) -> Unit = { m ->
+        Row(Modifier.fillMaxWidth().clickable(enabled = d.peut("gerer_membres")) { fiche = m }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            val img = photos[m.id]
+            if (img != null) Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.size(44.dp).clip(CircleShape))
+            else Box(Modifier.size(44.dp).background(Couleurs.OrangeClair, CircleShape), contentAlignment = Alignment.Center) {
+                Text("${m.prenom.take(1)}${m.nom.take(1)}", color = Couleurs.SurOrangeClair, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(m.nomComplet + (if (m.id == d.profil.memberId) " (vous)" else "") + if (!m.actif) " (inactif)" else "", fontWeight = FontWeight.SemiBold)
+                Text("${m.jour} ${MOIS[m.mois - 1]}" + (m.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
+                val f = fonctionDe(m)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    when {
+                        f == null -> {}
+                        f.second == "invite" -> Puce("${d.nomRole(f.first)} · invité", Couleurs.JauneClair, Couleurs.SurJaune)
+                        f.second == "coupe" -> Puce("${d.nomRole(f.first)} · accès coupé", Color(0xFFEFEDEC), Couleurs.Texte2)
+                        f.first == "adherent" -> Puce("Accès adhérent", Color(0xFFEFEDEC), Couleurs.Texte2)
+                        else -> Puce(d.nomRole(f.first), Couleurs.BleuClair, Couleurs.SurBleuClair)
+                    }
+                    if (!m.consentement) Puce("Sans accord", Color(0xFFEFEDEC), Couleurs.Texte2)
+                }
+            }
+            if (admin) TextButton(onClick = { fonction = m }) { Text("Fonction") }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+    }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp)) {
             item {
                 Titre("Membres") { if (d.peut("gerer_membres")) TextButton(onClick = choixCsv) { Text("Importer") } }
             }
             item { Text("${membres.count { it.actif }} actifs", color = Couleurs.Texte2, modifier = Modifier.padding(bottom = 8.dp)) }
+            if (sansFiche) item {
+                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Vous n’êtes pas encore dans la liste.", fontWeight = FontWeight.Bold)
+                        Text("On est d’abord membre, puis on reçoit une fonction.", fontSize = 14.sp)
+                        Button(onClick = { maFiche = true }) { Text("Créer ma fiche") }
+                    }
+                }
+            }
             item {
                 OutlinedTextField(recherche, { recherche = it }, label = { Text("Rechercher") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
             }
-            items(vus, key = { it.id }) { m ->
-                Row(Modifier.fillMaxWidth().clickable(enabled = d.peut("gerer_membres")) { fiche = m }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val img = photos[m.id]
-                    if (img != null) Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.size(44.dp).clip(CircleShape))
-                    else Box(Modifier.size(44.dp).background(Couleurs.OrangeClair, CircleShape), contentAlignment = Alignment.Center) {
-                        Text("${m.prenom.take(1)}${m.nom.take(1)}", color = Couleurs.SurOrangeClair, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(m.nomComplet + if (!m.actif) " (inactif)" else "", fontWeight = FontWeight.SemiBold)
-                        Text("${m.jour} ${MOIS[m.mois - 1]}" + (m.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
-                    }
-                    if (!m.consentement) Puce("Sans accord", Color(0xFFEFEDEC), Couleurs.Texte2)
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+            if (bureau.isNotEmpty()) {
+                item { Text("Bureau", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
+                items(bureau, key = { "b-" + it.id }) { ligne(it) }
+                item { Text("Membres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp)) }
+            }
+            items(autres, key = { it.id }) { ligne(it) }
+            if (admin) item {
+                Text("Pour désigner un membre du bureau : « Fonction » sur sa ligne, puis choisissez sa fonction. Les fonctions et leurs droits se règlent dans Paramètres, Rôles et droits.",
+                    fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.padding(top = 16.dp))
             }
         }
         if (d.peut("gerer_membres")) {
@@ -741,6 +867,13 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit) {
     }
     if (ajout || fiche != null) ModalBottomSheet(onDismissRequest = { ajout = false; fiche = null }) {
         FicheMembre(fiche, membres, onFini = { ok -> if (ok) { message(if (fiche != null) "Fiche modifiée" else "Membre ajouté"); version++ }; ajout = false; fiche = null }, message)
+    }
+    if (maFiche) ModalBottomSheet(onDismissRequest = { maFiche = false }) {
+        FicheMembre(null, membres, titre = "Ma fiche de membre", onCree = { id, n -> Repo.lierProfil(d.profil.id, id, n) },
+            onFini = { ok -> maFiche = false; if (ok) { message("Votre fiche est créée"); recharger() } }, message = message)
+    }
+    fonction?.let { m ->
+        FeuilleFonction(d, m, profils, invitations, onFini = { msg -> fonction = null; if (msg != null) { message(msg); version++; if (profils.any { it.id == d.profil.id && it.memberId == m.id }) recharger() } }, message = message)
     }
     aImporter?.let { (ok, erreurs) ->
         AlertDialog(
@@ -766,8 +899,81 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit) {
     }
 }
 
+private val ORDRE_ROLES = listOf("president", "vice_president", "tresorier", "tresorier_adjoint", "secretaire", "bureau")
+private fun rangRole(r: String): Int = ORDRE_ROLES.indexOf(r).let { if (it >= 0) it else if (r == "adherent") 99 else 50 }
+
+// Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -> Unit, message: (String) -> Unit) {
+private fun FeuilleFonction(d: Donnees, m: Membre, profils: List<Profil>, invitations: List<Invitation>, onFini: (String?) -> Unit, message: (String) -> Unit) {
+    val compte = profils.firstOrNull { it.memberId == m.id }
+    val invitation = invitations.firstOrNull { it.membreId == m.id }
+    val roles = d.roles.sortedBy { rangRole(it.code) }
+    var role by remember { mutableStateOf(compte?.role ?: invitation?.role ?: "adherent") }
+    var actif by remember { mutableStateOf(compte?.actif ?: true) }
+    var email by remember { mutableStateOf(m.email ?: "") }
+    var lier by remember { mutableStateOf<Profil?>(null) }
+    var envoye by remember { mutableStateOf(false) }
+    var enCours by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val libres = profils.filter { it.memberId == null }
+    val emailOk = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(email.trim())
+    ModalBottomSheet(onDismissRequest = { onFini(if (envoye) "Accès accordé" else null) }) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Accès et fonction", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Avatar(m.prenom, m.nom)
+                Column { Text(m.nomComplet, fontWeight = FontWeight.SemiBold); Text(m.profession ?: "Membre", fontSize = 13.sp, color = Couleurs.Texte2) }
+            }
+            if (envoye) {
+                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Accès accordé", fontWeight = FontWeight.Bold)
+                        Text("${m.prenom} crée son compte avec ${email.trim()} sur le site ou dans l’application ; sa fonction s’applique dès la création.", fontSize = 14.sp)
+                        val texte = "Bonjour ${m.prenom}, votre accès à la trésorerie ${d.organisation.nom} est prêt. Créez votre compte avec l’adresse ${email.trim()}."
+                        numeroWa(m.whatsapp ?: "")?.let { wa -> FilledTonalButton(onClick = { uri.openUri("https://wa.me/$wa?text=" + encoderUrl(texte)) }) { Text("Prévenir par WhatsApp") } }
+                        TextButton(onClick = { onFini("Accès accordé") }) { Text("Terminer") }
+                    }
+                }
+                return@Column
+            }
+            val statut = when { compte != null -> if (compte.actif) "Compte actif" else "Accès coupé"; invitation != null -> "Invitation en attente · ${invitation.email}"; else -> "Sans accès" }
+            Text(statut, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+            if (compte == null && invitation == null && lier == null)
+                OutlinedTextField(email, { email = it.trim() }, label = { Text("E-mail de connexion") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
+            ChoixListe("Fonction", roles.firstOrNull { it.code == role }?.nom ?: role, roles.map { it.nom }) { role = roles[it].code }
+            if (compte != null && compte.id != d.profil.id) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { actif = !actif }) {
+                Checkbox(actif, { actif = it }); Text("Accès à la plateforme", fontSize = 14.sp)
+            }
+            if (compte == null && invitation == null && libres.isNotEmpty())
+                ChoixListe("Ou rattacher un compte déjà créé", lier?.nom ?: "Aucun", listOf("Aucun") + libres.map { it.nom }) { lier = if (it == 0) null else libres[it - 1] }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.align(Alignment.End)) {
+                if (invitation != null) TextButton(onClick = { scope.launch { try { Repo.retirerInvitation(invitation.email); onFini("Invitation annulée") } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("Annuler l’invitation") }
+                else TextButton(onClick = { onFini(null) }) { Text("Fermer") }
+                Button(enabled = !enCours && (compte != null || invitation != null || lier != null || emailOk), onClick = {
+                    enCours = true
+                    scope.launch {
+                        try {
+                            when {
+                                compte != null -> { Repo.majProfil(compte.id, role = role, actif = if (compte.id == d.profil.id) null else actif); onFini("Fonction enregistrée") }
+                                invitation != null -> { Repo.majInvitation(invitation.email, role); onFini("Fonction enregistrée") }
+                                lier != null -> { Repo.majProfil(lier!!.id, role = role); Repo.lierProfil(lier!!.id, m.id, m.nomComplet); onFini("Compte rattaché") }
+                                else -> { Repo.inviter(Invitation(email.trim().lowercase(), m.nomComplet, role, m.id)); envoye = true; enCours = false }
+                            }
+                        } catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
+                    }
+                }) { Text(if (compte != null || invitation != null) "Enregistrer" else "Donner l’accès") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -> Unit, message: (String) -> Unit,
+                        titre: String? = null, onCree: (suspend (String, String) -> Unit)? = null) {
     var prenom by remember { mutableStateOf(m?.prenom ?: "") }
     var nom by remember { mutableStateOf(m?.nom ?: "") }
     var jour by remember { mutableStateOf(m?.jour) }
@@ -785,7 +991,7 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
     val valide = prenom.isNotBlank() && nom.isNotBlank() && jour != null && mois != null && (whatsapp.isBlank() || numeroWa(whatsapp) != null)
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(if (m == null) "Nouveau membre" else "Modifier la fiche", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(titre ?: if (m == null) "Nouveau membre" else "Modifier la fiche", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             val apercu = remember(photo) { photo?.let { imageDepuisOctets(it.octets) } }
             if (apercu != null) Image(apercu, null, contentScale = ContentScale.Crop, modifier = Modifier.size(56.dp).clip(CircleShape))
@@ -824,8 +1030,9 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
                         val n = NouveauMembre(prenom.trim(), nom.trim(), jour!!, mois!!, profession.trim().ifBlank { null }, whatsapp.trim().ifBlank { null },
                             accord, if (m == null) aujourdhui().toString() else null, email.trim().ifBlank { null })
                         if (m == null) {
-                            Repo.ajouterMembre(n)
-                            if (photo != null) Repo.membres().lastOrNull { it.nomComplet == "${n.prenom} ${n.nom}" }?.let { Repo.majMembre(it.id, n, true, photo) }
+                            val id = Repo.ajouterMembre(n)
+                            if (photo != null) Repo.majMembre(id, n, true, photo)
+                            onCree?.invoke(id, "${n.prenom} ${n.nom}")
                         } else Repo.majMembre(m.id, n, actif, photo)
                         onFini(true)
                     } catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
@@ -937,6 +1144,35 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
                 Button(enabled = !enCours && dDebut != null && dFin != null && dFin >= dDebut, onClick = {
                     lancer { imprimer("Rapport", rapportHtml(d, dDebut.toString(), dFin.toString(), "Rapport de trésorerie du $debut au $fin")) }
                 }) { Text("Imprimer ou PDF") }
+            }
+        }
+        item {
+            CarteBlanche {
+                Text("Documents PDF", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                ChoixListe("Exercice", exercice.toString(), listOf(an, an - 1, an - 2).map { it.toString() }) { exercice = an - it }
+                buildList {
+                    add("journal" to "Journal des opérations"); add("cotisations" to "État des cotisations"); add("budget" to "Budget prévu et réalisé")
+                    add("demandes" to "Registre des demandes"); if (d.peut("voir_membres", "gerer_membres")) add("membres" to "Liste des membres")
+                }.forEach { (k, l) ->
+                    OutlinedButton(enabled = !enCours, modifier = Modifier.fillMaxWidth(), onClick = {
+                        lancer { val (titre, html) = documentHtml(d, k, exercice); imprimer(titre, html) }
+                    }) { Text(l) }
+                }
+            }
+        }
+        item {
+            var etat by remember { mutableStateOf<String?>(null) }
+            CarteBlanche {
+                Text("Pièces justificatives", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Toutes les factures et pièces de l’exercice $exercice dans un fichier ZIP, classées par mois, avec leur inventaire.", color = Couleurs.Texte2, fontSize = 14.sp)
+                Button(enabled = !enCours, onClick = {
+                    lancer {
+                        val (zip, n) = archivePieces(d, exercice) { etat = it }
+                        etat = null
+                        enregistrer("${d.organisation.nom.lowercase().replace(Regex("[^a-z0-9]+"), "-")}-pieces-$exercice.zip", "application/zip", zip)
+                        message("$n pièce${if (n > 1) "s" else ""} archivée${if (n > 1) "s" else ""}")
+                    }
+                }) { Text(etat ?: "Télécharger les pièces") }
             }
         }
         item {
@@ -1158,7 +1394,7 @@ fun EcranPlus(d: Donnees, onChoix: (String) -> Unit) {
         if (d.peut("rapprocher", "consulter_finances")) add(Triple("rapprochement", "Rapprochement", Icons.Outlined.AccountBalance))
         if (d.peut("consulter_finances")) add(Triple("rapports", "Rapports et exports", Icons.Outlined.Description))
         if (d.profil.memberId != null) add(Triple("moi", "Ma cotisation", Icons.Outlined.Person))
-        if (d.peut("administrer")) add(Triple("parametres", "Paramètres", Icons.Outlined.Settings))
+        add(Triple("parametres", "Paramètres", Icons.Outlined.Settings))
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(entrees, key = { it.first }) { (k, l, icone) ->

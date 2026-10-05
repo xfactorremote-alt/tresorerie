@@ -40,3 +40,6 @@ expect fun rememberOuvrirFichier(): (nom: String, mime: String, octets: ByteArra
 /** Bouton « retour » du téléphone : ferme le sous-écran au lieu de quitter l'application. */
 @Composable
 expect fun RetourSysteme(actif: Boolean, onRetour: () -> Unit)
+
+/** Archive ZIP en mémoire : chemins relatifs et contenus. */
+expect fun zipper(fichiers: List<Pair<String, ByteArray>>): ByteArray

@@ -114,7 +114,7 @@ actual fun rememberImpression(): (String, String) -> Unit {
         vue.webViewClient = object : android.webkit.WebViewClient() {
             override fun onPageFinished(view: android.webkit.WebView, url: String?) {
                 val impression = contexte.getSystemService(android.content.Context.PRINT_SERVICE) as android.print.PrintManager
-                impression.print(titre, view.createPrintDocumentAdapter(titre), android.print.PrintAttributes.Builder().build())
+                impression.print(titre, view.createPrintDocumentAdapter(titre), android.print.PrintAttributes.Builder().setMediaSize(android.print.PrintAttributes.MediaSize.ISO_A4).build())
             }
         }
         vue.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
@@ -140,3 +140,13 @@ actual fun rememberOuvrirFichier(): (String, String, ByteArray) -> Unit {
 
 @Composable
 actual fun RetourSysteme(actif: Boolean, onRetour: () -> Unit) = androidx.activity.compose.BackHandler(actif, onRetour)
+
+actual fun zipper(fichiers: List<Pair<String, ByteArray>>): ByteArray {
+    val sortie = java.io.ByteArrayOutputStream()
+    java.util.zip.ZipOutputStream(sortie).use { zip ->
+        fichiers.forEach { (chemin, octets) ->
+            zip.putNextEntry(java.util.zip.ZipEntry(chemin)); zip.write(octets); zip.closeEntry()
+        }
+    }
+    return sortie.toByteArray()
+}

@@ -188,6 +188,7 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
     var periodesMembre by remember { mutableStateOf<Pair<String, List<PeriodeCotisation>>?>(null) }
     var compte by remember(mode) { mutableStateOf(d.comptes.firstOrNull { it.type == if (mode == "especes") "caisse" else "banque" } ?: d.comptes.firstOrNull()) }
     var piece by remember { mutableStateOf<Fichier?>(null) }
+    var faireValider by remember { mutableStateOf(true) }
     var enCours by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val choix = rememberChoixFichier { f, err -> if (err != null) message(err); if (f != null) piece = f }
@@ -261,6 +262,9 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
             Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
             Text(piece?.let { "Pièce jointe (${it.ko}$NBSP" + "Ko)" } ?: "Joindre une pièce")
         }
+        if (sens == "depense") Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { faireValider = !faireValider }) {
+            Checkbox(faireValider, { faireValider = it }); Text("Faire valider par le président", fontSize = 15.sp)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.align(Alignment.End)) {
             TextButton(onClick = { onFini(false) }) { Text("Annuler") }
             Button(
@@ -272,12 +276,10 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
                     scope.launch {
                         try {
                             val tiersId = trouve.tiersId ?: trouve.nouveau?.let { Repo.ajouterTiers(NouveauTiers(it, if (sens == "recette") "donateur" else "fournisseur")).id }
-                            Repo.ajouter(NouvelleEcriture(dateValide!!.toString(), compte!!.id, sens, valeur!!, categorie!!.id, libelle.trim(), mode, d.profil.id,
+                            val id = Repo.ajouter(NouvelleEcriture(dateValide!!.toString(), compte!!.id, sens, valeur!!, categorie!!.id, libelle.trim(), mode, d.profil.id,
                                 projet?.id, null, trouve.membreId, tiersId, rub == "cotisation", rub.takeIf { it.isNotEmpty() && it != "cotisation" }))
-                            piece?.let { f ->
-                                Repo.toutesEcritures().lastOrNull { it.libelle == libelle.trim() && it.montant == valeur && it.compteId == compte!!.id }
-                                    ?.let { Repo.joindrePiece(it.id, f, d.profil.id) }
-                            }
+                            piece?.let { f -> Repo.joindrePiece(id, f, d.profil.id) }
+                            if (sens == "depense" && faireValider) { Repo.demanderValidation(id); message("Dépense enregistrée et envoyée au président") }
                             onFini(true)
                         } catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
                     }

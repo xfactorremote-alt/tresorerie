@@ -14,7 +14,8 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 | Accueil : bannière avec la photo de l’association et la trésorerie, comptes (touchez pour voir les opérations), rubriques dépliables mémorisées | Oui | Oui |
 | Opérations : filtres recettes, dépenses, période, compte, catégorie, sans pièce, recherche ; totaux et solde | Oui | Oui |
 | Pièces jointes et signature visibles dans le détail ; ajout de pièce ; contre-passation | Oui | Oui |
-| Demandes de dépense : demande, signature, paiement, justificatif | Oui | Oui |
+| Demandes de dépense (onglet **Demandes**) : demande, signature du président, paiement, justificatif | Oui | Oui |
+| Dépense saisie directement dans les opérations : case « Faire valider par le président » (cochée par défaut) ou bouton « Faire valider » dans le détail ; le président la valide après coup, elle reste signalée « À valider » ou « Refusée » | Oui | Oui |
 | Cotisations mensuelles (ou trimestrielles, annuelles) : grille par mois, retard, avance, dispense, relance WhatsApp | Oui | Oui |
 | Encaissement rattaché à un tiers (membre, donateur, fournisseur) et à une rubrique : cotisation ou participation à une activité | Oui | Oui |
 | Participations : collecte liée à une activité, montant par personne, qui a donné quoi, relance | Oui | Oui |
@@ -25,6 +26,8 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 | Rapprochement avec relevé obligatoire | Oui | Oui |
 | Analyse sur l’accueil : résultat, dépenses comparées à l’an passé, réserve en mois, jauge des cotisations, recettes et dépenses par mois, évolution de la trésorerie, diagrammes circulaires (origine des recettes, destination des dépenses) ; code couleur unique : bleu pour les recettes, orange pour les dépenses, gris pour la trésorerie | Oui | Oui |
 | Rapport d’assemblée générale synthétique : l’essentiel, faits marquants, graphiques, trésorerie par compte, cotisations, participations, budget, contrôle interne, signatures | Oui | Oui |
+| Documents PDF mis en page (en-tête avec logo, synthèse, totaux, pages numérotées, signatures) : journal des opérations, état des cotisations, budget, registre des demandes, liste des membres ; export PDF ou Excel depuis Opérations et Membres | Oui | Oui |
+| Archive ZIP des pièces justificatives d’un exercice, classées par mois, avec inventaire et dépenses sans pièce ; relevés de rapprochement inclus | Oui | Oui |
 | Rapports PDF, exports Excel, sauvegarde | Oui | Oui |
 | Paramètres (roue dentée, en bas du menu ou en haut à droite sur téléphone) : **Mon compte** pour tous (nom, fiche de membre, mot de passe, déconnexion) ; pour l’administrateur : association, comptes, catégories, **rôles et droits**, accès | Oui | Oui |
 | Membre d’abord, fonction ensuite : groupe Bureau en tête de la liste des membres, bouton « Fonction » pour donner un accès et désigner président, trésorier, bureau… | Oui | Oui |
@@ -136,4 +139,11 @@ Le même secret sert au **réveil de la base** : Supabase gratuit se met en paus
 
 ## Sauvegarde
 
-Chaque mois, **Rapports** > **Télécharger la sauvegarde**, puis déposez le fichier sur le Google Drive de l’association. Les justificatifs restent dans Supabase (1 Go gratuit, soit plusieurs milliers de photos réduites).
+Les pièces justificatives (photos et PDF des factures) sont conservées dans Supabase (1 Go gratuit, plusieurs milliers de pièces réduites) : elles ne se perdent pas d’un exercice à l’autre.
+
+La copie sur Google Drive n’est **pas automatique** : elle demanderait de confier à un service extérieur les clés d’accès complètes de la base. Deux gestes suffisent :
+
+1. **Chaque mois**, **Rapports** > **Télécharger la sauvegarde** (toutes les données), puis déposez le fichier dans le dossier Drive de l’association.
+2. **En fin d’exercice**, **Rapports** > **Pièces justificatives** > **Télécharger les pièces** : un ZIP classé par mois (fichiers nommés date_montant_libellé), avec `inventaire.csv` qui liste aussi les dépenses sans pièce, et les relevés des rapprochements. Déposez-le sur Drive avec le **Journal des opérations** et le **Rapport d’assemblée générale** en PDF.
+
+Testez une fois la restauration : ouvrez le ZIP et vérifiez qu’une facture s’affiche.

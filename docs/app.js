@@ -289,7 +289,7 @@ function pagesAutorisees() {
   return [
     ['tableau', 'Accueil', true],
     ['ecritures', 'Opérations', peut('consulter_finances', 'saisir_ecritures')],
-    ['depenses', 'Dépenses', peut('demander_depenses', 'valider_depenses', 'payer_depenses', 'consulter_finances')],
+    ['depenses', 'Demandes', peut('demander_depenses', 'valider_depenses', 'payer_depenses', 'consulter_finances')],
     ['cotisations', peut('consulter_finances', 'gerer_cotisations') ? 'Cotisations' : 'Ma cotisation', true],
     ['budget', 'Budget', peut('consulter_finances', 'gerer_budget')],
     ['activites', 'Planning', true],
@@ -547,10 +547,12 @@ async function pageEcritures() {
   const f = S.filtres;
   if (!f.periode) Object.assign(f, { periode: 'annee', sens: '', compte: f.compte || '', categorie: '', texte: '', sansPiece: false });
   if (f.periode !== 'perso') [f.du, f.au] = PERIODES[f.periode][1]();
-  const [toutes, piecesListe] = await Promise.all([
+  const [toutes, piecesListe, demandesListe] = await Promise.all([
     q(sb.from('transactions').select('*').order('date_op', { ascending: false }).order('created_at', { ascending: false })),
     q(sb.from('attachments').select('*')),
+    q(sb.from('expense_requests').select('id,statut')).catch(() => []),
   ]);
+  const statutDemande = Object.fromEntries((demandesListe || []).map((d) => [d.id, d.statut]));
   const pieces = {};
   piecesListe.forEach((a) => { if (a.transaction_id) pieces[a.transaction_id] = a; });
   const contrepassees = new Set(toutes.filter((t) => t.contrepasse_de).map((t) => t.contrepasse_de));
@@ -571,7 +573,9 @@ async function pageEcritures() {
   const soldeFin = comptesVus.reduce((s, c) => s + Number(c.solde_initial || 0), 0)
     + toutes.filter((t) => (!f.au || t.date_op <= f.au) && comptesVus.some((c) => c.id === t.account_id)).reduce((s, t) => s + signe(t), 0);
   const filtresActifs = f.sens || f.compte || f.categorie || f.rubrique || f.texte || f.sansPiece || f.periode !== 'annee';
-  const puceEtat = (t) => t.rapproche ? '<span class="puce puce-ok">Rapprochée</span>' : t.contrepasse_de ? '<span class="puce puce-neutre">Correction</span>'
+  const puceEtat = (t) => statutDemande[t.request_id] === 'soumise' ? '<span class="puce puce-partiel">À valider</span>'
+    : statutDemande[t.request_id] === 'refusee' && !contrepassees.has(t.id) ? '<span class="puce puce-ko">Refusée</span>'
+    : t.rapproche ? '<span class="puce puce-ok">Rapprochée</span>' : t.contrepasse_de ? '<span class="puce puce-neutre">Correction</span>'
     : contrepassees.has(t.id) ? '<span class="puce puce-neutre">Annulée</span>' : '';
   const iconePiece = (t) => pieces[t.id] ? '<svg class="trombone" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" role="img" aria-label="Pièce jointe"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>'
     : t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de ? '<span class="puce puce-ko">Sans pièce</span>' : '';
@@ -616,9 +620,11 @@ async function pageEcritures() {
   $('#f-piece').addEventListener('change', (e) => { f.sansPiece = e.target.checked; recharger(); });
   $('#f-raz')?.addEventListener('click', () => { S.filtres = {}; recharger(); });
   ['#b-nouvelle', '#b-nouvelle-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleEcriture()));
-  $('#b-export').addEventListener('click', () => telechargerCsv(`operations-${f.du || 'debut'}-${f.au || aujourdhui()}.csv`,
+  const exportCsv = () => telechargerCsv(`operations-${f.du || 'debut'}-${f.au || aujourdhui()}.csv`,
     ['Date', 'Sens', 'Libellé', 'Tiers', 'Rubrique', 'Catégorie', 'Activité', 'Compte', 'Mode', 'Montant', 'Pièce', 'Rapprochée'],
-    lignes.map((t) => [dateFr(t.date_op), t.sens === 'recette' ? 'Recette' : 'Dépense', t.libelle, nomTiers(t), nomRubrique(t), cat(t.category_id), nomProjet(t.project_id), cpt(t.account_id), MODES[t.mode], signe(t), pieces[t.id] ? 'Oui' : 'Non', t.rapproche ? 'Oui' : 'Non'])));
+    lignes.map((t) => [dateFr(t.date_op), t.sens === 'recette' ? 'Recette' : 'Dépense', t.libelle, nomTiers(t), nomRubrique(t), cat(t.category_id), nomProjet(t.project_id), cpt(t.account_id), MODES[t.mode], signe(t), pieces[t.id] ? 'Oui' : 'Non', t.rapproche ? 'Oui' : 'Non']));
+  $('#b-export').addEventListener('click', () => choisirFormat('Exporter les opérations affichées',
+    () => pdfJournal({ du: f.du, au: f.au, compte: f.compte, sens: f.sens, categorie: f.categorie }), exportCsv));
   document.querySelectorAll('[data-detail]').forEach((li) => {
     const ouvrir = () => detailEcriture(toutes.find((t) => t.id === li.dataset.detail), pieces, contrepassees, recharger);
     li.addEventListener('click', ouvrir);
@@ -627,6 +633,14 @@ async function pageEcritures() {
 }
 
 // Fiche d'une opération : détails, pièce jointe affichée, actions
+// État de la validation d'une dépense par le président
+function etatValidation(d) {
+  if (d.statut === 'soumise') return '<span class="puce puce-partiel">À valider par le président</span>';
+  if (d.statut === 'refusee') return `<span class="puce puce-ko">Refusée</span>${d.motif_refus ? ' · ' + esc(d.motif_refus) : ''}`;
+  if (d.statut === 'annulee') return '<span class="puce puce-neutre">Demande annulée</span>';
+  return `Validée le ${dateFr(String(d.validee_le || '').slice(0, 10))}${d.regularisation ? ' (après paiement)' : ''}`;
+}
+
 async function detailEcriture(t, pieces, contrepassees, recharger) {
   const piece = pieces[t.id];
   let apercu = '';
@@ -650,18 +664,23 @@ async function detailEcriture(t, pieces, contrepassees, recharger) {
       ${ligne('Activité', esc(nomProjet(t.project_id)))}
       ${ligne('Tiers', esc(nomTiers(t)))}
       ${ligne('Rubrique', esc(nomRubrique(t)))}
-      ${ligne('Demande', demande ? `${esc(demande.objet)} · validée le ${dateFr(String(demande.validee_le || '').slice(0, 10))}` : '')}
+      ${ligne('Validation', demande ? etatValidation(demande) : '')}
       ${ligne('État', t.rapproche ? 'Rapprochée, verrouillée' : t.contrepasse_de ? 'Correction d’une autre écriture' : contrepassees.has(t.id) ? 'Annulée par contre-passation' : '')}
     </div>
     ${apercu}
     <div class="actions">
       ${demande?.signature_path ? `<button class="btn-texte" data-voir="${esc(demande.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
       ${!piece && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">Joindre une pièce</button>` : ''}
+      ${!demande && peutCorriger && t.sens === 'depense' && t.montant > 0 ? '<button class="btn-tonal" id="b-faire-valider">Faire valider par le président</button>' : ''}
       ${peutCorriger ? `<button class="btn-texte" id="b-contre">Contre-passer</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button>
     </div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-contre', root)?.addEventListener('click', () => contrePasser(t));
+    $('#b-faire-valider', root)?.addEventListener('click', async () => {
+      try { await q(sb.rpc('demander_validation_operation', { p_transaction: t.id })); fermerFeuille(); toast('Dépense envoyée au président pour validation'); recharger(); }
+      catch (err) { erreur(err); }
+    });
     brancherPieces(() => { fermerFeuille(); recharger(); });
   });
 }
@@ -695,6 +714,7 @@ function feuilleEcriture(pre = {}) {
       <label class="champ">Activité<select name="projet"><option value="">Aucune</option>${optionsProjets()}</select></label>
       <label class="champ" id="l-piece">Justificatif<input type="file" name="piece" accept="image/*,application/pdf"></label>
     </div>
+    <label class="case" id="l-valid"><input type="checkbox" name="valider" checked> Faire valider par le président</label>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div>
   </form>`, (root) => {
     const f = $('#f-ecr', root);
@@ -706,6 +726,7 @@ function feuilleEcriture(pre = {}) {
       const rub = sens === 'recette' ? f.rubrique.value : '';
       $('#l-rubrique', root).hidden = sens !== 'recette';
       $('#l-piece', root).hidden = sens !== 'depense';
+      $('#l-valid', root).hidden = sens !== 'depense' || !S.roles.length;
       const info = $('#i-rub', root);
       const nom = f.tiers.value.trim();
       const t = trouverTiers(nom);
@@ -762,7 +783,9 @@ function feuilleEcriture(pre = {}) {
           est_cotisation: rub === 'cotisation', collecte_id: rub && rub !== 'cotisation' ? rub : null,
         }).select());
         if (sens === 'depense' && f.piece.files[0]) await deposerPiece(f.piece.files[0], { transaction_id: t.id });
-        fermerFeuille(); toast(rub ? 'Encaissement enregistré' : 'Opération enregistrée');
+        const aValider = sens === 'depense' && f.valider.checked;
+        if (aValider) await q(sb.rpc('demander_validation_operation', { p_transaction: t.id }));
+        fermerFeuille(); toast(rub ? 'Encaissement enregistré' : aValider ? 'Dépense enregistrée et envoyée au président' : 'Opération enregistrée');
         (pre.apres || (() => router()))();
       } catch (err) { btn.disabled = false; erreur(err); }
     });
@@ -852,9 +875,9 @@ async function pageMembres() {
   $('#b-import')?.addEventListener('click', feuilleImport);
   document.querySelectorAll('[data-modif]').forEach((b) => b.addEventListener('click', () => feuilleMembre(S.membres.find((m) => m.id === b.dataset.modif))));
   document.querySelectorAll('[data-acces]').forEach((b) => b.addEventListener('click', () => feuilleAcces(S.membres.find((m) => m.id === b.dataset.acces))));
-  $('#b-export-m').addEventListener('click', () => telechargerCsv('membres.csv',
+  $('#b-export-m').addEventListener('click', () => choisirFormat('Exporter la liste des membres', () => pdfMembres(), () => telechargerCsv('membres.csv',
     ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Fonction', 'Accord anniversaire', 'Actif'],
-    S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.consent_anniversaire ? 'Oui' : 'Non', m.actif ? 'Oui' : 'Non'])));
+    S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.consent_anniversaire ? 'Oui' : 'Non', m.actif ? 'Oui' : 'Non']))));
 }
 
 // Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
@@ -1923,6 +1946,14 @@ function zoneSignature(canvas) {
 }
 
 function etapes(d) {
+  // Dépense saisie directement : déjà payée, validée ensuite par le président
+  if (d.regularisation) {
+    const noms = ['Paiement', 'Validation', 'Justificatif'];
+    const etat = (i) => i === 0 ? 'fait'
+      : i === 1 ? (d.statut === 'refusee' ? 'ko' : ['payee', 'justifiee'].includes(d.statut) ? 'fait' : d.statut === 'soumise' ? 'encours' : '')
+      : d.statut === 'justifiee' ? 'fait' : d.statut === 'payee' ? 'encours' : '';
+    return `<ol class="etapes etapes-3" aria-label="Avancement">${noms.map((n, i) => `<li class="${etat(i)}"><span></span>${n}</li>`).join('')}</ol>`;
+  }
   const ordre = ['soumise', 'validee', 'payee', 'justifiee'];
   const noms = ['Demande', 'Validation', 'Paiement', 'Justificatif'];
   const idx = d.statut === 'refusee' ? 1 : d.statut === 'annulee' ? 0 : ordre.indexOf(d.statut);
@@ -1934,13 +1965,15 @@ function etapes(d) {
 
 // ---------- Dépenses : demande, validation signée, paiement, justificatif ----------
 async function pageDepenses() {
-  const [demandes, profils, pieces] = await Promise.all([
+  const [demandes, profils, pieces, liees] = await Promise.all([
     q(sb.from('expense_requests').select('*').order('created_at', { ascending: false })),
     q(sb.from('profiles').select('*')).catch(() => [S.profil]),
     q(sb.from('attachments').select('*')),
+    q(sb.from('transactions').select('id,request_id')).catch(() => []),
   ]);
+  const operationDe = Object.fromEntries((liees || []).filter((t) => t.request_id).map((t) => [t.request_id, t.id]));
   const nomDe = (id) => id === S.profil.id ? 'Vous' : profils.find((p) => p.id === id)?.nom || 'Membre du bureau';
-  const pieceDe = (d) => pieces.find((a) => a.request_id === d.id);
+  const pieceDe = (d) => pieces.find((a) => a.request_id === d.id || (operationDe[d.id] && a.transaction_id === operationDe[d.id]));
   const delai = Number(S.settings.delai_justificatif_jours ?? 7);
   const FILTRES = {
     a_valider: ['À valider', (d) => d.statut === 'soumise'],
@@ -1964,7 +1997,7 @@ async function pageDepenses() {
     return `<article class="carte">
       <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
         <div style="flex:1;min-width:180px"><h3 style="font-size:18px">${esc(d.objet)}</h3>
-          <span class="muted">${esc(nomDe(d.demandeur))} · ${dateFr(String(d.created_at).slice(0, 10))} · ${esc(nomCategorie(d.category_id))}${d.project_id ? ' · ' + esc(nomProjet(d.project_id)) : ''}</span></div>
+          ${d.regularisation ? '<span class="puce puce-neutre" title="Saisie directement dans les opérations, validation après paiement">Déjà payée</span> ' : ''}<span class="muted">${esc(nomDe(d.demandeur))} · ${dateFr(String(d.created_at).slice(0, 10))} · ${esc(nomCategorie(d.category_id))}${d.project_id ? ' · ' + esc(nomProjet(d.project_id)) : ''}</span></div>
         <div style="text-align:right"><b class="num" style="font-size:22px">${eur(d.montant)}</b><br><span class="puce ${STATUTS[d.statut][0]}">${STATUTS[d.statut][1]}</span></div>
       </div>
       ${etapes(d)}
@@ -1981,7 +2014,7 @@ async function pageDepenses() {
   };
 
   rendre(`<div class="page">
-    <div class="page-titre"><h1>Dépenses</h1>${peutDemander ? '<button class="btn-primaire" id="b-demande">Nouvelle demande</button>' : ''}</div>
+    <div class="page-titre"><h1>Demandes de dépense</h1>${peutDemander ? '<button class="btn-primaire" id="b-demande">Nouvelle demande</button>' : ''}</div>
     <div class="filtres" role="tablist">${Object.entries(FILTRES).map(([k, [l, f]]) => {
       const n = demandes.filter(f).length;
       return `<button class="btn-petit ${S.filtreDepenses === k ? 'btn-primaire' : ''}" data-filtre="${k}" role="tab" aria-selected="${S.filtreDepenses === k}">${l}${k !== 'toutes' && k !== 'terminees' && n ? ` (${n})` : ''}</button>`;
@@ -2552,6 +2585,19 @@ async function pageRapports() {
         <div class="champs champs-2"><label class="champ">Du<input type="date" id="rp-debut" value="${aujourdhui().slice(0, 8)}01"></label>
           <label class="champ">Au<input type="date" id="rp-fin" value="${aujourdhui()}"></label></div>
         <button class="btn-primaire" id="b-rp">Exporter en PDF</button></section>
+      <section class="carte"><h2>Documents PDF</h2>
+        <label class="champ">Exercice<select id="doc-an">${[an, an - 1, an - 2].map((a) => `<option>${a}</option>`).join('')}</select></label>
+        <div class="docs-pdf">
+          <button class="btn-tonal btn-petit" data-pdf="journal">Journal des opérations</button>
+          <button class="btn-tonal btn-petit" data-pdf="cotisations">État des cotisations</button>
+          <button class="btn-tonal btn-petit" data-pdf="budget">Budget prévu et réalisé</button>
+          <button class="btn-tonal btn-petit" data-pdf="demandes">Registre des demandes</button>
+          ${peut('voir_membres', 'gerer_membres') ? '<button class="btn-tonal btn-petit" data-pdf="membres">Liste des membres</button>' : ''}
+        </div></section>
+      <section class="carte"><h2>Pièces justificatives</h2>
+        <p class="muted" style="margin:0">Toutes les factures et pièces de l’exercice dans un seul fichier ZIP, classées par mois, avec leur inventaire.</p>
+        <label class="champ">Exercice<select id="pj-an">${[an, an - 1, an - 2].map((a) => `<option>${a}</option>`).join('')}</select></label>
+        <button class="btn-primaire" id="b-pj">Télécharger les pièces</button></section>
       <section class="carte"><h2>Exports Excel</h2>
         <div class="filtres">
           <button class="btn-bleu btn-petit" data-export="ecritures">Écritures ${an}</button>
@@ -2571,6 +2617,13 @@ async function pageRapports() {
   });
   document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exporter(b.dataset.export, an).catch(erreur)));
   $('#b-sauve')?.addEventListener('click', () => sauvegarder().catch(erreur));
+  document.querySelectorAll('[data-pdf]').forEach((b) => b.addEventListener('click', () => {
+    const a = Number($('#doc-an').value);
+    const faire = { journal: () => pdfJournal({ du: `${a}-01-01`, au: `${a}-12-31`, titre: `Journal des opérations ${a}` }), cotisations: () => pdfCotisations(a),
+      budget: () => pdfBudget(a), demandes: () => pdfDemandes(a), membres: () => pdfMembres() }[b.dataset.pdf];
+    faire().catch(erreur);
+  }));
+  $('#b-pj').addEventListener('click', (e) => archivePieces(Number($('#pj-an').value), e.currentTarget).catch(erreur));
 }
 
 async function exporter(type, an) {
@@ -2737,15 +2790,186 @@ ${budgetLignes.length ? `<h2>Budget ${an} : réalisé sur prévu</h2>
 </table>
 
 <div class="sig"><div>Le trésorier</div><div>Le président</div></div>`;
-    let v = $('#rapport');
-    if (!v) { v = document.createElement('div'); v.id = 'rapport'; document.body.appendChild(v); }
-    v.innerHTML = `<div class="rapport-barre"><b>${esc(titre)}</b><span><button class="btn-primaire btn-petit" id="rp-imprimer">Imprimer ou PDF</button> <button class="btn-tonal btn-petit" id="rp-fermer">Fermer</button></span></div>
-      <div class="rapport-page">${html}</div>`;
-    v.hidden = false; document.body.classList.add('avec-rapport');
-    brancherInfobulles(v);
-    $('#rp-fermer').addEventListener('click', () => { v.hidden = true; document.body.classList.remove('avec-rapport'); });
-    $('#rp-imprimer').addEventListener('click', () => window.print());
+    afficherDocument(titre, html);
   } catch (e) { erreur(e); }
+}
+
+// Aperçu plein écran d'un document A4, puis « Enregistrer en PDF » par l'impression du navigateur.
+// Pied de page de chaque feuille : association, titre, numéro de page.
+function afficherDocument(titre, html) {
+  let v = $('#rapport');
+  if (!v) { v = document.createElement('div'); v.id = 'rapport'; document.body.appendChild(v); }
+  const pied = (t) => String(t).replace(/["\\]/g, ' ');
+  v.innerHTML = `<style>@page{size:A4;margin:14mm 12mm 16mm;@bottom-left{content:"${pied(S.org?.nom || '')} · ${pied(titre)}";font:9px system-ui;color:#5A5350}@bottom-right{content:"Page " counter(page) " sur " counter(pages);font:9px system-ui;color:#5A5350}}</style>
+    <div class="rapport-barre"><b>${esc(titre)}</b><span><button class="btn-primaire btn-petit" id="rp-imprimer">Enregistrer en PDF</button> <button class="btn-tonal btn-petit" id="rp-fermer">Fermer</button></span></div>
+    <div class="rapport-page">${html}</div>`;
+  v.hidden = false; v.scrollTop = 0; document.body.classList.add('avec-rapport');
+  brancherInfobulles(v);
+  const ancienTitre = document.title;
+  $('#rp-fermer').addEventListener('click', () => { v.hidden = true; document.body.classList.remove('avec-rapport'); });
+  // Le titre de la page devient le nom proposé pour le fichier PDF
+  $('#rp-imprimer').addEventListener('click', () => {
+    document.title = `${S.org?.nom || 'Trésorerie'} - ${titre}`.replace(/[\\/:*?"<>|]/g, '-');
+    window.print(); setTimeout(() => { document.title = ancienTitre; }, 1000);
+  });
+}
+
+// Choix du format d'export : PDF mis en page ou tableur
+function choisirFormat(titre, pdf, csv) {
+  ouvrirFeuille(`<h2>${esc(titre)}</h2>
+    <div class="choix-format">
+      <button class="carte choix" id="cf-pdf"><b>PDF</b><span class="muted">Mise en page pour imprimer, archiver ou transmettre</span></button>
+      <button class="carte choix" id="cf-csv"><b>Excel</b><span class="muted">Tableau modifiable (CSV)</span></button>
+    </div>`, (root) => {
+    $('#cf-pdf', root).addEventListener('click', () => { fermerFeuille(); pdf().catch?.(erreur); });
+    $('#cf-csv', root).addEventListener('click', () => { fermerFeuille(); csv(); });
+  });
+}
+
+// ---------- Archive des pièces justificatives d'un exercice ----------
+// ZIP classé par mois : chaque fichier est nommé date_montant_libellé ; inventaire CSV avec les
+// dépenses sans pièce ; relevés des rapprochements dans un dossier à part. Prêt à déposer sur Drive.
+async function chargerScript(url) {
+  if (document.querySelector(`script[src="${url}"]`)) return;
+  await new Promise((ok, ko) => { const s = document.createElement('script'); s.src = url; s.onload = ok; s.onerror = () => ko(new Error('Chargement impossible, vérifiez la connexion')); document.head.appendChild(s); });
+}
+async function archivePieces(an, bouton) {
+  const libelleBouton = bouton.textContent; bouton.disabled = true; bouton.textContent = 'Préparation…';
+  try {
+    await chargerScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    const [txs, pieces, rapps] = await Promise.all([
+      q(sb.from('transactions').select('*').gte('date_op', `${an}-01-01`).lte('date_op', `${an}-12-31`).order('date_op')),
+      q(sb.from('attachments').select('*')), q(sb.from('reconciliations').select('*')).catch(() => []),
+    ]);
+    const zip = new window.JSZip();
+    const racine = zip.folder(`Pieces-justificatives-${an}`);
+    const propre = (x) => sansAccents(String(x || '')).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 50);
+    const montantNom = (n) => Number(n).toFixed(2).replace('.', ',') + 'EUR';
+    const inventaire = [];
+    const contrepassees = new Set(txs.filter((t) => t.contrepasse_de).map((t) => t.contrepasse_de));
+    const aTraiter = txs.map((t) => ({ t, p: pieces.filter((a) => a.transaction_id === t.id) }));
+    let n = 0; const total = aTraiter.reduce((x, e) => x + e.p.length, 0) + rapps.filter((r) => r.statement_path && String(r.periode_fin).startsWith(String(an))).length;
+    for (const { t, p } of aTraiter) {
+      const mois = `${t.date_op.slice(5, 7)}-${MOIS[Number(t.date_op.slice(5, 7)) - 1]}`;
+      if (!p.length) {
+        if (t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id)) inventaire.push([dateFr(t.date_op), t.libelle, nomTiers(t), nomCategorie(t.category_id), Number(t.montant), 'MANQUANTE']);
+        continue;
+      }
+      for (const [i, a] of p.entries()) {
+        n++; bouton.textContent = `Pièces ${n} sur ${total}…`;
+        const ext = (a.storage_path.split('.').pop() || 'jpg').toLowerCase().slice(0, 4);
+        const nom = `${t.date_op}_${montantNom(t.montant)}_${propre(t.libelle)}${p.length > 1 ? '_' + (i + 1) : ''}.${ext}`;
+        try { racine.folder(mois).file(nom, await q(sb.storage.from('justificatifs').download(a.storage_path))); inventaire.push([dateFr(t.date_op), t.libelle, nomTiers(t), nomCategorie(t.category_id), (t.sens === 'depense' ? -1 : 1) * Number(t.montant), `${mois}/${nom}`]); }
+        catch { inventaire.push([dateFr(t.date_op), t.libelle, nomTiers(t), nomCategorie(t.category_id), Number(t.montant), 'ILLISIBLE : ' + a.storage_path]); }
+      }
+    }
+    for (const r of rapps.filter((x) => x.statement_path && String(x.periode_fin).startsWith(String(an)))) {
+      n++; bouton.textContent = `Pièces ${n} sur ${total}…`;
+      const compte = S.comptes.find((c) => c.id === r.account_id)?.nom || 'compte';
+      const ext = (r.statement_path.split('.').pop() || 'pdf').toLowerCase().slice(0, 4);
+      try { racine.folder('Releves-et-PV-de-caisse').file(`${r.periode_fin}_${propre(compte)}.${ext}`, await q(sb.storage.from('releves').download(r.statement_path))); } catch { /* relevé illisible : signalé par son absence */ }
+    }
+    const csv = '﻿' + [['Date', 'Libellé', 'Tiers', 'Catégorie', 'Montant', 'Fichier'], ...inventaire]
+      .map((l) => l.map((v) => typeof v === 'number' ? v.toFixed(2).replace('.', ',') : `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    racine.file('inventaire.csv', csv);
+    const manquantes = inventaire.filter((l) => l[5] === 'MANQUANTE').length;
+    bouton.textContent = 'Compression…';
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const lien = document.createElement('a'); lien.href = URL.createObjectURL(blob); lien.download = `${propre(S.org?.nom || 'association')}-pieces-${an}.zip`; lien.click();
+    toast(`${n} pièce${n > 1 ? 's' : ''} archivée${n > 1 ? 's' : ''}${manquantes ? `, ${manquantes} dépense${manquantes > 1 ? 's' : ''} sans pièce (voir l’inventaire)` : ''}`);
+  } finally { bouton.disabled = false; bouton.textContent = libelleBouton; }
+}
+
+// ---------- Documents PDF ----------
+const logoAbsolu = () => new URL(S.logoUrl, location.href).href;
+function enteteDocument(titre, periode) {
+  return `<header class="doc-entete"><img src="${esc(logoAbsolu())}" alt="">
+    <div><span class="doc-asso">${esc(S.org?.nom || '')}</span><h1>${esc(titre)}</h1>${periode ? `<span class="doc-periode">${periode}</span>` : ''}</div>
+    <div class="doc-edition">Édité le ${dateFr(aujourdhui())}<br>par ${esc(S.profil.nom)}</div></header>`;
+}
+// colonnes : [libellé, alignement 'd' pour les montants] ; totaux : ligne finale facultative
+function tableDocument(colonnes, lignes, totaux) {
+  if (!lignes.length) return '<p class="muted">Aucune ligne.</p>';
+  const cl = (i) => (colonnes[i][1] ? ` class="${colonnes[i][1]}"` : '');
+  return `<table class="doc-table"><thead><tr>${colonnes.map(([l], i) => `<th${cl(i)}>${l}</th>`).join('')}</tr></thead>
+    <tbody>${lignes.map((l) => `<tr>${l.map((v, i) => `<td${cl(i)}>${v ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
+    ${totaux ? `<tfoot><tr>${totaux.map((v, i) => `<td${cl(i)}>${v ?? ''}</td>`).join('')}</tr></tfoot>` : ''}</table>`;
+}
+const signaturesDocument = () => '<div class="sig"><div>Le trésorier</div><div>Le président</div></div>';
+const syntheseDocument = (tuiles) => `<div class="doc-synthese">${tuiles.map(([l, v, c]) => `<div><span>${l}</span><b${c ? ` style="color:${c}"` : ''}>${v}</b></div>`).join('')}</div>`;
+
+// Journal des opérations sur une période (filtres facultatifs : compte, sens, catégorie)
+async function pdfJournal({ du, au, compte = '', sens = '', categorie = '', titre } = {}) {
+  const [toutes, pieces] = await Promise.all([q(sb.from('transactions').select('*').order('date_op').order('created_at')), q(sb.from('attachments').select('*'))]);
+  const avecPiece = new Set(pieces.map((a) => a.transaction_id).filter(Boolean));
+  const comptesVus = compte ? S.comptes.filter((c) => c.id === compte) : S.comptes;
+  const dansCompte = (t) => comptesVus.some((c) => c.id === t.account_id);
+  const avant = toutes.filter((t) => dansCompte(t) && du && t.date_op < du);
+  const soldeDebut = comptesVus.reduce((x, c) => x + Number(c.solde_initial || 0), 0) + avant.reduce((x, t) => x + signe(t), 0);
+  const lignes = toutes.filter((t) => dansCompte(t) && (!du || t.date_op >= du) && (!au || t.date_op <= au) && (!sens || t.sens === sens) && (!categorie || t.category_id === categorie));
+  const rec = lignes.filter((t) => t.sens === 'recette').reduce((x, t) => x + Number(t.montant), 0);
+  const dep = lignes.filter((t) => t.sens === 'depense').reduce((x, t) => x + Number(t.montant), 0);
+  const nomCompte = (id) => S.comptes.find((c) => c.id === id)?.nom || '';
+  const periode = du && au ? `Du ${dateFr(du)} au ${dateFr(au)}` : 'Toutes les opérations';
+  const filtres = [compte && `Compte : ${esc(nomCompte(compte))}`, sens && (sens === 'recette' ? 'Recettes seulement' : 'Dépenses seulement'), categorie && `Catégorie : ${esc(nomCategorie(categorie))}`].filter(Boolean).join(' · ');
+  const html = `${enteteDocument(titre || 'Journal des opérations', periode + (filtres ? ` · ${filtres}` : ''))}
+    ${syntheseDocument([['Solde au début', eur(soldeDebut)], ['Recettes', eur(rec), '#1B77B0'], ['Dépenses', eur(dep), '#C23E10'], ['Solde à la fin', eur(soldeDebut + rec - dep)]])}
+    ${tableDocument([['N°', 'nw'], ['Date', 'nw'], ['Libellé', 'large'], ['Tiers'], ['Catégorie'], ['Compte'], ['Pièce'], ['Recette', 'd'], ['Dépense', 'd']],
+      lignes.map((t, i) => [i + 1, dateFr(t.date_op), esc(t.libelle) + (t.contrepasse_de ? ' <span class="muted">(correction)</span>' : ''), esc(nomTiers(t)), esc(nomRubrique(t) || nomCategorie(t.category_id)), esc(nomCompte(t.account_id)),
+        t.sens === 'depense' && t.montant > 0 ? (avecPiece.has(t.id) ? 'Oui' : '<b>Non</b>') : '', t.sens === 'recette' ? eur(t.montant) : '', t.sens === 'depense' ? eur(t.montant) : '']),
+      ['', '', `<b>${lignes.length} opération${lignes.length > 1 ? 's' : ''}</b>`, '', '', '', '', `<b>${eur(rec)}</b>`, `<b>${eur(dep)}</b>`])}
+    ${signaturesDocument()}`;
+  afficherDocument(titre || 'Journal des opérations', html);
+}
+
+async function pdfCotisations(an) {
+  const [l, periodes] = await Promise.all([q(sb.from('v_cotisations').select('*').eq('annee', an)), q(sb.from('v_cotisations_periodes').select('*').eq('annee', an))]);
+  const lignes = l.map((c) => ({ c, m: S.membres.find((x) => x.id === c.member_id) || { prenom: '?', nom: '' } })).sort((a, b) => nomComplet(a.m).localeCompare(nomComplet(b.m), 'fr'));
+  const tot = (k) => l.reduce((x, c) => x + Number(c[k] || 0), 0);
+  const aJour = l.filter((c) => c.statut === 'a_jour').length;
+  const statut = (c) => c.statut === 'a_jour' ? 'À jour' : c.statut === 'partiel' ? 'En retard' : 'Impayé';
+  const html = `${enteteDocument(`État des cotisations ${an}`, `Arrêté au ${dateFr(aujourdhui())} · périodicité ${PERIODICITES[pasCotis()].toLowerCase()}`)}
+    ${syntheseDocument([['Exigible à ce jour', eur(tot('exigible'))], ['Encaissé', eur(tot('montant_paye')), '#1B77B0'], ['En retard', eur(tot('retard')), tot('retard') ? '#BA1A1A' : ''], ['Membres à jour', `${aJour} sur ${l.length}`]])}
+    ${tableDocument([['Membre'], ['Dû sur l’année', 'd'], ['Exigible', 'd'], ['Réglé', 'd'], ['Retard', 'd'], ['Réglé jusqu’à'], ['Situation']],
+      lignes.map(({ c, m }) => [esc(nomComplet(m)), eur(c.montant_du), eur(c.exigible || 0), eur(c.montant_paye), Number(c.retard) ? `<b>${eur(c.retard)}</b>` : '–', c.regle_jusqu_a ? nomPeriode(c.regle_jusqu_a) : '–', statut(c)]),
+      ['<b>Total</b>', `<b>${eur(tot('montant_du'))}</b>`, `<b>${eur(tot('exigible'))}</b>`, `<b>${eur(tot('montant_paye'))}</b>`, `<b>${eur(tot('retard'))}</b>`, '', ''])}
+    <p class="muted">Les versements sont imputés sur la période la plus ancienne non réglée. ${periodes.filter((p) => p.statut === 'dispense').length ? 'Les périodes dispensées ne sont pas dues.' : ''}</p>
+    ${signaturesDocument()}`;
+  afficherDocument(`État des cotisations ${an}`, html);
+}
+
+async function pdfMembres() {
+  await chargerAcces();
+  const liste = [...S.membres].filter((m) => m.actif).sort((a, b) => rangRole(fonctionMembre(a)?.role || 'adherent') - rangRole(fonctionMembre(b)?.role || 'adherent') || nomComplet(a).localeCompare(nomComplet(b), 'fr'));
+  const html = `${enteteDocument('Liste des membres', `${liste.length} membre${liste.length > 1 ? 's' : ''} actif${liste.length > 1 ? 's' : ''} au ${dateFr(aujourdhui())}`)}
+    ${tableDocument([['Membre'], ['Fonction'], ['Anniversaire'], ['Profession'], ['WhatsApp'], ['E-mail'], ['Adhésion']],
+      liste.map((m) => { const f = fonctionMembre(m); return [esc(nomComplet(m)), f && f.etat !== 'invite' ? esc(nomRole(f.role)) : '', `${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}`, esc(m.profession || ''), esc(m.whatsapp || ''), esc(m.email || ''), m.date_adhesion ? dateFr(m.date_adhesion) : '']; }))}
+    <p class="muted">Document interne : données personnelles à ne pas diffuser en dehors du bureau.</p>`;
+  afficherDocument('Liste des membres', html);
+}
+
+async function pdfBudget(an) {
+  const l = await q(sb.from('v_budget_suivi').select('*').eq('annee', an));
+  const bloc = (sens, titre) => {
+    const x = l.filter((b) => b.sens === sens);
+    const p = x.reduce((s2, b) => s2 + Number(b.montant_prevu), 0), r = x.reduce((s2, b) => s2 + Number(b.realise), 0);
+    return `<h2>${titre}</h2>${tableDocument([['Poste'], ['Activité'], ['Prévu', 'd'], ['Réalisé', 'd'], ['Écart', 'd'], ['Taux', 'd']],
+      x.map((b) => [esc(b.categorie), esc(nomProjet(b.project_id)), eur(b.montant_prevu), eur(b.realise), eur(b.ecart), `${Number(b.taux_pct || 0).toLocaleString('fr-FR')}&nbsp;%${sens === 'depense' && Number(b.taux_pct) > 100 ? ' <b>dépassé</b>' : ''}`]),
+      ['<b>Total</b>', '', `<b>${eur(p)}</b>`, `<b>${eur(r)}</b>`, `<b>${eur(p - r)}</b>`, p ? `<b>${Math.round(100 * r / p)}&nbsp;%</b>` : ''])}`;
+  };
+  afficherDocument(`Budget ${an}`, `${enteteDocument(`Budget ${an} : prévu et réalisé`, `Arrêté au ${dateFr(aujourdhui())}`)}${bloc('recette', 'Ressources')}${bloc('depense', 'Emplois')}${signaturesDocument()}`);
+}
+
+async function pdfDemandes(an) {
+  const [l, profils] = await Promise.all([q(sb.from('expense_requests').select('*').order('created_at')), q(sb.from('profiles').select('id,nom')).catch(() => [])]);
+  const x = l.filter((d) => String(d.created_at).startsWith(String(an)));
+  const nom = (id) => profils.find((p) => p.id === id)?.nom || '';
+  const total = x.filter((d) => ['payee', 'justifiee'].includes(d.statut)).reduce((s2, d) => s2 + Number(d.montant), 0);
+  afficherDocument(`Registre des demandes ${an}`, `${enteteDocument(`Registre des demandes de dépense ${an}`, `${x.length} demande${x.length > 1 ? 's' : ''} · ${eur(total)} payés`)}
+    ${tableDocument([['Date', 'nw'], ['Objet', 'large'], ['Demandeur'], ['Montant', 'd'], ['Situation'], ['Validée le'], ['Par'], ['Payée le'], ['Empreinte']],
+      x.map((d) => [dateFr(String(d.created_at).slice(0, 10)), esc(d.objet) + (d.regularisation ? ' <span class="muted">(déjà payée)</span>' : ''), esc(nom(d.demandeur)), eur(d.montant), STATUTS[d.statut][1],
+        d.validee_le ? dateFr(String(d.validee_le).slice(0, 10)) : '', esc(nom(d.validee_par)), d.payee_le ? dateFr(String(d.payee_le).slice(0, 10)) : '', d.signature_hash ? `<span class="empreinte">${esc(d.signature_hash.slice(0, 12))}…</span>` : '']))}
+    <p class="muted">L’empreinte SHA-256 relie chaque signature au montant et à l’objet validés.</p>${signaturesDocument()}`);
 }
 
 demarrer().catch((e) => { erreur(e); $('#app').innerHTML = `<p class="chargement">Impossible de démarrer : ${esc(e.message)}</p>`; });

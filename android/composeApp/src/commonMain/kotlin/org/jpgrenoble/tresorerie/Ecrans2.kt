@@ -75,12 +75,18 @@ private fun couleursStatut(s: String): Pair<Color, Color> = when (s) {
 // Barre d'avancement : demande, validation, paiement, justificatif
 @Composable
 private fun Etapes(d: Demande) {
+    // Dépense saisie directement : déjà payée, validée ensuite par le président
+    val regul = d.regularisation
     val ordre = listOf("soumise", "validee", "payee", "justifiee")
-    val noms = listOf("Demande", "Validation", "Paiement", "Justificatif")
+    val noms = if (regul) listOf("Paiement", "Validation", "Justificatif") else listOf("Demande", "Validation", "Paiement", "Justificatif")
     val idx = when (d.statut) { "refusee" -> 1; "annulee" -> 0; else -> ordre.indexOf(d.statut) }
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         noms.forEachIndexed { i, n ->
-            val couleur = when {
+            val couleur = if (regul) when {
+                i == 0 -> Couleurs.Bleu
+                i == 1 -> when (d.statut) { "refusee" -> Couleurs.Erreur; "payee", "justifiee" -> Couleurs.Bleu; "soumise" -> Couleurs.Jaune; else -> Color(0xFFEFEDEC) }
+                else -> when (d.statut) { "justifiee" -> Couleurs.Bleu; "payee" -> Couleurs.Jaune; else -> Color(0xFFEFEDEC) }
+            } else when {
                 d.statut == "refusee" && i == 1 -> Couleurs.Erreur
                 i <= idx && !(d.statut == "annulee" && i > 0) -> Couleurs.Bleu
                 i == idx + 1 && d.statut !in listOf("refusee", "annulee") -> Couleurs.Jaune
@@ -138,7 +144,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Titre("Dépenses") }
+            item { Titre("Demandes de dépense") }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     filtres.forEach { (k, l) ->
@@ -161,6 +167,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                         Row(verticalAlignment = Alignment.Top) {
                             Column(Modifier.weight(1f)) {
                                 Text(x.objet, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                                if (x.regularisation) Text("Déjà payée, validation après coup", fontSize = 12.sp, color = Couleurs.Texte2)
                                 Text(listOfNotNull(
                                     if (x.demandeur == d.profil.id) "Vous" else noms[x.demandeur] ?: "Membre du bureau",
                                     dateFr(x.creeLe), d.categories.firstOrNull { it.id == x.categorieId }?.nom,
