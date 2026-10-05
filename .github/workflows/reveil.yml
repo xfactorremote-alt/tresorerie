@@ -1,0 +1,18 @@
+# Supabase gratuit se met en pause après 7 jours sans activité.
+# Cette tâche lit le nom de l'association tous les 3 jours pour garder la base active.
+name: Réveil de la base
+on:
+  schedule:
+    - cron: '17 6 */3 * *'
+  workflow_dispatch:
+jobs:
+  reveil:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroger la base
+        run: |
+          URL="https://kihxkuotukbzrbsiqanq.supabase.co"
+          CLE="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpaHhrdW90dWtienJic2lxYW5xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyMDQ4MTQsImV4cCI6MjEwNjc4MDgxNH0._JcA7pSHjKSUmGKz9n66QqaYK-0AU8aGZNJdQZWMzvI"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/rest/v1/organisation?select=nom" -H "apikey: $CLE" -H "Authorization: Bearer $CLE")
+          echo "Réponse : $code"
+          test "$code" = "200"
