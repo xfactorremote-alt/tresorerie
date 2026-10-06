@@ -11,7 +11,8 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 
 | Fonctionnalité | Site | Application Android |
 |---|---|---|
-| Accueil : bannière avec la photo de l’association et la trésorerie, comptes (touchez pour voir les opérations), rubriques dépliables mémorisées | Oui | Oui |
+| Accueil : bannière tout en haut (photo, logo, nom, roue dentée des paramètres) avec la trésorerie, comptes (touchez pour voir les opérations), rubriques dépliables mémorisées ; **Ma situation** (cotisation et participations) pour chaque membre du bureau | Oui | Oui |
+| **Lien personnel** des membres : chaque membre ouvre sa page (cotisation, participations, rendez-vous, comment régler) d’un geste, sans compte, sans mot de passe, sans installation ; envoi par WhatsApp ou e-mail, un par un ou pour tous ; lien renouvelable ou coupé à tout moment | Oui | Oui (envoi ; la page s’ouvre dans le navigateur) |
 | Opérations : filtres recettes, dépenses, période, compte, catégorie, sans pièce, recherche ; totaux et solde | Oui | Oui |
 | Pièces jointes et signature visibles dans le détail ; ajout de pièce ; contre-passation | Oui | Oui |
 | Demandes de dépense (onglet **Demandes**) : demande, signature du président, paiement, justificatif | Oui | Oui |
@@ -20,9 +21,10 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 | Encaissement rattaché à un tiers (membre, donateur, fournisseur) et à une rubrique : cotisation ou participation à une activité | Oui | Oui |
 | Participations : collecte liée à une activité, montant par personne, qui a donné quoi, relance | Oui | Oui |
 | Tiers : fiche de chaque membre ou tiers, ce qu’il a donné ou reçu | Oui | Oui |
-| Planning : mois, semaine, agenda ; ajout d’un événement sur une date ; anniversaires | Oui | Oui |
+| Planning : **Calendrier** (affichage par mois ou par semaine) et **À venir** (rendez-vous des douze prochains mois) ; case « Suivre le budget » pour une activité | Oui | Oui |
 | Membres : fiche, photo, modification, import CSV | Oui | Oui |
-| Budget ; suivi des activités (budget, dépenses, recettes, participations) | Oui | Oui |
+| Budget : **ressources et emplois** côte à côte, tous les postes listés, prévu, réalisé, réalisé de l’année précédente, excédent ou déficit prévu, reprise du réalisé de l’an passé ; budget de chaque activité (ressources, emplois, résultat) | Oui | Oui |
+| **Matériel** : inventaire des instruments, de la sonorisation, de l’informatique, des tenues ; valeur d’achat et valeur actuelle, lieu de rangement, membre qui l’a en main, vérification annuelle, sortie (vendu, perdu, volé…), historique, photo ; inventaire PDF signé ; achat de matériel inscrit depuis l’opération | Oui | Oui |
 | Rapprochement avec relevé obligatoire | Oui | Oui |
 | Analyse sur l’accueil : résultat, dépenses comparées à l’an passé, réserve en mois, jauge des cotisations, recettes et dépenses par mois, évolution de la trésorerie, diagrammes circulaires (origine des recettes, destination des dépenses) ; code couleur unique : bleu pour les recettes, orange pour les dépenses, gris pour la trésorerie | Oui | Oui |
 | Rapport d’assemblée générale synthétique : l’essentiel, faits marquants, graphiques, trésorerie par compte, cotisations, participations, budget, contrôle interne, signatures | Oui | Oui |
@@ -50,6 +52,7 @@ Rien n’est figé : **Paramètres > Rôles et droits** permet de créer un rôl
 | Voir les membres | ✓ | ✓ | ✓ | |
 | Gérer les membres | ✓ | | | |
 | Gérer les activités et le planning | ✓ | | | |
+| Tenir l’inventaire du matériel | ✓ | | | |
 | Administrer (paramètres, rôles, accès) | ✓ | | | |
 
 Règles que la base impose, quels que soient les droits accordés :
@@ -103,9 +106,12 @@ L’accueil affiche **Bien démarrer** : chaque étape se coche toute seule une 
 2. **Paramètres** > **Association** : nom, logo, photo de la bannière.
 3. **Paramètres** > **Montants et comptes** : cotisation (20 € par mois par défaut ; périodicité mensuelle, trimestrielle, semestrielle ou annuelle), délai du justificatif (7 jours après paiement), puis montant compté dans la caisse et montant du dernier relevé bancaire au jour du démarrage. Ces soldes de départ ne sont pas des recettes : ils ne gonflent pas le résultat de l’année.
 4. **Membres** : ajoutez-les un par un (bouton +) ou **Importer** (CSV ou Excel). Les lignes sans prénom, nom, jour ou mois sont refusées avec la raison.
-5. **Désigner le bureau** : dans **Membres**, bouton **Fonction** sur la ligne du membre, saisissez son e-mail, choisissez sa fonction (Président, Bureau…), puis **Donner l’accès**. La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création. Un lien permet de la prévenir par WhatsApp.
-6. **Cotisations** > **Générer les cotisations** de l’année : une ligne par membre et par période, à partir de son mois d’adhésion. Réglez la périodicité avant : les périodes déjà créées ne bougent pas.
-7. Si besoin, **Paramètres** > **Rôles et droits** : créez d’autres fonctions (Secrétaire, Vice-président, Trésorier adjoint…) et ajustez leurs droits.
+5. **Envoyer à chaque membre son lien personnel** : **Paramètres** > **Montants et comptes** > « Comment régler » (IBAN, espèces…), puis **Membres** > **Liens personnels** > **Créer les liens**, et un geste par membre pour l’envoyer par WhatsApp. Le membre touche le lien : sa page s’ouvre, sans compte ni mot de passe. Il l’ajoute à l’écran d’accueil de son téléphone pour l’ouvrir ensuite d’un geste. Les relances de cotisation contiennent aussi ce lien.
+6. **Désigner le bureau** : dans **Membres**, bouton **Fonction** sur la ligne du membre, saisissez son e-mail, choisissez sa fonction (Président, Bureau…), puis **Donner l’accès**. La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création. Un lien permet de la prévenir par WhatsApp.
+7. **Cotisations** > **Générer les cotisations** de l’année : une ligne par membre et par période, à partir de son mois d’adhésion. Réglez la périodicité avant : les périodes déjà créées ne bougent pas.
+8. **Budget** : saisissez le montant prévu de chaque ressource et de chaque emploi (ou **Reprendre le réalisé** de l’an passé), visez l’équilibre.
+9. **Matériel** : inscrivez les instruments et autres biens, avec leur valeur et leur lieu de rangement ; vérifiez-les une fois par an avant l’assemblée générale.
+10. Si besoin, **Paramètres** > **Rôles et droits** : créez d’autres fonctions (Secrétaire, Vice-président, Trésorier adjoint…) et ajustez leurs droits.
 
 Pour se déconnecter : **Paramètres** > **Mon compte** > **Se déconnecter**.
 
@@ -128,6 +134,7 @@ Le même secret sert au **réveil de la base** : Supabase gratuit se met en paus
 - Une cotisation se rattache toujours à un membre ; une opération n’a qu’un tiers (un membre ou un autre tiers).
 - Justificatif en retard : signalé dès 7 jours après le paiement, tant qu’il n’est pas déposé.
 - Aucune suppression d’écriture : une erreur se corrige par **contre-passation** (écriture de correction en négatif, même catégorie, même compte).
+- Lien personnel : jeton aléatoire de 32 caractères, impossible à deviner ; il donne accès à la situation d’un seul membre et à rien d’autre ; renouveler le lien rend l’ancien inutilisable.
 - Anniversaires : jour et mois seulement, sans l’année. Les adhérents ne voient que les membres qui ont donné leur accord, avec l’initiale du nom.
 
 ## Vérifier après installation

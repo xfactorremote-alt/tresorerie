@@ -859,3 +859,148 @@ grant execute on function
   public.anniversaires_du_mois(int), public.ma_cotisation(), public.mes_participations(),
   public.planning_activites(date, date), public.mes_droits(), public.modifier_mon_nom(text), public.demander_validation_operation(uuid)
   to authenticated;
+-- =====================================================================
+-- 9. Lien personnel des membres, inventaire du matériel, informations de paiement
+-- =====================================================================
+-- Informations de paiement affichées aux membres (IBAN, Lydia, remise en main propre…)
+insert into public.settings(cle, texte, description) values
+ ('infos_paiement', null, 'Comment régler sa cotisation : IBAN, application, remise au trésorier')
+on conflict (cle) do nothing;
+
+-- ---------- Lien personnel : consultation sans compte ni mot de passe ----------
+-- Un jeton aléatoire (122 bits) par membre, envoyé par WhatsApp ou e-mail.
+-- Il ne donne accès qu'à la situation de ce membre ; il se renouvelle ou se coupe à tout moment.
+create table if not exists public.liens_membres (
+  member_id uuid primary key references public.members(id) on delete cascade,
+  jeton text not null unique,
+  cree_par uuid references public.profiles(id),
+  cree_le timestamptz not null default now(),
+  derniere_consultation timestamptz,
+  nb_consultations int not null default 0
+);
+alter table public.liens_membres enable row level security;
+create policy lecture on public.liens_membres for select using (public.a_droit('gerer_membres') or public.a_droit('gerer_cotisations'));
+create policy gestion on public.liens_membres for delete using (public.a_droit('gerer_membres') or public.a_droit('gerer_cotisations'));
+
+create or replace function public.lien_membre(p_member uuid, p_renouveler boolean default false) returns text
+language plpgsql security definer set search_path = public as $$
+declare j text;
+begin
+  if not (a_droit('gerer_membres') or a_droit('gerer_cotisations')) then raise exception 'Droit « gérer les membres » requis'; end if;
+  if not exists (select 1 from members where id = p_member) then raise exception 'Membre introuvable'; end if;
+  if not p_renouveler then select jeton into j from liens_membres where member_id = p_member; end if;
+  if j is null then
+    j := replace(gen_random_uuid()::text, '-', '');
+    insert into liens_membres(member_id, jeton, cree_par) values (p_member, j, auth.uid())
+    on conflict (member_id) do update set jeton = excluded.jeton, cree_par = excluded.cree_par, cree_le = now(),
+      derniere_consultation = null, nb_consultations = 0;
+  end if;
+  return j;
+end $$;
+
+-- Situation d'un membre à partir de son lien : cotisation, participations, rendez-vous à venir.
+-- Appelable sans connexion ; ne renvoie rien si le jeton est inconnu.
+create or replace function public.situation_par_lien(p_jeton text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare mid uuid; r jsonb;
+begin
+  if p_jeton is null or length(p_jeton) <> 32 then return null; end if;
+  update liens_membres set derniere_consultation = now(), nb_consultations = nb_consultations + 1
+   where jeton = p_jeton returning member_id into mid;
+  if mid is null then return null; end if;
+  select jsonb_build_object(
+    'association', (select jsonb_build_object('nom', o.nom, 'logo_path', o.logo_path, 'banniere_path', o.banniere_path) from organisation o),
+    'membre', (select jsonb_build_object('prenom', m.prenom, 'nom', m.nom, 'actif', m.actif) from members m where m.id = mid),
+    'reglages', jsonb_build_object(
+       'montant', (select valeur from settings where cle = 'cotisation_montant'),
+       'periode_mois', (select valeur from settings where cle = 'cotisation_periode_mois'),
+       'infos_paiement', (select texte from settings where cle = 'infos_paiement')),
+    'periodes', coalesce((select jsonb_agg(jsonb_build_object('periode', v.periode, 'annee', v.annee, 'montant_du', v.montant_du,
+                   'regle', v.regle, 'statut', v.statut) order by v.periode desc)
+                 from v_cotisations_periodes v where v.member_id = mid), '[]'::jsonb),
+    'avance', greatest(0, coalesce((select sum(t.montant) from transactions t where t.est_cotisation and t.member_id = mid), 0)
+                 - coalesce((select sum(c.montant_du) from cotisations c where c.member_id = mid), 0)),
+    'versements', coalesce((select jsonb_agg(jsonb_build_object('date', t.date_op, 'montant', t.montant,
+                   'objet', case when t.est_cotisation then 'Cotisation' else coalesce((select c.nom from collectes c where c.id = t.collecte_id), t.libelle) end)
+                   order by t.date_op desc)
+                 from (select * from transactions t where t.member_id = mid and t.sens = 'recette'
+                       and (t.est_cotisation or t.collecte_id is not null) order by t.date_op desc limit 24) t), '[]'::jsonb),
+    'participations', coalesce((select jsonb_agg(x order by x->>'cree' desc) from (
+        select jsonb_build_object('nom', c.nom, 'montant_attendu', c.montant_attendu, 'donne', coalesce(sum(t.montant), 0),
+               'date_limite', c.date_limite, 'cloturee', c.cloturee, 'cree', c.created_at) x
+        from collectes c
+        left join transactions t on t.collecte_id = c.id and t.member_id = mid
+        where c.tous_membres or exists (select 1 from collecte_membres cm where cm.collecte_id = c.id and cm.member_id = mid)
+        group by c.id
+        having not c.cloturee or coalesce(sum(t.montant), 0) <> 0) s), '[]'::jsonb),
+    'a_venir', coalesce((select jsonb_agg(jsonb_build_object('nom', p.nom, 'date_debut', p.date_debut, 'date_fin', p.date_fin,
+                   'heure_debut', p.heure_debut, 'heure_fin', p.heure_fin, 'lieu', p.lieu, 'description', p.description)
+                   order by p.date_debut, p.heure_debut nulls first)
+                 from (select * from projects p where p.visible_adherents and p.date_debut is not null
+                       and coalesce(p.date_fin, p.date_debut) >= current_date and p.date_debut <= current_date + 120
+                       order by p.date_debut limit 12) p), '[]'::jsonb)
+  ) into r;
+  return r;
+end $$;
+
+-- ---------- Inventaire du matériel (instruments, sonorisation, informatique…) ----------
+insert into public.permissions(code, libelle, groupe, ordre) values
+ ('gerer_materiel', 'Tenir l’inventaire du matériel : ajouter, prêter, sortir', 'Matériel', 13)
+on conflict (code) do nothing;
+insert into public.role_permissions(role, permission) values ('tresorier', 'gerer_materiel') on conflict do nothing;
+
+create table if not exists public.materiel (
+  id uuid primary key default gen_random_uuid(),
+  designation text not null,
+  categorie text not null default 'autre'
+    check (categorie in ('instrument','sonorisation','informatique','mobilier','textile','cuisine','autre')),
+  marque text,
+  numero_serie text,
+  quantite int not null default 1 check (quantite > 0),
+  origine text not null default 'achat' check (origine in ('achat','don','pret')),   -- prêt : appartient à un tiers
+  date_acquisition date,
+  valeur_acquisition numeric(14,2) check (valeur_acquisition is null or valeur_acquisition >= 0),   -- prix payé ou valeur estimée du don
+  valeur_actuelle numeric(14,2) check (valeur_actuelle is null or valeur_actuelle >= 0),
+  etat text not null default 'bon' check (etat in ('neuf','bon','usage','a_reparer','hors_service')),
+  lieu text,                                                 -- lieu de rangement
+  detenteur_id uuid references public.members(id) on delete set null,   -- membre qui l'a en main
+  transaction_id uuid references public.transactions(id) on delete set null,   -- achat enregistré
+  photo_path text,
+  notes text,
+  verifie_le date,                                           -- dernier inventaire physique
+  sorti_le date,
+  motif_sortie text check (motif_sortie is null or motif_sortie in ('vendu','donne','perdu','vole','detruit','rendu')),
+  created_at timestamptz not null default now(),
+  check ((sorti_le is null) = (motif_sortie is null))
+);
+create table if not exists public.materiel_mouvements (
+  id uuid primary key default gen_random_uuid(),
+  materiel_id uuid not null references public.materiel(id) on delete cascade,
+  date_mvt date not null default current_date,
+  type text not null check (type in ('entree','pret','retour','reparation','inventaire','sortie','modification')),
+  member_id uuid references public.members(id) on delete set null,
+  notes text,
+  par uuid references public.profiles(id) default auth.uid(),
+  created_at timestamptz not null default now()
+);
+create index if not exists materiel_mouvements_materiel on public.materiel_mouvements(materiel_id);
+alter table public.materiel enable row level security;
+alter table public.materiel_mouvements enable row level security;
+create policy lecture on public.materiel for select using (
+  public.a_droit('gerer_materiel') or public.a_droit('consulter_finances') or public.a_droit('voir_membres'));
+create policy gestion on public.materiel for all using (public.a_droit('gerer_materiel')) with check (public.a_droit('gerer_materiel'));
+create policy lecture on public.materiel_mouvements for select using (
+  public.a_droit('gerer_materiel') or public.a_droit('consulter_finances') or public.a_droit('voir_membres'));
+create policy gestion on public.materiel_mouvements for insert with check (public.a_droit('gerer_materiel'));
+create trigger audit_materiel after insert or update or delete on public.materiel for each row execute function public.log_change();
+
+-- Photos du matériel : dossier « materiel/ » du bucket photos
+create policy "photos materiel" on storage.objects for all
+  using (bucket_id = 'photos' and (storage.foldername(name))[1] = 'materiel' and public.a_droit('gerer_materiel'))
+  with check (bucket_id = 'photos' and (storage.foldername(name))[1] = 'materiel' and public.a_droit('gerer_materiel'));
+
+-- Droits d'exécution
+revoke execute on function public.lien_membre(uuid, boolean) from public, anon;
+grant execute on function public.lien_membre(uuid, boolean) to authenticated;
+revoke execute on function public.situation_par_lien(text) from public;
+grant execute on function public.situation_par_lien(text) to anon, authenticated;

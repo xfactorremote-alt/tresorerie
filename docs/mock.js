@@ -139,12 +139,33 @@ function seed() {
     ['valider_depenses', 'Valider ou refuser une dépense (signature)', 'Dépenses'], ['payer_depenses', 'Payer une dépense validée', 'Dépenses'],
     ['voir_membres', 'Voir la liste des membres', 'Membres'], ['gerer_membres', 'Ajouter, modifier et importer des membres', 'Membres'],
     ['gerer_activites', 'Créer et modifier les activités et le planning', 'Activités'], ['administrer', 'Paramètres, rôles et accès', 'Administration'],
+    ['gerer_materiel', 'Tenir l’inventaire du matériel : ajouter, prêter, sortir', 'Matériel'],
   ].map(([code, libelle, groupe], i) => ({ code, libelle, groupe, ordre: i + 1 }));
   const roles = [['tresorier', 'Trésorier'], ['president', 'Président'], ['bureau', 'Bureau'], ['adherent', 'Adhérent']].map(([code, nom]) => ({ code, nom, systeme: true }));
   const role_permissions = [
     ...permissions.filter((p) => p.code !== 'valider_depenses').map((p) => ({ role: 'tresorier', permission: p.code })),
     ...['consulter_finances', 'demander_depenses', 'valider_depenses', 'voir_membres'].map((p) => ({ role: 'president', permission: p })),
     ...['consulter_finances', 'demander_depenses', 'voir_membres'].map((p) => ({ role: 'bureau', permission: p })),
+  ];
+  // Inventaire du matériel
+  const M = (id, designation, categorie, extra) => ({ id, designation, categorie, marque: null, numero_serie: null, quantite: 1, origine: 'achat', date_acquisition: null,
+    valeur_acquisition: null, valeur_actuelle: null, etat: 'bon', lieu: 'Église, local de rangement', detenteur_id: null, transaction_id: null, photo_path: null,
+    notes: null, verifie_le: null, sorti_le: null, motif_sortie: null, created_at: ilYa(200).toISOString(), ...extra });
+  const materiel = [
+    M('mat1', 'Guitare électro-acoustique', 'instrument', { marque: 'Yamaha APX600', numero_serie: 'HPX09123', date_acquisition: `${an - 2}-04-12`, valeur_acquisition: 320, valeur_actuelle: 220, detenteur_id: 'm1', verifie_le: iso(ilYa(60)) }),
+    M('mat2', 'Clavier arrangeur', 'instrument', { marque: 'Yamaha PSR-E473', origine: 'don', date_acquisition: `${an - 1}-11-05`, valeur_acquisition: 380, valeur_actuelle: 300, notes: 'Don de la famille Lefèvre', verifie_le: iso(ilYa(60)) }),
+    M('mat3', 'Batterie complète', 'instrument', { marque: 'Pearl Roadshow', date_acquisition: `${an - 4}-09-01`, valeur_acquisition: 680, valeur_actuelle: 350, etat: 'usage', lieu: 'Salle de répétition' }),
+    M('mat4', 'Djembés', 'instrument', { quantite: 3, date_acquisition: `${an - 3}-06-20`, valeur_acquisition: 210, valeur_actuelle: 150, verifie_le: iso(ilYa(60)) }),
+    M('mat5', 'Table de mixage 12 voies', 'sonorisation', { marque: 'Behringer Xenyx 1202', date_acquisition: `${an - 2}-01-15`, valeur_acquisition: 289, valeur_actuelle: 180 }),
+    M('mat6', 'Micros sans fil', 'sonorisation', { marque: 'Shure BLX', quantite: 2, date_acquisition: iso(ilYa(9)), valeur_acquisition: 120, valeur_actuelle: 120, etat: 'neuf' }),
+    M('mat7', 'Vidéoprojecteur', 'informatique', { marque: 'Epson EB-W06', origine: 'don', date_acquisition: `${an - 3}-02-10`, valeur_acquisition: 300, valeur_actuelle: 80, etat: 'a_reparer', notes: 'Lampe à remplacer' }),
+    M('mat8', 'Tenues de chorale', 'textile', { quantite: 20, date_acquisition: `${an - 1}-03-01`, valeur_acquisition: 600, valeur_actuelle: 400, lieu: 'Chez la responsable de la chorale' }),
+    M('mat9', 'Tables pliantes', 'mobilier', { quantite: 6, origine: 'pret', notes: 'Prêtées par la paroisse Saint-Bruno', lieu: 'Salle paroissiale' }),
+  ];
+  const tMicro = transactions.find((x) => x.libelle === 'Câbles et micro'); if (tMicro) materiel[5].transaction_id = tMicro.id;
+  const materiel_mouvements = [
+    { id: 'mv1', materiel_id: 'mat1', date_mvt: iso(ilYa(20)), type: 'pret', member_id: 'm1', notes: 'Pour les répétitions à domicile', par: 'u-tresorier', created_at: ilYa(20).toISOString() },
+    { id: 'mv2', materiel_id: 'mat7', date_mvt: iso(ilYa(15)), type: 'reparation', member_id: null, notes: 'Lampe hors service', par: 'u-tresorier', created_at: ilYa(15).toISOString() },
   ];
   return {
     ids,
@@ -154,9 +175,11 @@ function seed() {
       settings: [
         { cle: 'cotisation_montant', valeur: 20 }, { cle: 'cotisation_periode_mois', valeur: 1 },
         { cle: 'delai_justificatif_jours', valeur: 7 }, { cle: 'seuil_alerte_budget_pct', valeur: 90 },
+        { cle: 'infos_paiement', valeur: null, texte: 'Virement : IBAN FR76 0000 0000 0000 0000 0000 000 (démonstration)\nEspèces : auprès du trésorier après le culte' },
       ],
       categories, accounts, members, cotisations, transactions, profiles, expense_requests, invitations: [],
       projects, budgets, attachments, reconciliations: [rec0], tiers, collectes, collecte_membres: [],
+      liens_membres: [], materiel, materiel_mouvements,
     },
   };
 }
@@ -166,6 +189,7 @@ const DROIT_ECRITURE = {
   members: ['gerer_membres'], budgets: ['gerer_budget'], projects: ['gerer_activites'], cotisations: ['gerer_cotisations'], reconciliations: ['rapprocher'],
   categories: ['administrer'], accounts: ['administrer'], settings: ['administrer'], organisation: ['administrer'], invitations: ['administrer'],
   profiles: ['administrer'], roles: ['administrer'], role_permissions: ['administrer'],
+  materiel: ['gerer_materiel'], materiel_mouvements: ['gerer_materiel'], liens_membres: ['gerer_membres', 'gerer_cotisations'],
   tiers: ['saisir_ecritures', 'gerer_cotisations'], collectes: ['gerer_activites', 'gerer_cotisations'], collecte_membres: ['gerer_activites', 'gerer_cotisations'],
 };
 
@@ -347,6 +371,8 @@ export function createMockClient() {
         tiers: finances || d.has('saisir_ecritures') || d.has('gerer_cotisations') || d.has('payer_depenses'),
         collectes: finances || d.has('gerer_cotisations') || d.has('gerer_activites') || d.has('saisir_ecritures'),
         collecte_membres: finances || d.has('gerer_cotisations') || d.has('gerer_activites') || d.has('saisir_ecritures'),
+        materiel: finances || d.has('gerer_materiel') || d.has('voir_membres'), materiel_mouvements: finances || d.has('gerer_materiel') || d.has('voir_membres'),
+        liens_membres: d.has('gerer_membres') || d.has('gerer_cotisations'),
       };
       if (nom in regles && !regles[nom]) return [];
       if (nom === 'members' && !(d.has('voir_membres') || d.has('gerer_membres') || d.has('gerer_cotisations'))) return t.members.filter((m) => m.id === moi?.member_id);
@@ -371,9 +397,41 @@ export function createMockClient() {
     from: (table) => new Requete(db, table),
     async rpc(nom, args = {}) {
       const t = tables;
+      if (nom === 'situation_par_lien') {
+        const l = t.liens_membres.find((x) => x.jeton === args.p_jeton && String(args.p_jeton).length === 32);
+        if (!l) return ok(null);
+        l.nb_consultations++; l.derniere_consultation = new Date().toISOString();
+        const m = t.members.find((x) => x.id === l.member_id);
+        const reg = (c) => t.settings.find((s) => s.cle === c);
+        const periodes = periodesCotisation(t).periodes.filter((p) => p.member_id === m.id).sort((a, b) => (a.periode < b.periode ? 1 : -1));
+        const paye = t.transactions.filter((x) => x.est_cotisation && x.member_id === m.id).reduce((s, x) => s + Number(x.montant), 0);
+        const du = t.cotisations.filter((c) => c.member_id === m.id).reduce((s, c) => s + Number(c.montant_du), 0);
+        return ok({
+          association: { nom: t.organisation[0].nom, logo_path: t.organisation[0].logo_path, banniere_path: t.organisation[0].banniere_path },
+          membre: { prenom: m.prenom, nom: m.nom, actif: m.actif },
+          reglages: { montant: reg('cotisation_montant').valeur, periode_mois: reg('cotisation_periode_mois').valeur, infos_paiement: reg('infos_paiement')?.texte || null },
+          periodes, avance: Math.max(0, paye - du),
+          versements: t.transactions.filter((x) => x.member_id === m.id && x.sens === 'recette' && (x.est_cotisation || x.collecte_id)).sort((a, b) => (a.date_op < b.date_op ? 1 : -1)).slice(0, 24)
+            .map((x) => ({ date: x.date_op, montant: x.montant, objet: x.est_cotisation ? 'Cotisation' : (t.collectes.find((c) => c.id === x.collecte_id)?.nom || x.libelle) })),
+          participations: t.collectes.filter((c) => c.tous_membres || t.collecte_membres.some((x) => x.collecte_id === c.id && x.member_id === m.id)).map((c) => ({
+            nom: c.nom, montant_attendu: c.montant_attendu, date_limite: c.date_limite, cloturee: c.cloturee,
+            donne: t.transactions.filter((x) => x.collecte_id === c.id && x.member_id === m.id).reduce((s, x) => s + Number(x.montant), 0) })).filter((c) => !c.cloturee || c.donne !== 0),
+          a_venir: t.projects.filter((p) => p.visible_adherents && p.date_debut && (p.date_fin || p.date_debut) >= iso(new Date()) && p.date_debut <= dansJours(120))
+            .sort((a, b) => (a.date_debut > b.date_debut ? 1 : -1)).slice(0, 12),
+        });
+      }
       if (!db.session) return ko('Non connecté');
       const d = db.droits();
       if (nom === 'mes_droits') return ok([...d].sort());
+      if (nom === 'lien_membre') {
+        if (!(d.has('gerer_membres') || d.has('gerer_cotisations'))) return ko('Droit « gérer les membres » requis');
+        let l = t.liens_membres.find((x) => x.member_id === args.p_member);
+        if (l && !args.p_renouveler) return ok(l.jeton);
+        const jeton = Array.from({ length: 32 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+        if (l) Object.assign(l, { jeton, cree_le: new Date().toISOString(), nb_consultations: 0, derniere_consultation: null });
+        else t.liens_membres.push({ member_id: args.p_member, jeton, cree_par: db.moi(), cree_le: new Date().toISOString(), nb_consultations: 0, derniere_consultation: null });
+        return ok(jeton);
+      }
       if (nom === 'demander_validation_operation') {
         if (!d.has('saisir_ecritures')) return ko('Droit « saisir les écritures » requis');
         const tx = t.transactions.find((x) => x.id === args.p_transaction);

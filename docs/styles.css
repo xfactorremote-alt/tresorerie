@@ -449,3 +449,69 @@ input,select,textarea{max-width:100%;min-width:0}
 @media print{.rapport-page table.doc-table{break-inside:auto}html,body,body.avec-rapport{background:#fff !important}.doc-synthese,.doc-entete{break-inside:avoid}}
 .doc-table .nw{white-space:nowrap}.doc-table td.large{min-width:150px}
 @media print{.doc-table tfoot{display:table-row-group}}
+
+/* Accueil sur téléphone : pas de barre du haut, la bannière monte et porte la roue dentée */
+.banniere-reglages{display:none}
+@media (max-width:899px){
+  .shell-accueil .entete{display:none}
+  .shell-accueil .contenu{padding-top:calc(12px + env(safe-area-inset-top))}
+  .banniere-reglages{display:flex;position:absolute;top:14px;right:14px;width:44px;height:44px;border-radius:50%;align-items:center;justify-content:center;color:#fff;
+    background:rgba(20,18,17,.32);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.28);z-index:2}
+  .banniere-reglages:hover{background:rgba(20,18,17,.5)}
+  .banniere .banniere-tete{padding-right:52px}
+}
+
+/* Espace membre par lien personnel */
+.espace-membre{max-width:640px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 16px 40px;display:flex;flex-direction:column;gap:14px}
+.espace-membre .banniere{min-height:200px}
+.situation{display:flex;flex-direction:column;margin-top:auto;align-self:flex-start;border-radius:20px;padding:12px 16px;background:rgba(255,255,255,.14);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.25)}
+.situation span{font-size:13px;font-weight:600;opacity:.9}
+.situation b{font-size:34px;font-weight:800;font-stretch:110%;line-height:1.15}
+.situation small{font-size:13px;opacity:.9}
+.situation-retard{background:rgba(186,26,26,.55);border-color:rgba(255,255,255,.35)}
+.texte-libre{white-space:pre-line;margin:0}
+.pied-membre{color:var(--texte-3);font-size:13px;display:flex;flex-direction:column;gap:6px;padding:4px 4px 0}
+.pied-membre p{margin:0}
+
+/* Budget */
+.budget-colonnes{align-items:start}
+.saisie-budget{width:120px;min-height:40px;text-align:right}
+.table-budget tfoot td{border-top:2px solid var(--bord);padding-top:10px}
+.budget-act{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.budget-act>div{display:flex;flex-direction:column;background:var(--fond);border-radius:16px;padding:10px 12px;min-width:0}
+.budget-act b{font-size:16px;white-space:nowrap}
+.budget-act small{font-size:12px}
+.liste-compacte li{min-height:0;padding:6px 0}
+@media (max-width:600px){
+  .table-budget tbody tr{display:grid !important;grid-template-columns:1fr auto;grid-template-areas:"poste prevu" "real avanc";gap:4px 12px;align-items:center;padding:10px 0}
+  .table-budget tbody td{padding:0 !important}
+  .table-budget tbody td:nth-child(1){grid-area:poste}
+  .table-budget tbody td:nth-child(2){grid-area:prevu}
+  .table-budget tbody td:nth-child(2)::before{display:none}
+  .table-budget tbody td:nth-child(3){grid-area:real;justify-content:flex-start !important;gap:6px !important;font-size:14px}
+  .table-budget tbody td:nth-child(3)::before{content:"Réalisé" !important}
+  .table-budget tbody td:nth-child(4){grid-area:avanc;justify-content:flex-end !important;gap:6px !important}
+  .table-budget tbody td:nth-child(4)::before,.table-budget tbody td:nth-child(5){display:none !important}
+  .table-budget tbody td:nth-child(4) .barre{width:70px;flex:none}
+  .table-budget .saisie-budget{width:110px !important}
+  .table-budget tfoot{display:block}.table-budget tfoot tr{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;padding-top:10px}
+  .table-budget tfoot td{border:0;padding:0;display:block !important;width:auto !important}
+  .table-budget tfoot td[data-label]::before{content:attr(data-label) " ";font-size:13px;color:var(--texte-3);font-weight:600}
+  .table-budget tfoot td:nth-child(4),.table-budget tfoot td:nth-child(5){display:none !important}}
+
+/* Planning */
+.groupe-compact button{min-height:36px;padding:0 14px;font-size:14px;flex:none}
+.evt{background:var(--bleu-clair);color:var(--sur-bleu-clair)}
+.agenda-evt{background:var(--bleu-clair);color:var(--sur-bleu-clair)}
+.pastille-legende{display:inline-block;width:14px;height:8px;border-radius:4px}
+.leg-evt{background:var(--bleu)}
+.leg-anniv{background:var(--jaune)}
+@media (max-width:600px){.cal-nav{gap:6px}.cal-nav .groupe-compact{width:100%}.cal-nav .groupe-compact button{flex:1}.cal-jour .evt{background:var(--bleu)}}
+
+/* Matériel */
+.avatar-carre{border-radius:14px !important;background:var(--surface-2);color:var(--texte-2)}
+.photo-materiel{width:100%;max-height:240px;object-fit:cover;border-radius:20px}
+.carte-interne{background:var(--fond);border-radius:20px;padding:14px}
+.actions-materiel{flex-wrap:wrap}
+.descr{display:block;font-size:13px;margin-top:2px}
+.table-budget td{white-space:nowrap}.table-budget td:first-child{white-space:normal}

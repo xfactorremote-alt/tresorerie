@@ -6,6 +6,7 @@ import { C, eur0, colonnesGroupees, ligne, barresH, anneau, jauge, budgetBarres,
 // Styles des graphiques (partagés par le tableau de bord et le rapport d'AG)
 document.head.insertAdjacentHTML('beforeend', `<style>${CSS_GRAPHIQUES}</style>`);
 
+const MOIS_COURTS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
 const ROLES = { tresorier: 'Trésorier', president: 'Président', bureau: 'Bureau', adherent: 'Adhérent' };
 const MODES = { especes: 'Espèces', virement: 'Virement', autre: 'Chèque ou carte' };
@@ -110,11 +111,18 @@ async function demarrer() {
   sb.auth.onAuthStateChange((evt, session) => {
     if (evt === 'PASSWORD_RECOVERY') { S.session = session; return ecranNouveauMotDePasse(); }
     if (evt === 'SIGNED_OUT') { S.session = null; S.profil = null; ecranConnexion(); }
+    if (evt === 'SIGNED_IN' && session && !S.profil && new URLSearchParams(location.search).get('m')) history.replaceState(null, '', location.pathname);
   });
+  await chargerOrganisation();
+  // Lien personnel d'un membre (?m=…) : sa page s'ouvre directement, sans compte
+  const jeton = new URLSearchParams(location.search).get('m');
+  if (jeton) return pageLien(jeton);
   const { data } = await sb.auth.getSession();
   S.session = data.session;
-  await chargerOrganisation();
-  if (S.session) await entrer(); else ecranConnexion();
+  if (S.session) return entrer();
+  // Lien déjà ouvert sur cet appareil (icône sur l'écran d'accueil) : même page
+  if (lireJeton()) return pageLien(lireJeton());
+  ecranConnexion();
 }
 
 function afficherBandeauDemo() {
@@ -160,6 +168,7 @@ async function chargerReferentiels() {
     q(sb.from('projects').select('*').order('date_debut', { ascending: false })),
   ]);
   S.settings = Object.fromEntries(settings.map((x) => [x.cle, x.valeur]));
+  S.textes = Object.fromEntries(settings.map((x) => [x.cle, x.texte]));
   Object.assign(S, { categories, roles, permissions, projets });
   S.comptes = peut('consulter_finances', 'saisir_ecritures', 'payer_depenses', 'gerer_cotisations', 'rapprocher')
     ? await q(sb.from('accounts').select('*').eq('actif', true).order('nom')) : [];
@@ -179,6 +188,7 @@ async function chargerAcces() {
   } catch (e) { console.warn(e); }
   S.profils.forEach((p) => { if (p.member_id) S.liens[p.member_id] = { profil: p }; });
   S.invitations.forEach((i) => { if (i.member_id && !S.liens[i.member_id]) S.liens[i.member_id] = { invitation: i }; });
+  await chargerLiens();
 }
 
 async function chargerPhotos(liste) {
@@ -278,6 +288,7 @@ const ICONES = {
   rapprochement: '<path d="M4 7h11M4 7l3-3M4 7l3 3M20 17H9M20 17l-3-3M20 17l-3 3"/>',
   rapports: '<path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7"/>',
   tiers: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6"/>',
+  materiel: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   plus: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
   parametres: '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 };
@@ -293,6 +304,7 @@ function pagesAutorisees() {
     ['cotisations', peut('consulter_finances', 'gerer_cotisations') ? 'Cotisations' : 'Ma cotisation', true],
     ['budget', 'Budget', peut('consulter_finances', 'gerer_budget')],
     ['activites', 'Planning', true],
+    ['materiel', 'Matériel', peut('gerer_materiel', 'consulter_finances', 'voir_membres')],
     ['tiers', 'Tiers', peut('consulter_finances', 'saisir_ecritures', 'gerer_cotisations')],
     ['membres', 'Membres', peut('voir_membres', 'gerer_membres')],
     ['rapprochement', 'Rapprochement', peut('consulter_finances', 'rapprocher')],
@@ -313,7 +325,7 @@ function coquille(page, contenu) {
   const enPlus = autres.some(([k]) => k === page);
   const navMobile = courtes.map(lien).join('') + (autres.length ? `<a href="#" id="b-plus" ${enPlus ? 'aria-current="page"' : ''}><span class="pastille">${icone('plus')}</span>Plus</a>` : '');
   $('#app').innerHTML = `
-  <div class="shell">
+  <div class="shell ${page === 'tableau' ? 'shell-accueil' : ''}">
     <nav class="rail" aria-label="Navigation">
       <a href="#tableau" class="rail-logo" aria-label="Accueil"><img src="${esc(S.logoUrl)}" alt=""></a>
       <div class="rail-liens">${nav}</div>
@@ -338,7 +350,7 @@ function coquille(page, contenu) {
 
 const PAGES = { tableau: pageTableau, ecritures: pageEcritures, membres: pageMembres, cotisations: pageCotisations, parametres: pageParametres,
   depenses: pageDepenses, budget: pageBudget, activites: pageActivites, rapprochement: pageRapprochement, rapports: pageRapports,
-  tiers: pageTiers, moi: () => pageCotisations(true) };
+  tiers: pageTiers, materiel: pageMateriel, moi: () => pageCotisations(true) };
 async function router() {
   if (!S.profil) return;
   let page = location.hash.slice(1) || 'tableau';
@@ -387,6 +399,7 @@ function banniere(contenu) {
   return `<section class="banniere ${S.banniereUrl ? 'avec-photo' : ''}"${fond} aria-label="${esc(S.org?.nom || 'Association')}">
     <div class="banniere-tete"><img src="${esc(S.logoUrl)}" alt=""><div><b>${esc(S.org?.nom || '')}</b><span>Bonjour ${premier} · ${date}</span></div>
       ${!S.banniereUrl && peut('administrer') ? '<a class="banniere-ajout" href="#parametres" aria-label="Ajouter une photo" title="Ajouter une photo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Ajouter une photo</span></a>' : ''}</div>
+    <a class="banniere-reglages" href="#parametres" aria-label="Paramètres" title="Paramètres">${icone('parametres')}</a>
     ${contenu}</section>`;
 }
 
@@ -401,6 +414,7 @@ async function pageTableau() {
   await chargerPhotos(anniv);
   if (!peut('consulter_finances')) return pageTableauAdherent(anniv, mois);
 
+  const [maCot, mesParts] = S.profil.member_id ? await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('mes_participations'))]) : [[], []];
   const [soldes, cotis, retards, toutes, demandes, budget] = await Promise.all([
     q(sb.from('v_soldes').select('*')),
     q(sb.from('v_cotisations').select('*').eq('annee', S.annee)),
@@ -488,6 +502,8 @@ async function pageTableau() {
     ${comptes}
     <div class="rub-outils"><button class="btn-texte btn-petit" id="b-rubriques">Tout replier</button></div>
     ${demarrage}
+    ${S.profil.member_id ? rubrique('masituation', 'Ma situation', retardDe(maCot) > 0 ? `Cotisation : ${eur(retardDe(maCot))} en retard` : 'Cotisation à jour',
+      `${blocMaCotisation(maCot)}${mesParts.length ? `<h3>Mes participations</h3>${listeParticipations(mesParts)}` : ''}`, { ouverte: retardDe(maCot) > 0 }) : ''}
     ${taches.length ? rubrique('traiter', 'À traiter', pl(taches.length, 'action'), `<ul class="liste">${taches.join('')}</ul>`, { classe: retards.length ? 'rub-alerte' : '' }) : ''}
     ${sansOperations ? rubrique('indicateurs', `Chiffres ${an}`, 'Aucune opération', `<div class="vide">Les chiffres et les graphiques apparaissent dès la première opération.${peut('saisir_ecritures') ? '<a class="btn btn-primaire" href="#ecritures">Nouvelle opération</a>' : ''}</div>`) : `
     ${rubrique('indicateurs', `Chiffres ${an}`, `Recettes ${eur0(rec)} · Dépenses ${eur0(dep)}`, indicateurs)}
@@ -672,11 +688,13 @@ async function detailEcriture(t, pieces, contrepassees, recharger) {
       ${demande?.signature_path ? `<button class="btn-texte" data-voir="${esc(demande.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
       ${!piece && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">Joindre une pièce</button>` : ''}
       ${!demande && peutCorriger && t.sens === 'depense' && t.montant > 0 ? '<button class="btn-tonal" id="b-faire-valider">Faire valider par le président</button>' : ''}
+      ${t.sens === 'depense' && t.montant > 0 && /mat[ée]riel|instrument|[ée]quipement/i.test(nomCategorie(t.category_id)) && peut('gerer_materiel') ? '<button class="btn-texte" id="b-inventaire">Inscrire à l’inventaire</button>' : ''}
       ${peutCorriger ? `<button class="btn-texte" id="b-contre">Contre-passer</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button>
     </div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-contre', root)?.addEventListener('click', () => contrePasser(t));
+    $('#b-inventaire', root)?.addEventListener('click', () => feuilleMateriel(null, () => toast('Voir la page Matériel'), { designation: t.libelle, valeur_acquisition: Number(t.montant), valeur_actuelle: Number(t.montant), date_acquisition: t.date_op, etat: 'neuf', transaction_id: t.id }));
     $('#b-faire-valider', root)?.addEventListener('click', async () => {
       try { await q(sb.rpc('demander_validation_operation', { p_transaction: t.id })); fermerFeuille(); toast('Dépense envoyée au président pour validation'); recharger(); }
       catch (err) { erreur(err); }
@@ -843,6 +861,7 @@ async function pageMembres() {
           <div class="corps"><b>${esc(nomComplet(m))}${m.id === S.profil.member_id ? ' <span class="muted">(vous)</span>' : ''}</b><span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}${m.profession ? ' · ' + esc(m.profession) : ''}${m.actif ? '' : ' · inactif'}</span>
             <div class="membre-etats">${pucesFonction(m)}${m.consent_anniversaire ? '' : '<span class="puce puce-neutre" title="Anniversaire visible uniquement par le bureau">Sans accord</span>'}</div></div>
           <div class="membre-actions">
+            ${peut('gerer_membres', 'gerer_cotisations') && m.actif ? `<button class="btn-texte btn-petit" data-lien="${m.id}">Lien</button>` : ''}
             ${admin ? `<button class="btn-texte btn-petit" data-acces="${m.id}">Fonction</button>` : ''}
             ${peut('gerer_membres') ? `<button class="btn-texte btn-petit" data-modif="${m.id}">Modifier</button>` : ''}
           </div>
@@ -851,6 +870,7 @@ async function pageMembres() {
   rendre(`<div class="page">
     <div class="page-titre"><h1>Membres</h1>
       <span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? `, ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
+      ${peut('gerer_membres', 'gerer_cotisations') && S.membres.length ? '<button class="btn-primaire btn-petit" id="b-liens">Liens personnels</button>' : ''}
       ${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-import">Importer (CSV, Excel)</button>' : ''}
       <button class="btn-bleu btn-petit" id="b-export-m">Exporter</button>
     </div>
@@ -863,7 +883,7 @@ async function pageMembres() {
       : S.membres.length ? '<div class="vide">Tous les membres font partie du bureau.</div>'
       : `<div class="vide">Aucun membre.${peut('gerer_membres') ? '<span>Ajoutez-les un par un ou importez votre liste.</span>' : ''}</div>`}
     </section>
-    ${admin ? '<p class="muted aide-bas">Pour désigner un membre du bureau : « Fonction » sur sa ligne, puis choisissez sa fonction. Les fonctions et leurs droits se règlent dans Paramètres, Rôles et droits.</p>' : ''}
+    ${admin ? '<p class="muted aide-bas">« Lien » : la page personnelle d’un membre (cotisation, participations, rendez-vous), sans compte ni mot de passe. « Fonction » : désigner un membre du bureau et lui donner un compte. Les fonctions et leurs droits se règlent dans Paramètres, Rôles et droits.</p>' : ''}
     ${peut('gerer_membres') ? `<button class="fab" id="b-ajout" aria-label="Ajouter un membre" title="Ajouter un membre"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
   </div>`);
   $('#recherche')?.addEventListener('input', (e) => {
@@ -875,6 +895,8 @@ async function pageMembres() {
   $('#b-import')?.addEventListener('click', feuilleImport);
   document.querySelectorAll('[data-modif]').forEach((b) => b.addEventListener('click', () => feuilleMembre(S.membres.find((m) => m.id === b.dataset.modif))));
   document.querySelectorAll('[data-acces]').forEach((b) => b.addEventListener('click', () => feuilleAcces(S.membres.find((m) => m.id === b.dataset.acces))));
+  document.querySelectorAll('[data-lien]').forEach((b) => b.addEventListener('click', () => feuilleLien(S.membres.find((m) => m.id === b.dataset.lien))));
+  $('#b-liens')?.addEventListener('click', feuilleLiens);
   $('#b-export-m').addEventListener('click', () => choisirFormat('Exporter la liste des membres', () => pdfMembres(), () => telechargerCsv('membres.csv',
     ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Fonction', 'Accord anniversaire', 'Actif'],
     S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.consent_anniversaire ? 'Oui' : 'Non', m.actif ? 'Oui' : 'Non']))));
@@ -1196,7 +1218,8 @@ async function ongletCotisations(zone) {
 }
 
 function lienRelance(m, objet) {
-  const msg = `Bonjour ${m.prenom}, ${objet}. Vous pouvez régler en espèces auprès du trésorier ou par virement. Merci.`;
+  const l = (S.liensMembres || {})[m.id];
+  const msg = `Bonjour ${m.prenom}, ${objet}. ${S.textes?.infos_paiement ? 'Pour régler : ' + S.textes.infos_paiement.replace(/\s*\n\s*/g, ' ; ') + '.' : 'Vous pouvez régler en espèces auprès du trésorier ou par virement.'}${l ? ` Votre situation : ${urlLien(l.jeton)}` : ''} Merci.`;
   return `https://wa.me/${numeroWa(m.whatsapp)}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -1616,6 +1639,7 @@ async function paramFinances(zone) {
       <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       <label class="champ">Délai du justificatif (jours après paiement)<input name="delai_justificatif_jours" type="number" min="1" max="90" value="${esc(S.settings.delai_justificatif_jours)}"></label>
       <label class="champ">Alerte budget (%)<input name="seuil_alerte_budget_pct" type="number" min="1" max="200" value="${esc(S.settings.seuil_alerte_budget_pct ?? 90)}"></label>
+      <label class="champ">Comment régler (affiché aux membres)<textarea name="infos_paiement" rows="3" maxlength="400" placeholder="Virement : IBAN FR76…&#10;Espèces : auprès du trésorier après le culte">${esc(S.textes?.infos_paiement || '')}</textarea></label>
       <button class="btn-primaire" style="align-self:flex-end">Enregistrer</button></form>
     <form class="carte" id="f-soldes"><h2>Comptes et soldes de départ</h2>
       ${comptes.map((c) => `<div class="ligne-compte"><label class="champ" style="flex:1">${esc(c.nom)} (€)<input type="number" step="0.01" name="c-${c.id}" value="${Number(c.solde_initial || 0).toFixed(2)}"></label>
@@ -1635,6 +1659,12 @@ async function paramFinances(zone) {
       for (const cle of ['cotisation_montant', 'cotisation_periode_mois', 'delai_justificatif_jours', 'seuil_alerte_budget_pct']) {
         await q(sb.from('settings').update({ valeur: Number(fm[cle].value) }).eq('cle', cle));
         S.settings[cle] = Number(fm[cle].value);
+      }
+      const infos = fm.infos_paiement.value.trim() || null;
+      if (infos !== (S.textes?.infos_paiement || null)) {
+        const n = await q(sb.from('settings').update({ texte: infos }).eq('cle', 'infos_paiement').select());
+        if (!n?.length) await q(sb.from('settings').insert({ cle: 'infos_paiement', texte: infos, description: 'Comment régler sa cotisation' }));
+        S.textes = { ...S.textes, infos_paiement: infos };
       }
       toast('Paramètres enregistrés');
     } catch (err) { erreur(err); }
@@ -2160,84 +2190,6 @@ function feuilleJustifier(d, apres) {
 }
 
 // ---------- Budget : prévisionnel (ressources et emplois), réalisé, alertes ----------
-async function pageBudget() {
-  if (!S.anneeBudget) S.anneeBudget = new Date().getFullYear();
-  const an = S.anneeBudget;
-  const [suivi, lignes, txs] = await Promise.all([
-    q(sb.from('v_budget_suivi').select('*').eq('annee', an)),
-    q(sb.from('budgets').select('*').eq('annee', an)),
-    q(sb.from('transactions').select('*').gte('date_op', `${an}-01-01`).lte('date_op', `${an}-12-31`)),
-  ]);
-  const ligneDe = (s) => lignes.find((l) => l.category_id === s.category_id && (l.project_id || null) === (s.project_id || null));
-  const general = suivi.filter((s) => !s.project_id);
-  const parActivite = suivi.filter((s) => s.project_id);
-  const tot = (l, sens, champ) => l.filter((s) => s.sens === sens).reduce((t, s) => t + Number(s[champ]), 0);
-  // Réalisé hors budget : catégories mouvementées sans ligne de budget général
-  const horsBudget = {};
-  txs.forEach((t) => {
-    if (general.some((g) => g.category_id === t.category_id)) return;
-    horsBudget[t.category_id] = (horsBudget[t.category_id] || 0) + Number(t.montant);
-  });
-  const ligneHtml = (s) => {
-    const l = ligneDe(s); const taux = Number(s.taux_pct || 0);
-    const etat = s.sens === 'depense' && taux > 100 ? '<span class="puce puce-ko">Dépassé</span>' : s.alerte ? '<span class="puce puce-partiel">Alerte</span>' : '';
-    return `<tr>
-      <td data-label="Poste">${esc(s.categorie)}${s.project_id ? `<br><span class="muted">${esc(nomProjet(s.project_id))}</span>` : ''}</td>
-      <td class="droite" data-label="Prévu">${peut('gerer_budget') && l ? `<input type="number" step="0.01" min="0" value="${Number(s.montant_prevu).toFixed(2)}" data-prevu="${l.id}" aria-label="Prévu ${esc(s.categorie)}" style="width:120px;min-height:40px;text-align:right">` : `<span class="num">${eur(s.montant_prevu)}</span>`}</td>
-      <td class="droite num" data-label="Réalisé">${eur(s.realise)}</td>
-      <td style="min-width:120px" data-label="Taux"><div class="barre"><span style="width:${Math.min(100, taux)}%;background:${s.sens === 'recette' ? 'var(--bleu)' : taux > 100 ? 'var(--erreur)' : s.alerte ? 'var(--jaune)' : 'var(--primaire)'}"></span></div><span class="muted">${taux.toLocaleString('fr-FR')}&nbsp;%</span></td>
-      <td class="td-actions">${etat}${peut('gerer_budget') && l ? ` <button class="btn-texte btn-petit" data-suppr="${l.id}" aria-label="Retirer la ligne ${esc(s.categorie)}">Retirer</button>` : ''}</td></tr>`;
-  };
-  const table = (l) => `<div class="tableau-wrap"><table class="table-cartes"><thead><tr><th>Poste</th><th class="droite">Prévu</th><th class="droite">Réalisé</th><th>Taux</th><th></th></tr></thead><tbody>${l.map(ligneHtml).join('')}</tbody></table></div>`;
-  const resPrevu = tot(general, 'recette', 'montant_prevu') - tot(general, 'depense', 'montant_prevu');
-  const resReel = txs.reduce((t, x) => t + (x.sens === 'recette' ? 1 : -1) * Number(x.montant), 0);
-
-  rendre(`<div class="page">
-    <div class="page-titre"><h1>Budget</h1>
-      <select id="an" aria-label="Année" style="width:auto">${[an + 1, an, an - 1, an - 2].map((a) => `<option ${a === an ? 'selected' : ''}>${a}</option>`).join('')}</select>
-      ${peut('gerer_budget') ? '<button class="btn-primaire btn-petit" id="b-ligne">Ajouter une ligne</button>' : ''}</div>
-    <div class="kpis">
-      <div class="carte"><span class="muted">Ressources</span><b class="num recette">${eur(tot(general, 'recette', 'realise'))}</b><span class="muted">sur ${eur(tot(general, 'recette', 'montant_prevu'))}</span></div>
-      <div class="carte"><span class="muted">Emplois</span><b class="num depense">${eur(tot(general, 'depense', 'realise'))}</b><span class="muted">sur ${eur(tot(general, 'depense', 'montant_prevu'))}</span></div>
-      <div class="carte"><span class="muted">Résultat</span><b class="num ${resReel < 0 ? 'negatif' : ''}">${eur(resReel)}</b><span class="muted">prévu ${eur(resPrevu)}</span></div>
-    </div>
-    ${general.length ? `<section class="carte"><h2>Emplois (dépenses)</h2>${table(general.filter((s) => s.sens === 'depense'))}</section>
-      <section class="carte"><h2>Ressources (recettes)</h2>${table(general.filter((s) => s.sens === 'recette'))}</section>`
-      : `<div class="carte vide">Aucun budget pour ${an}.${peut('gerer_budget') ? '<button class="btn-primaire" id="b-ligne-vide">Ajouter une ligne</button>' : ''}</div>`}
-    ${parActivite.length ? `<section class="carte"><h2>Par activité</h2>${table(parActivite)}</section>` : ''}
-    ${Object.keys(horsBudget).length ? `<section class="carte"><h2>Hors budget</h2><ul class="liste">${Object.entries(horsBudget).map(([id, m]) => `<li><div class="corps"><b>${esc(nomCategorie(id))}</b><span>${S.categories.find((c) => c.id === id)?.sens === 'recette' ? 'Recette' : 'Dépense'} sans ligne de budget</span></div><span class="num">${eur(m)}</span></li>`).join('')}</ul></section>` : ''}
-  </div>`);
-  const recharger = () => pageBudget().catch(erreur);
-  $('#an').addEventListener('change', (e) => { S.anneeBudget = Number(e.target.value); recharger(); });
-  ['#b-ligne', '#b-ligne-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleLigneBudget(an, recharger)));
-  document.querySelectorAll('[data-prevu]').forEach((i) => i.addEventListener('change', async () => {
-    try { await q(sb.from('budgets').update({ montant_prevu: Number(i.value) }).eq('id', i.dataset.prevu)); toast('Budget modifié'); recharger(); } catch (e) { erreur(e); }
-  }));
-  document.querySelectorAll('[data-suppr]').forEach((b) => b.addEventListener('click', async () => {
-    try { await q(sb.from('budgets').delete().eq('id', b.dataset.suppr)); toast('Ligne retirée'); recharger(); } catch (e) { erreur(e); }
-  }));
-}
-
-function feuilleLigneBudget(an, apres) {
-  const groupe = (sens, titre) => `<optgroup label="${titre}">${S.categories.filter((c) => c.sens === sens).map((c) => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}</optgroup>`;
-  ouvrirFeuille(`<form id="f-bud" class="champs"><h2>Ligne de budget ${an}</h2>
-    <label class="champ"><span class="obligatoire">Poste</span><select name="categorie">${groupe('depense', 'Emplois (dépenses)')}${groupe('recette', 'Ressources (recettes)')}</select></label>
-    <label class="champ">Activité<select name="projet"><option value="">Budget général</option>${optionsProjets()}</select></label>
-    <label class="champ"><span class="obligatoire">Montant prévu (€)</span><input name="montant" type="number" step="0.01" min="0" required></label>
-    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Ajouter</button></div></form>`, (root) => {
-    const f = $('#f-bud', root);
-    $('#b-annuler', root).addEventListener('click', fermerFeuille);
-    f.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      try {
-        await q(sb.from('budgets').insert({ annee: an, category_id: f.categorie.value, project_id: f.projet.value || null,
-          montant_prevu: Number(f.montant.value), seuil_alerte_pct: Number(S.settings.seuil_alerte_budget_pct ?? 90) }));
-        fermerFeuille(); toast('Ligne ajoutée'); apres();
-      } catch (err) { erreur(err); }
-    });
-  });
-}
-
 // ---------- Planning : calendrier du mois, semaine, agenda, et suivi des activités ----------
 const JOURS_COURTS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
 const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
@@ -2248,101 +2200,19 @@ const lundiDe = (d) => ajouterJours(d, -((d.getDay() + 6) % 7));
 const heure = (h) => { if (!h) return ''; const [hh, mm] = String(h).split(':'); return `${Number(hh)}\u00a0h${mm && mm !== '00' ? '\u00a0' + mm : ''}`; };
 const majuscule = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const jourLong = (s) => { const d = dateDe(s); return `${JOURS[(d.getDay() + 6) % 7]} ${d.getDate()} ${MOIS[d.getMonth()]}`; };
-const preferenceVue = () => { try { return localStorage.getItem('vuePlanning'); } catch { return null; } };
 
 function listePlanning(l) {
   if (!l.length) return '<p class="muted">Aucune activité prévue</p>';
-  return `<ul class="liste">${l.map((p) => `<li class="cliquable" data-evt="${p.id}" tabindex="0" role="button"><span class="avatar date-pastille"><b>${p.date_debut ? Number(p.date_debut.slice(8, 10)) : '–'}</b>${p.date_debut ? MOIS[Number(p.date_debut.slice(5, 7)) - 1].slice(0, 4) : ''}</span>
+  return `<ul class="liste">${l.map((p) => `<li class="cliquable" data-evt="${p.id}" tabindex="0" role="button"><span class="avatar date-pastille"><b>${p.date_debut ? Number(p.date_debut.slice(8, 10)) : '–'}</b>${p.date_debut ? MOIS_COURTS[Number(p.date_debut.slice(5, 7)) - 1] : ''}</span>
     <div class="corps"><b>${esc(p.nom)}</b><span>${p.date_debut ? jourLong(p.date_debut) : 'Date à fixer'}${p.heure_debut ? ' · ' + heure(p.heure_debut) : ''}${p.lieu ? ' · ' + esc(p.lieu) : ''}</span></div>
     ${p.participation ? `<span class="puce puce-partiel">${eur(p.participation)}</span>` : ''}</li>`).join('')}</ul>`;
 }
 
-async function pageActivites() {
-  const P = (S.planning ||= { vue: preferenceVue() || 'mois', ref: isoLocal(new Date()) });
-  const suivi = peut('gerer_activites', 'consulter_finances');
-  const vues = [['mois', 'Mois'], ['semaine', 'Semaine'], ['agenda', 'Agenda'], ...(suivi ? [['liste', 'Activités']] : [])];
-  if (!vues.some(([k]) => k === P.vue)) P.vue = 'mois';
-  if (P.vue === 'liste') return pageSuiviActivites(vues);
-  const ref = dateDe(P.ref);
-  let debut, fin, titre;
-  if (P.vue === 'mois') {
-    const premier = new Date(ref.getFullYear(), ref.getMonth(), 1, 12);
-    debut = lundiDe(premier); fin = ajouterJours(lundiDe(new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 12)), 6);
-    titre = majuscule(`${MOIS[ref.getMonth()]} ${ref.getFullYear()}`);
-  } else if (P.vue === 'semaine') {
-    debut = lundiDe(ref); fin = ajouterJours(debut, 6);
-    titre = `Semaine du ${debut.getDate()} ${MOIS[debut.getMonth()]}`;
-  } else { debut = ref; fin = ajouterJours(ref, 90); titre = `À partir du ${ref.getDate()} ${MOIS[ref.getMonth()]}`; }
-  const moisVus = [...new Set([debut, ajouterJours(debut, 15), fin, ref].map((d) => d.getMonth() + 1))];
-  const [evts, ...anniv] = await Promise.all([
-    q(sb.rpc('planning_activites', { p_debut: isoLocal(debut), p_fin: isoLocal(fin) })),
-    ...moisVus.map((m) => q(sb.rpc('anniversaires_du_mois', { p_mois: m })).then((l) => l.map((a) => ({ ...a, mois: m })))),
-  ]);
-  S.evts = evts;
-  const parJour = {};
-  evts.forEach((e) => {
-    let d = dateDe(e.date_debut); const f = dateDe(e.date_fin || e.date_debut);
-    for (let i = 0; d <= f && i < 62; i++, d = ajouterJours(d, 1)) (parJour[isoLocal(d)] ||= []).push(e);
-  });
-  const annivDe = (s) => { const d = dateDe(s); return anniv.flat().filter((a) => a.mois === d.getMonth() + 1 && a.jour === d.getDate()); };
-  const auj = isoLocal(new Date());
-  const puce = (e) => `<button class="evt evt-${e.type}" data-evt="${e.id}">${e.heure_debut ? `<small>${String(e.heure_debut).slice(0, 5)}</small> ` : ''}${esc(e.nom)}</button>`;
-  let corps = '';
-  if (P.vue === 'mois') {
-    const cases = [];
-    for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) cases.push(isoLocal(d));
-    corps = `<div class="cal"><div class="cal-tete">${JOURS_COURTS.map((j) => `<span>${j}</span>`).join('')}</div>
-      <div class="cal-grille">${cases.map((s) => {
-        const e = parJour[s] || [], a = annivDe(s), horsMois = dateDe(s).getMonth() !== ref.getMonth();
-        return `<div class="cal-jour ${horsMois ? 'hors' : ''} ${s === auj ? 'auj' : ''}" data-jour="${s}" tabindex="0" role="button" aria-label="${jourLong(s)}${e.length ? ', ' + e.length + ' événement' + (e.length > 1 ? 's' : '') : ''}">
-          <span class="num-jour">${Number(s.slice(8))}</span>${e.slice(0, 3).map(puce).join('')}${e.length > 3 ? `<small class="muted">+${e.length - 3}</small>` : ''}
-          ${a.length ? `<small class="anniv" title="Anniversaire : ${esc(a.map((x) => x.prenom).join(', '))}">Anniv. ${esc(a.map((x) => x.prenom).join(', '))}</small>` : ''}</div>`;
-      }).join('')}</div></div>`;
-  } else {
-    const jours = [];
-    for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) jours.push(isoLocal(d));
-    const montres = P.vue === 'semaine' ? jours : jours.filter((s) => parJour[s] || annivDe(s).length);
-    corps = montres.length ? `<section class="carte"><ul class="liste agenda">${montres.map((s) => `<li class="agenda-jour ${s === auj ? 'auj' : ''}">
-      <button class="agenda-date" data-jour="${s}"><b>${Number(s.slice(8))}</b><span>${JOURS_COURTS[(dateDe(s).getDay() + 6) % 7]}</span></button>
-      <div class="corps">${(parJour[s] || []).map((e) => `<button class="agenda-evt evt-${e.type}" data-evt="${e.id}"><b>${esc(e.nom)}</b><span>${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}</span></button>`).join('')}
-        ${annivDe(s).map((a) => `<span class="anniv">Anniversaire de ${esc(a.prenom)} ${esc(a.nom)}</span>`).join('')}
-        ${!(parJour[s] || []).length && !annivDe(s).length ? '<span class="muted">–</span>' : ''}</div></li>`).join('')}</ul></section>`
-      : '<div class="carte vide">Aucun événement sur cette période</div>';
-  }
-  rendre(`<div class="page">
-    <div class="page-titre"><h1>Planning</h1></div>
-    <div class="onglets" role="tablist">${vues.map(([k, l]) => `<button role="tab" aria-selected="${P.vue === k}" data-vue="${k}">${l}</button>`).join('')}</div>
-    <div class="filtres cal-nav"><button class="btn-texte btn-petit" id="b-prec" aria-label="Précédent">‹</button><h2 style="margin:0;flex:1;text-align:center">${esc(titre)}</h2><button class="btn-texte btn-petit" id="b-suiv" aria-label="Suivant">›</button><button class="btn-tonal btn-petit" id="b-auj">Aujourd’hui</button></div>
-    ${corps}
-    ${peut('gerer_activites') ? `<button class="fab" id="b-evt" aria-label="Nouvel événement" title="Nouvel événement"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
-  </div>`);
-  const recharger = () => pageActivites().catch(erreur);
-  document.querySelectorAll('[data-vue]').forEach((b) => b.addEventListener('click', () => {
-    P.vue = b.dataset.vue; try { localStorage.setItem('vuePlanning', P.vue); } catch { /* stockage indisponible */ }
-    recharger();
-  }));
-  const decaler = (n) => {
-    const d = dateDe(P.ref);
-    if (P.vue === 'mois') P.ref = isoLocal(new Date(d.getFullYear(), d.getMonth() + n, 1, 12));
-    else P.ref = isoLocal(ajouterJours(d, n * (P.vue === 'semaine' ? 7 : 90)));
-    recharger();
-  };
-  $('#b-prec').addEventListener('click', () => decaler(-1));
-  $('#b-suiv').addEventListener('click', () => decaler(1));
-  $('#b-auj').addEventListener('click', () => { P.ref = isoLocal(new Date()); recharger(); });
-  $('#b-evt')?.addEventListener('click', () => feuilleActivite(null, recharger, { date: P.vue === 'mois' && dateDe(P.ref).getMonth() !== new Date().getMonth() ? P.ref : auj }));
-  document.querySelectorAll('[data-evt]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); detailEvenement(evts.find((x) => x.id === b.dataset.evt), recharger); }));
-  document.querySelectorAll('[data-jour]').forEach((c) => {
-    const ouvrir = () => feuilleJour(c.dataset.jour, parJour[c.dataset.jour] || [], annivDe(c.dataset.jour), recharger);
-    c.addEventListener('click', ouvrir); c.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
-  });
-}
-
 function feuilleJour(s, evts, anniv, recharger) {
   ouvrirFeuille(`<h2>${esc(jourLong(s))}</h2>
-    ${evts.length ? `<ul class="liste">${evts.map((e) => `<li class="cliquable" data-e="${e.id}" tabindex="0" role="button"><div class="corps"><b>${esc(e.nom)}</b><span>${[e.heure_debut ? heure(e.heure_debut) : 'Journée', e.lieu].filter(Boolean).map(esc).join(' · ')}</span></div>${e.type === 'evenement' ? '<span class="puce puce-neutre">Événement</span>' : '<span class="puce puce-partiel">Activité</span>'}</li>`).join('')}</ul>` : '<p class="muted">Rien de prévu</p>'}
+    ${evts.length ? `<ul class="liste">${evts.map((e) => `<li class="cliquable" data-e="${e.id}" tabindex="0" role="button"><div class="corps"><b>${esc(e.nom)}</b><span>${[e.heure_debut ? heure(e.heure_debut) : 'Journée', e.lieu].filter(Boolean).map(esc).join(' · ')}</span></div>${e.type === 'activite' ? '<span class="puce puce-neutre">Budget suivi</span>' : ''}</li>`).join('')}</ul>` : '<p class="muted">Rien de prévu</p>'}
     ${anniv.map((a) => `<p class="anniv">Anniversaire de ${esc(a.prenom)} ${esc(a.nom)}</p>`).join('')}
-    <div class="actions">${peut('gerer_activites') ? '<button class="btn-tonal" id="b-ajout">Ajouter un événement</button>' : ''}<button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    <div class="actions">${peut('gerer_activites') ? '<button class="btn-tonal" id="b-ajout">Ajouter un rendez-vous</button>' : ''}<button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-ajout', root)?.addEventListener('click', () => feuilleActivite(null, recharger, { date: s }));
     root.querySelectorAll('[data-e]').forEach((li) => li.addEventListener('click', () => detailEvenement(evts.find((x) => x.id === li.dataset.e), recharger)));
@@ -2361,7 +2231,7 @@ async function detailEvenement(e, recharger) {
     }
   }
   const quand = e.date_debut ? jourLong(e.date_debut) + (e.date_fin && e.date_fin !== e.date_debut ? ' au ' + jourLong(e.date_fin) : '') : 'Date à fixer';
-  ouvrirFeuille(`<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(e.nom)}</h2>${e.type === 'evenement' ? '<span class="puce puce-neutre">Événement</span>' : '<span class="puce puce-partiel">Activité</span>'}</div>
+  ouvrirFeuille(`<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(e.nom)}</h2>${e.type === 'activite' && peut('consulter_finances', 'gerer_budget') ? '<a class="puce puce-neutre" href="#budget">Budget suivi</a>' : ''}</div>
     <div class="details">
       <div class="ligne-detail"><span class="muted">Date</span><span>${esc(quand)}</span></div>
       ${e.heure_debut ? `<div class="ligne-detail"><span class="muted">Heure</span><span>${heure(e.heure_debut)}${e.heure_fin ? ' – ' + heure(e.heure_fin) : ''}</span></div>` : ''}
@@ -2372,6 +2242,7 @@ async function detailEvenement(e, recharger) {
     ${part}
     <div class="actions">
       ${e.collecte_id && peut('consulter_finances', 'gerer_cotisations') ? '<button class="btn-texte" id="b-part">Voir les participations</button>' : ''}
+      ${e.type === 'activite' && peut('consulter_finances', 'gerer_budget') ? '<a class="btn btn-texte" href="#budget">Voir le budget</a>' : ''}
       ${!e.collecte_id && peut('gerer_activites') ? '<button class="btn-texte" id="b-demander">Demander une participation</button>' : ''}
       ${peut('gerer_activites') ? '<button class="btn-tonal" id="b-modif">Modifier</button>' : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
@@ -2391,13 +2262,10 @@ async function detailEvenement(e, recharger) {
 // Activité ou événement ; « Demander une participation » crée la collecte liée
 function feuilleActivite(p, apres, pre = {}) {
   const v = p || { nom: '', type: pre.type || 'evenement', date_debut: pre.date || '', date_fin: '', heure_debut: '', heure_fin: '', lieu: '', description: '', visible_adherents: true };
-  ouvrirFeuille(`<form id="f-act" class="champs"><h2>${p ? 'Modifier' : 'Nouvel événement'}</h2>
-    <div class="groupe" role="group" aria-label="Type">
-      <button type="button" data-type="evenement" aria-pressed="${v.type !== 'activite'}">Événement</button>
-      <button type="button" data-type="activite" aria-pressed="${v.type === 'activite'}">Activité</button></div>
-    <label class="champ"><span class="obligatoire">Nom</span><input name="nom" value="${esc(v.nom)}" maxlength="80" required></label>
+  ouvrirFeuille(`<form id="f-act" class="champs"><h2>${p ? 'Modifier le rendez-vous' : 'Nouveau rendez-vous'}</h2>
+    <label class="champ"><span class="obligatoire">Nom</span><input name="nom" value="${esc(v.nom)}" maxlength="80" required placeholder="Répétition, réunion, concert, sortie…"></label>
     <div class="champs champs-2">
-      <label class="champ"><span class="obligatoire">Date</span><input type="date" name="debut" value="${esc(v.date_debut || '')}" ${v.type === 'activite' ? '' : 'required'}></label>
+      <label class="champ"><span class="obligatoire">Date</span><input type="date" name="debut" value="${esc(v.date_debut || '')}"></label>
       <label class="champ">Jusqu’au<input type="date" name="fin" value="${esc(v.date_fin && v.date_fin !== v.date_debut ? v.date_fin : '')}"></label>
       <label class="champ">Heure de début<input type="time" name="hdebut" value="${esc(String(v.heure_debut || '').slice(0, 5))}"></label>
       <label class="champ">Heure de fin<input type="time" name="hfin" value="${esc(String(v.heure_fin || '').slice(0, 5))}"></label>
@@ -2405,23 +2273,22 @@ function feuilleActivite(p, apres, pre = {}) {
     <label class="champ">Lieu<input name="lieu" value="${esc(v.lieu || '')}" maxlength="120"></label>
     <label class="champ">Description<textarea name="description" rows="2" maxlength="500">${esc(v.description || '')}</textarea></label>
     <label class="case"><input type="checkbox" name="visible" ${v.visible_adherents ? 'checked' : ''}> Visible de tous les membres</label>
+    <label class="case"><input type="checkbox" name="budget" ${v.type === 'activite' ? 'checked' : ''}> Suivre le budget de cette activité <span class="muted">(ressources, emplois et résultat dans Budget ; la date peut rester à fixer)</span></label>
     ${p ? '' : `<label class="case"><input type="checkbox" name="part"> Demander une participation aux membres</label>
     <div class="champs champs-2" id="z-part" hidden>
       <label class="champ">Montant par personne (€)<input name="attendu" type="number" step="0.01" min="0.01" placeholder="Libre"></label>
       <label class="champ">Date limite<input name="limite" type="date"></label></div>`}
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div></form>`, (root) => {
     const f = $('#f-act', root);
-    let type = v.type || 'evenement';
-    root.querySelectorAll('[data-type]').forEach((b) => b.addEventListener('click', () => {
-      type = b.dataset.type; root.querySelectorAll('[data-type]').forEach((x) => x.setAttribute('aria-pressed', x === b));
-      f.debut.required = type !== 'activite';
-    }));
+    const majDate = () => { f.debut.required = !f.budget.checked; };
+    f.budget.addEventListener('change', majDate); majDate();
     f.part?.addEventListener('change', () => { $('#z-part', root).hidden = !f.part.checked; });
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (f.debut.value && f.fin.value && f.fin.value < f.debut.value) return toast('La date de fin doit suivre la date de début');
       if (f.hdebut.value && f.hfin.value && !f.fin.value && f.hfin.value < f.hdebut.value) return toast('L’heure de fin doit suivre l’heure de début');
+      const type = f.budget.checked ? 'activite' : 'evenement';
       const d = { nom: f.nom.value.trim(), type, date_debut: f.debut.value || null, date_fin: f.fin.value || f.debut.value || null,
         heure_debut: f.hdebut.value || null, heure_fin: f.hfin.value || null, lieu: f.lieu.value.trim() || null,
         description: f.description.value.trim() || null, visible_adherents: f.visible.checked };
@@ -2437,52 +2304,6 @@ function feuilleActivite(p, apres, pre = {}) {
       } catch (err) { erreur(err); }
     });
   });
-}
-
-// Suivi financier des activités : budget, dépenses, recettes, participations
-async function pageSuiviActivites(vues) {
-  S.projets = await q(sb.from('projects').select('*').order('date_debut', { ascending: false }));
-  const finances = peut('consulter_finances');
-  const [txs, budgets, coll] = await Promise.all([
-    finances ? q(sb.from('transactions').select('*').not('project_id', 'is', null)) : [],
-    finances ? q(sb.from('budgets').select('*').not('project_id', 'is', null)) : [],
-    q(sb.from('v_collectes').select('*')),
-  ]);
-  const chiffres = (p) => {
-    const t = txs.filter((x) => x.project_id === p.id);
-    const dep = t.filter((x) => x.sens === 'depense').reduce((s, x) => s + Number(x.montant), 0);
-    const rec = t.filter((x) => x.sens === 'recette').reduce((s, x) => s + Number(x.montant), 0);
-    const prevu = budgets.filter((b) => b.project_id === p.id && S.categories.find((c) => c.id === b.category_id)?.sens === 'depense').reduce((s, b) => s + Number(b.montant_prevu), 0);
-    return { dep, rec, prevu };
-  };
-  const activites = S.projets.filter((p) => p.type !== 'evenement' || coll.some((c) => c.project_id === p.id));
-  rendre(`<div class="page">
-    <div class="page-titre"><h1>Planning</h1></div>
-    <div class="onglets" role="tablist">${vues.map(([k, l]) => `<button role="tab" aria-selected="${k === 'liste'}" data-vue="${k}">${l}</button>`).join('')}</div>
-    ${activites.length ? `<div class="grille grille-2">${activites.map((p) => {
-      const c = chiffres(p), co = coll.filter((x) => x.project_id === p.id);
-      return `<article class="carte">
-        <div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(p.nom)}</h2>${p.visible_adherents ? '<span class="puce puce-ok">Tous les membres</span>' : '<span class="puce puce-neutre">Bureau</span>'}</div>
-        <span class="muted">${p.date_debut ? dateFr(p.date_debut) : 'Date à fixer'}${p.date_fin && p.date_fin !== p.date_debut ? ' au ' + dateFr(p.date_fin) : ''}${p.lieu ? ' · ' + esc(p.lieu) : ''}</span>
-        ${finances ? `<div class="kpis"><div class="carte" style="background:var(--fond)"><span class="muted">Budget</span><b class="num">${eur(c.prevu)}</b></div>
-          <div class="carte" style="background:var(--fond)"><span class="muted">Dépensé</span><b class="num depense">${eur(c.dep)}</b></div>
-          <div class="carte" style="background:var(--fond)"><span class="muted">Recettes</span><b class="num recette">${eur(c.rec)}</b></div></div>` : ''}
-        ${c.prevu && c.dep > c.prevu ? '<div class="alerte">Budget de l’activité dépassé</div>' : ''}
-        ${co.map((x) => `<button class="lien-collecte" data-col="${x.id}">${esc(x.nom)} : ${eur(x.total_recu)} reçus, ${x.nb_contributeurs} contributeur${x.nb_contributeurs > 1 ? 's' : ''}</button>`).join('')}
-        ${peut('gerer_activites') ? `<div class="actions">${co.length ? '' : `<button class="btn-texte" data-part="${p.id}">Demander une participation</button>`}<button class="btn-tonal" data-modif-act="${p.id}">Modifier</button></div>` : ''}
-      </article>`;
-    }).join('')}</div>` : `<div class="carte vide">Aucune activité${peut('gerer_activites') ? '<button class="btn-primaire" id="b-act-vide">Nouvelle activité</button>' : ''}</div>`}
-    ${peut('gerer_activites') ? `<button class="fab" id="b-act" aria-label="Nouvelle activité" title="Nouvelle activité"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
-  </div>`);
-  const recharger = () => pageActivites().catch(erreur);
-  document.querySelectorAll('[data-vue]').forEach((b) => b.addEventListener('click', () => {
-    S.planning.vue = b.dataset.vue; try { localStorage.setItem('vuePlanning', S.planning.vue); } catch { /* stockage indisponible */ }
-    recharger();
-  }));
-  ['#b-act', '#b-act-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleActivite(null, recharger, { type: 'activite' })));
-  document.querySelectorAll('[data-modif-act]').forEach((b) => b.addEventListener('click', () => feuilleActivite(S.projets.find((p) => p.id === b.dataset.modifAct), recharger)));
-  document.querySelectorAll('[data-part]').forEach((b) => b.addEventListener('click', () => feuilleCollecte(null, recharger, [], b.dataset.part)));
-  document.querySelectorAll('[data-col]').forEach((b) => b.addEventListener('click', () => detailCollecte(coll.find((c) => c.id === b.dataset.col))));
 }
 
 // ---------- Rapprochement : pointage, relevé obligatoire, période verrouillée ----------
@@ -2593,6 +2414,7 @@ async function pageRapports() {
           <button class="btn-tonal btn-petit" data-pdf="budget">Budget prévu et réalisé</button>
           <button class="btn-tonal btn-petit" data-pdf="demandes">Registre des demandes</button>
           ${peut('voir_membres', 'gerer_membres') ? '<button class="btn-tonal btn-petit" data-pdf="membres">Liste des membres</button>' : ''}
+          <button class="btn-tonal btn-petit" data-pdf="inventaire">Inventaire du matériel</button>
         </div></section>
       <section class="carte"><h2>Pièces justificatives</h2>
         <p class="muted" style="margin:0">Toutes les factures et pièces de l’exercice dans un seul fichier ZIP, classées par mois, avec leur inventaire.</p>
@@ -2620,7 +2442,7 @@ async function pageRapports() {
   document.querySelectorAll('[data-pdf]').forEach((b) => b.addEventListener('click', () => {
     const a = Number($('#doc-an').value);
     const faire = { journal: () => pdfJournal({ du: `${a}-01-01`, au: `${a}-12-31`, titre: `Journal des opérations ${a}` }), cotisations: () => pdfCotisations(a),
-      budget: () => pdfBudget(a), demandes: () => pdfDemandes(a), membres: () => pdfMembres() }[b.dataset.pdf];
+      budget: () => pdfBudget(a), demandes: () => pdfDemandes(a), membres: () => pdfMembres(), inventaire: () => pdfInventaire() }[b.dataset.pdf];
     faire().catch(erreur);
   }));
   $('#b-pj').addEventListener('click', (e) => archivePieces(Number($('#pj-an').value), e.currentTarget).catch(erreur));
@@ -2657,7 +2479,7 @@ async function exporter(type, an) {
 }
 
 async function sauvegarder() {
-  const tables = ['organisation', 'settings', 'accounts', 'categories', 'projects', 'budgets', 'members', 'cotisations', 'tiers', 'collectes', 'collecte_membres', 'transactions', 'expense_requests', 'attachments', 'reconciliations', 'profiles', 'invitations'];
+  const tables = ['organisation', 'settings', 'accounts', 'categories', 'projects', 'budgets', 'members', 'cotisations', 'tiers', 'collectes', 'collecte_membres', 'transactions', 'expense_requests', 'attachments', 'reconciliations', 'profiles', 'invitations', 'materiel', 'materiel_mouvements'];
   const donnees = { format: 'tresorerie-jp-v1', exporte_le: new Date().toISOString() };
   for (const t of tables) donnees[t] = await q(sb.from(t).select('*'));
   const a = document.createElement('a');
@@ -2685,6 +2507,9 @@ async function imprimerRapport(debut, fin, titre) {
       q(sb.from('accounts').select('*')),
     ]);
     const pieces = await q(sb.from('attachments').select('*'));
+    const materiel = await q(sb.from('materiel').select('*')).catch(() => []);
+    const matService = materiel.filter((x) => !x.sorti_le || x.sorti_le > fin).filter((x) => x.origine !== 'pret');
+    const matSortis = materiel.filter((x) => x.sorti_le && x.sorti_le >= debut && x.sorti_le <= fin);
     const comptes = comptesTous.filter((c) => c.actif || txs.some((t) => t.account_id === c.id));
     const dans = txs.filter((t) => t.date_op >= debut);
     const prec = txs.filter((t) => t.date_op >= debutPrec && t.date_op <= finPrec);
@@ -2786,6 +2611,8 @@ ${budgetLignes.length ? `<h2>Budget ${an} : réalisé sur prévu</h2>
 <tr><td>Dépenses payées sur demande validée</td><td class="d">${demP.length} · ${eur(demP.reduce((s, d) => s + Number(d.montant), 0))}</td></tr>
 <tr><td>Dont sans justificatif à ce jour</td><td class="d">${sansJustif.length ? `<b>${sansJustif.length}</b>` : '0'}</td></tr>
 <tr><td>Dépenses sans pièce jointe</td><td class="d">${depSansPiece.length ? `<b>${depSansPiece.length} · ${eur(depSansPiece.reduce((s, t) => s + Number(t.montant), 0))}</b>` : '0'}</td></tr>
+${materiel.length ? `<tr><td>Matériel de l’association (hors prêts de tiers)</td><td class="d">${matService.reduce((s, x) => s + x.quantite, 0)} articles · valeur estimée ${eur(matService.reduce((s, x) => s + Number(x.valeur_actuelle ?? x.valeur_acquisition ?? 0), 0))}${matSortis.length ? ` · ${matSortis.length} sortie${matSortis.length > 1 ? 's' : ''}` : ''}</td></tr>
+<tr><td>Matériel non vérifié depuis un an</td><td class="d">${materiel.filter(aVerifier).length ? `<b>${materiel.filter(aVerifier).length}</b>` : '0'}</td></tr>` : ''}
 <tr><td>Rapprochements terminés (relevé joint, écart nul)</td><td class="d">${rapps.length ? rapps.map((r) => `${esc(comptes.find((c) => c.id === r.account_id)?.nom || '')} au ${dateFr(r.periode_fin)}`).join(', ') : '<b>aucun</b>'}</td></tr>
 </table>
 
@@ -2948,18 +2775,6 @@ async function pdfMembres() {
   afficherDocument('Liste des membres', html);
 }
 
-async function pdfBudget(an) {
-  const l = await q(sb.from('v_budget_suivi').select('*').eq('annee', an));
-  const bloc = (sens, titre) => {
-    const x = l.filter((b) => b.sens === sens);
-    const p = x.reduce((s2, b) => s2 + Number(b.montant_prevu), 0), r = x.reduce((s2, b) => s2 + Number(b.realise), 0);
-    return `<h2>${titre}</h2>${tableDocument([['Poste'], ['Activité'], ['Prévu', 'd'], ['Réalisé', 'd'], ['Écart', 'd'], ['Taux', 'd']],
-      x.map((b) => [esc(b.categorie), esc(nomProjet(b.project_id)), eur(b.montant_prevu), eur(b.realise), eur(b.ecart), `${Number(b.taux_pct || 0).toLocaleString('fr-FR')}&nbsp;%${sens === 'depense' && Number(b.taux_pct) > 100 ? ' <b>dépassé</b>' : ''}`]),
-      ['<b>Total</b>', '', `<b>${eur(p)}</b>`, `<b>${eur(r)}</b>`, `<b>${eur(p - r)}</b>`, p ? `<b>${Math.round(100 * r / p)}&nbsp;%</b>` : ''])}`;
-  };
-  afficherDocument(`Budget ${an}`, `${enteteDocument(`Budget ${an} : prévu et réalisé`, `Arrêté au ${dateFr(aujourdhui())}`)}${bloc('recette', 'Ressources')}${bloc('depense', 'Emplois')}${signaturesDocument()}`);
-}
-
 async function pdfDemandes(an) {
   const [l, profils] = await Promise.all([q(sb.from('expense_requests').select('*').order('created_at')), q(sb.from('profiles').select('id,nom')).catch(() => [])]);
   const x = l.filter((d) => String(d.created_at).startsWith(String(an)));
@@ -2970,6 +2785,609 @@ async function pdfDemandes(an) {
       x.map((d) => [dateFr(String(d.created_at).slice(0, 10)), esc(d.objet) + (d.regularisation ? ' <span class="muted">(déjà payée)</span>' : ''), esc(nom(d.demandeur)), eur(d.montant), STATUTS[d.statut][1],
         d.validee_le ? dateFr(String(d.validee_le).slice(0, 10)) : '', esc(nom(d.validee_par)), d.payee_le ? dateFr(String(d.payee_le).slice(0, 10)) : '', d.signature_hash ? `<span class="empreinte">${esc(d.signature_hash.slice(0, 12))}…</span>` : '']))}
     <p class="muted">L’empreinte SHA-256 relie chaque signature au montant et à l’objet validés.</p>${signaturesDocument()}`);
+}
+
+// =====================================================================
+// Espace membre par lien personnel : consultation en un geste, sans compte
+// =====================================================================
+const CLE_JETON = 'jetonMembre';
+const lireJeton = () => { try { return localStorage.getItem(CLE_JETON); } catch { return null; } };
+const garderJeton = (j) => { try { if (j) localStorage.setItem(CLE_JETON, j); else localStorage.removeItem(CLE_JETON); } catch { /* stockage indisponible */ } };
+const adresseSite = () => location.origin + location.pathname;
+const urlLien = (j) => `${adresseSite()}?m=${j}`;
+const urlPublique = (chemin) => { if (!chemin) return ''; const u = sb.storage.from('logos').getPublicUrl(chemin).data.publicUrl; return u.startsWith('blob:') ? u : u + '?v=' + encodeURIComponent(chemin); };
+
+async function pageLien(jeton, retour = null) {
+  $('#app').innerHTML = '<p class="chargement">Chargement…</p>';
+  let d = null;
+  try { d = await q(sb.rpc('situation_par_lien', { p_jeton: jeton })); } catch (e) { console.warn(e); }
+  const seConnecter = () => { garderJeton(null); history.replaceState(null, '', location.pathname); ecranConnexion(); };
+  if (!d) {
+    if (!retour) garderJeton(null);
+    $('#app').innerHTML = `<main class="connexion"><div class="carte">
+      <img src="${esc(S.logoUrl)}" alt="">
+      <h1>Lien inactif</h1>
+      <p>Ce lien personnel n’est plus valable. Demandez un nouveau lien au trésorier.</p>
+      <button class="btn-tonal" id="b-co">Se connecter avec un compte</button></div></main>`;
+    $('#b-co').addEventListener('click', retour || seConnecter);
+    return;
+  }
+  if (!retour) garderJeton(jeton);
+  S.settings = { ...S.settings, cotisation_periode_mois: Number(d.reglages?.periode_mois || 1) };
+  const logo = urlPublique(d.association?.logo_path) || S.logoUrl;
+  const photo = urlPublique(d.association?.banniere_path);
+  const auj = aujourdhui(), an = new Date().getFullYear();
+  const periodes = d.periodes || [];
+  const retard = retardDe(periodes);
+  const regles = periodes.filter((p) => ['regle', 'dispense'].includes(p.statut)).map((p) => p.periode).sort();
+  const deLAnnee = periodes.filter((p) => p.annee === an).sort((a, b) => (a.periode > b.periode ? 1 : -1));
+  const prochaine = periodes.filter((p) => ['impaye', 'partiel', 'a_venir'].includes(p.statut)).sort((a, b) => (a.periode > b.periode ? 1 : -1))[0];
+  const parts = d.participations || [];
+  const partsDues = parts.filter((p) => p.montant_attendu && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
+  const etat = retard > 0
+    ? `<div class="situation situation-retard"><span>Cotisation</span><b class="num">${eur(retard)}</b><small>en retard${prochaine ? ` depuis ${esc(nomPeriode(prochaine.periode))}` : ''}</small></div>`
+    : `<div class="situation situation-ok"><span>Cotisation</span><b>À jour</b><small>${regles.length ? `réglée jusqu’à ${esc(nomPeriode(regles.at(-1)))}` : 'aucune période due'}</small></div>`;
+  const avance = Number(d.avance || 0);
+  document.title = `${d.association?.nom || 'Association'} · ${d.membre?.prenom || ''}`;
+  $('#app').innerHTML = `<main class="espace-membre">
+    <section class="banniere ${photo ? 'avec-photo' : ''}" ${photo ? `style="--photo:url('${esc(photo)}')"` : ''}>
+      <div class="banniere-tete"><img src="${esc(logo)}" alt=""><div><b>${esc(d.association?.nom || '')}</b><span>Bonjour ${esc(d.membre?.prenom || '')}</span></div></div>
+      ${etat}
+    </section>
+    ${retour ? `<div class="info info-action"><span>Aperçu de ce que voit ${esc(d.membre?.prenom || '')} avec son lien.</span><button class="btn-primaire btn-petit" id="b-retour">Revenir</button></div>` : ''}
+    <section class="carte">
+      <h2>Ma cotisation ${an}</h2>
+      ${deLAnnee.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${deLAnnee.length},1fr)">${deLAnnee.map((p) => `<i class="case-p p-${p.statut}" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS[Number(p.periode.slice(5, 7)) - 1][0].toUpperCase() : ''}</small></i>`).join('')}</div>
+        <div class="legende muted">${Object.entries(STATUT_PERIODE).filter(([k]) => deLAnnee.some((p) => p.statut === k)).map(([k, [, l]]) => `<span><i class="case-p p-${k}"></i>${l}</span>`).join('')}</div>` : '<p class="muted">Aucune cotisation enregistrée pour cette année.</p>'}
+      <ul class="liste">
+        <li><div class="corps"><b>Montant</b><span>${eur(d.reglages?.montant)} par ${{ 1: 'mois', 3: 'trimestre', 6: 'semestre', 12: 'an' }[pasCotis()] || 'période'}</span></div></li>
+        ${retard > 0 ? `<li><div class="corps"><b>À régler</b><span>Périodes déjà commencées et non réglées</span></div><b class="num negatif">${eur(retard)}</b></li>` : ''}
+        ${avance > 0 ? `<li><div class="corps"><b>Avance</b><span>Versé au-delà des périodes prévues</span></div><b class="num">${eur(avance)}</b></li>` : ''}
+      </ul>
+    </section>
+    ${d.reglages?.infos_paiement ? `<section class="carte"><h2>Comment régler</h2><p class="texte-libre">${esc(d.reglages.infos_paiement)}</p></section>` : ''}
+    ${parts.length ? `<section class="carte"><h2>Mes participations${partsDues.length ? ` <span class="puce puce-partiel">${partsDues.length} en attente</span>` : ''}</h2>${listeParticipations(parts)}</section>` : ''}
+    <section class="carte"><h2>À venir</h2>
+      ${(d.a_venir || []).length ? `<ul class="liste">${d.a_venir.map((p) => `<li><span class="avatar date-pastille"><b>${Number(p.date_debut.slice(8, 10))}</b>${MOIS_COURTS[Number(p.date_debut.slice(5, 7)) - 1]}</span>
+        <div class="corps"><b>${esc(p.nom)}</b><span>${esc(jourLong(p.date_debut))}${p.heure_debut ? ' · ' + heure(p.heure_debut) : ''}${p.lieu ? ' · ' + esc(p.lieu) : ''}</span>${p.description ? `<small class="muted descr">${esc(p.description)}</small>` : ''}</div></li>`).join('')}</ul>` : '<p class="muted">Aucun rendez-vous annoncé.</p>'}
+    </section>
+    ${(d.versements || []).length ? `<details class="carte rubrique"><summary><span class="rub-titre"><h2>Mes versements</h2><span class="rub-resume">${d.versements.length} dernier${d.versements.length > 1 ? 's' : ''}</span></span>
+      <svg class="chevron" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <div class="rub-corps"><ul class="liste">${d.versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul></div></details>` : ''}
+    <section class="pied-membre">
+      <p>Ce lien vous est personnel. Pour l’ouvrir en un geste, ajoutez cette page à l’écran d’accueil de votre téléphone (menu du navigateur, « Ajouter à l’écran d’accueil »).</p>
+      <p>Mise à jour le ${dateFr(auj)} · ${esc(d.association?.nom || '')}</p>
+      ${retour ? '' : '<div class="actions-gauche"><button class="btn-texte btn-petit" id="b-oublier">Oublier ce lien sur cet appareil</button><button class="btn-texte btn-petit" id="b-co">Accès du bureau</button></div>'}
+    </section>
+  </main>`;
+  $('#b-retour')?.addEventListener('click', retour);
+  $('#b-co')?.addEventListener('click', seConnecter);
+  $('#b-oublier')?.addEventListener('click', () => { garderJeton(null); history.replaceState(null, '', location.pathname); ecranConnexion('Lien oublié sur cet appareil.'); });
+}
+
+// Lien personnel d'un membre : création, envoi, aperçu, renouvellement, coupure
+async function feuilleLien(m) {
+  const l = (S.liensMembres || {})[m.id];
+  const wa = numeroWa(m.whatsapp || '');
+  const message = (u) => `Bonjour ${m.prenom}, voici votre lien personnel pour suivre votre cotisation, vos participations et les rendez-vous de ${S.org?.nom || 'l’association'} : ${u} Il ouvre directement votre page, sans compte ni mot de passe. Gardez-le pour vous.`;
+  const u = l ? urlLien(l.jeton) : '';
+  ouvrirFeuille(`<h2>Lien personnel</h2>
+    <div class="identite">${avatar(m)}<div><b>${esc(nomComplet(m))}</b><span class="muted">${l ? (l.nb_consultations ? `Ouvert ${l.nb_consultations} fois, dernière fois le ${dateFr(String(l.derniere_consultation).slice(0, 10))}` : 'Lien créé, pas encore ouvert') : 'Pas encore de lien'}</span></div></div>
+    <p class="muted" style="margin:0">Le lien ouvre la page de ${esc(m.prenom)} : cotisation, participations, rendez-vous à venir. Aucun compte ni mot de passe. Il ne montre rien d’autre et peut être coupé à tout moment.</p>
+    ${l ? `<label class="champ">Adresse du lien<input id="i-lien" readonly value="${esc(u)}"></label>
+      <div class="actions-gauche">
+        ${wa ? `<a class="btn btn-primaire btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(message(u))}">Envoyer par WhatsApp</a>` : ''}
+        ${m.email ? `<a class="btn btn-tonal btn-petit" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Votre page personnelle')}&body=${encodeURIComponent(message(u))}">Envoyer par e-mail</a>` : ''}
+        <button class="btn-tonal btn-petit" id="b-copier">Copier</button>
+        <button class="btn-texte btn-petit" id="b-voir">Voir comme ${esc(m.prenom)}</button>
+      </div>
+      <div class="actions"><button class="btn-texte" id="b-couper">Couper le lien</button><button class="btn-texte" id="b-renouveler">Renouveler</button><button class="btn-primaire" id="b-fermer">Fermer</button></div>`
+    : `<div class="actions"><button class="btn-texte" id="b-fermer">Fermer</button><button class="btn-primaire" id="b-creer">Créer le lien</button></div>`}`, (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    const creer = async (renouveler) => {
+      try { await q(sb.rpc('lien_membre', { p_member: m.id, p_renouveler: renouveler })); await chargerLiens(); feuilleLien(m); toast(renouveler ? 'Nouveau lien créé, l’ancien ne fonctionne plus' : 'Lien créé'); }
+      catch (e) { erreur(e); }
+    };
+    $('#b-creer', root)?.addEventListener('click', () => creer(false));
+    $('#b-renouveler', root)?.addEventListener('click', () => creer(true));
+    $('#b-couper', root)?.addEventListener('click', async () => {
+      try { await q(sb.from('liens_membres').delete().eq('member_id', m.id)); await chargerLiens(); feuilleLien(m); toast('Lien coupé'); } catch (e) { erreur(e); }
+    });
+    $('#b-copier', root)?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(u); toast('Lien copié'); } catch { $('#i-lien', root).select(); toast('Sélectionnez puis copiez le lien'); }
+    });
+    $('#b-voir', root)?.addEventListener('click', () => { fermerFeuille(); pageLien(l.jeton, () => { document.title = 'Trésorerie ' + (S.org?.nom || ''); router(); }); });
+  });
+}
+
+async function chargerLiens() {
+  S.liensMembres = {};
+  if (!peut('gerer_membres', 'gerer_cotisations')) return;
+  try { (await q(sb.from('liens_membres').select('*'))).forEach((l) => { S.liensMembres[l.member_id] = l; }); } catch (e) { console.warn(e); }
+}
+
+// Envoi groupé : un lien par membre, un geste par envoi
+async function feuilleLiens() {
+  const actifs = S.membres.filter((m) => m.actif).sort((a, b) => nomComplet(a).localeCompare(nomComplet(b), 'fr'));
+  const sans = actifs.filter((m) => !S.liensMembres?.[m.id]);
+  const ligneEnvoi = (m) => {
+    const l = S.liensMembres?.[m.id]; const wa = numeroWa(m.whatsapp || '');
+    const msg = l ? `Bonjour ${m.prenom}, voici votre lien personnel pour suivre votre cotisation et les rendez-vous de ${S.org?.nom || 'l’association'} : ${urlLien(l.jeton)} Gardez-le pour vous.` : '';
+    return `<li>${avatar(m)}<div class="corps"><b>${esc(nomComplet(m))}</b><span>${!l ? 'Pas de lien' : l.nb_consultations ? `Ouvert ${l.nb_consultations} fois` : 'Pas encore ouvert'}${wa ? '' : ' · sans numéro WhatsApp'}</span></div>
+      ${l && wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}">WhatsApp</a>` : l && m.email ? `<a class="btn btn-texte btn-petit" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Votre page personnelle')}&body=${encodeURIComponent(msg)}">E-mail</a>` : ''}</li>`;
+  };
+  ouvrirFeuille(`<h2>Liens personnels</h2>
+    <p class="muted" style="margin:0">Chaque membre reçoit un lien qui ouvre sa page : cotisation, participations, rendez-vous. Pas de compte, pas d’installation.</p>
+    ${sans.length ? `<div class="info info-action"><span>${sans.length} membre${sans.length > 1 ? 's' : ''} sans lien</span><button class="btn-primaire btn-petit" id="b-tous">Créer les liens</button></div>` : ''}
+    <ul class="liste">${actifs.map(ligneEnvoi).join('')}</ul>
+    <div class="actions"><button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#b-tous', root)?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        for (let i = 0; i < sans.length; i += 8) await Promise.all(sans.slice(i, i + 8).map((m) => q(sb.rpc('lien_membre', { p_member: m.id, p_renouveler: false }))));
+        await chargerLiens(); feuilleLiens(); toast('Liens créés');
+      } catch (err) { erreur(err); }
+    });
+  });
+}
+
+// =====================================================================
+// Budget : ressources et emplois, prévu, réalisé, année précédente
+// =====================================================================
+async function calculBudget(an) {
+  const [lignes, txs, txsN1] = await Promise.all([
+    q(sb.from('budgets').select('*').eq('annee', an)),
+    q(sb.from('transactions').select('*').gte('date_op', `${an}-01-01`).lte('date_op', `${an}-12-31`)),
+    q(sb.from('transactions').select('*').gte('date_op', `${an - 1}-01-01`).lte('date_op', `${an - 1}-12-31`)),
+  ]);
+  const somme = (l, cat) => l.filter((t) => t.category_id === cat).reduce((s, t) => s + Number(t.montant), 0);
+  const postes = (sens) => S.categories.filter((c) => c.sens === sens).map((c) => {
+    const b = lignes.find((x) => x.category_id === c.id && !x.project_id);
+    return { cat: c, ligne: b, prevu: Number(b?.montant_prevu || 0), realise: somme(txs, c.id), n1: somme(txsN1, c.id) };
+  });
+  const ressources = postes('recette'), emplois = postes('depense');
+  const total = (l, k) => l.reduce((s, x) => s + x[k], 0);
+  // Activités : lignes de budget rattachées et opérations de l'année
+  const ids = new Set([...lignes.filter((b) => b.project_id).map((b) => b.project_id), ...txs.filter((t) => t.project_id).map((t) => t.project_id)]);
+  const activites = [...ids].map((pid) => {
+    const p = (S.projets || []).find((x) => x.id === pid) || { id: pid, nom: 'Activité' };
+    const bl = lignes.filter((b) => b.project_id === pid);
+    const t = txs.filter((x) => x.project_id === pid);
+    const sensDe = (b) => S.categories.find((c) => c.id === b.category_id)?.sens;
+    return { p, lignes: bl,
+      resPrevu: bl.filter((b) => sensDe(b) === 'recette').reduce((s, b) => s + Number(b.montant_prevu), 0),
+      empPrevu: bl.filter((b) => sensDe(b) === 'depense').reduce((s, b) => s + Number(b.montant_prevu), 0),
+      resReel: t.filter((x) => x.sens === 'recette').reduce((s, x) => s + Number(x.montant), 0),
+      empReel: t.filter((x) => x.sens === 'depense').reduce((s, x) => s + Number(x.montant), 0) };
+  }).sort((a, b) => String(a.p.date_debut || '9').localeCompare(String(b.p.date_debut || '9')));
+  return { lignes, ressources, emplois, activites,
+    resPrevu: total(ressources, 'prevu'), empPrevu: total(emplois, 'prevu'), resReel: total(ressources, 'realise'), empReel: total(emplois, 'realise'),
+    resN1: total(ressources, 'n1'), empN1: total(emplois, 'n1') };
+}
+
+async function pageBudget() {
+  if (!S.anneeBudget) S.anneeBudget = new Date().getFullYear();
+  const an = S.anneeBudget;
+  S.projets = await q(sb.from('projects').select('*').order('date_debut', { ascending: false }));
+  const B = await calculBudget(an);
+  const gere = peut('gerer_budget');
+  const equilibre = B.resPrevu - B.empPrevu;
+  const vide = !B.resPrevu && !B.empPrevu;
+  const taux = (r, p) => (p > 0 ? Math.round(100 * r / p) : null);
+  const tableau = (postes, sens) => {
+    const tp = postes.reduce((s, x) => s + x.prevu, 0), tr = postes.reduce((s, x) => s + x.realise, 0), tn = postes.reduce((s, x) => s + x.n1, 0);
+    return `<div class="tableau-wrap"><table class="table-cartes table-budget"><thead><tr><th>Poste</th><th class="droite">Prévu</th><th class="droite">Réalisé</th><th>Avancement</th><th class="droite">Réalisé ${an - 1}</th></tr></thead>
+      <tbody>${postes.map((x) => {
+        const t = taux(x.realise, x.prevu);
+        const depasse = sens === 'depense' && x.prevu > 0 && x.realise > x.prevu;
+        const hors = !x.prevu && x.realise > 0;
+        return `<tr><td data-label="Poste"><b>${esc(x.cat.nom)}</b>${depasse ? ' <span class="puce puce-ko">Dépassé</span>' : hors ? ' <span class="puce puce-neutre">Non prévu</span>' : ''}</td>
+          <td class="droite" data-label="Prévu">${gere ? `<input type="number" step="0.01" min="0" inputmode="decimal" value="${x.prevu ? x.prevu.toFixed(2) : ''}" placeholder="0" data-cat="${x.cat.id}" data-ligne="${x.ligne?.id || ''}" aria-label="Prévu ${esc(x.cat.nom)}" class="saisie-budget">` : `<span class="num">${eur(x.prevu)}</span>`}</td>
+          <td class="droite num" data-label="Réalisé">${eur(x.realise)}</td>
+          <td data-label="Avancement">${t == null ? '<span class="muted">–</span>' : `<div class="barre"><span style="width:${Math.min(100, t)}%;background:${sens === 'recette' ? 'var(--bleu)' : depasse ? 'var(--erreur)' : 'var(--primaire)'}"></span></div><span class="muted">${t}&nbsp;%</span>`}</td>
+          <td class="droite num muted" data-label="Réalisé ${an - 1}">${x.n1 ? eur(x.n1) : '–'}</td></tr>`;
+      }).join('')}</tbody>
+      <tfoot><tr><td><b>Total</b></td><td class="droite num" data-label="Prévu"><b>${eur(tp)}</b></td><td class="droite num" data-label="Réalisé"><b>${eur(tr)}</b></td><td>${taux(tr, tp) == null ? '' : `<span class="muted">${taux(tr, tp)}&nbsp;%</span>`}</td><td class="droite num muted">${eur(tn)}</td></tr></tfoot></table></div>`;
+  };
+  const carteActivite = (a) => {
+    const res = a.resReel - a.empReel;
+    return `<article class="carte">
+      <div style="display:flex;gap:8px;align-items:flex-start"><h3 style="flex:1;margin:0">${esc(a.p.nom)}</h3><span class="muted">${a.p.date_debut ? dateFr(a.p.date_debut) : 'Date à fixer'}</span></div>
+      <div class="budget-act">
+        <div><span class="muted">Ressources</span><b class="num recette">${eur(a.resReel)}</b><small class="muted">prévu ${eur(a.resPrevu)}</small></div>
+        <div><span class="muted">Emplois</span><b class="num depense">${eur(a.empReel)}</b><small class="muted">prévu ${eur(a.empPrevu)}</small></div>
+        <div><span class="muted">Résultat</span><b class="num ${res < 0 ? 'negatif' : ''}">${res >= 0 ? '+' : '−'}&nbsp;${eur(Math.abs(res))}</b><small class="muted">prévu ${eur(a.resPrevu - a.empPrevu)}</small></div>
+      </div>
+      ${a.empPrevu && a.empReel > a.empPrevu ? '<div class="alerte">Emplois de l’activité au-delà du prévu</div>' : ''}
+      ${gere ? `<div class="actions-gauche"><button class="btn-texte btn-petit" data-prevoir="${a.p.id}">Prévoir une ligne</button></div>` : ''}
+      ${a.lignes.length ? `<ul class="liste liste-compacte">${a.lignes.map((b) => { const c = S.categories.find((x) => x.id === b.category_id); return `<li><div class="corps"><b>${esc(c?.nom || '')}</b><span>${c?.sens === 'recette' ? 'Ressource' : 'Emploi'} prévu</span></div><span class="num">${eur(b.montant_prevu)}</span>${gere ? `<button class="btn-texte btn-petit" data-retirer="${b.id}" aria-label="Retirer">Retirer</button>` : ''}</li>`; }).join('')}</ul>` : ''}
+    </article>`;
+  };
+  rendre(`<div class="page">
+    <div class="page-titre"><h1>Budget</h1>
+      <select id="an" aria-label="Exercice" style="width:auto">${[an + 1, an, an - 1, an - 2].map((a) => `<option ${a === an ? 'selected' : ''}>${a}</option>`).join('')}</select>
+      <button class="btn-bleu btn-petit" id="b-pdf-budget">Exporter</button></div>
+    <div class="kpis">
+      <div class="carte"><span class="muted">Ressources prévues</span><b class="num recette">${eur(B.resPrevu)}</b><span class="muted">réalisé ${eur(B.resReel)}</span></div>
+      <div class="carte"><span class="muted">Emplois prévus</span><b class="num depense">${eur(B.empPrevu)}</b><span class="muted">réalisé ${eur(B.empReel)}</span></div>
+      <div class="carte"><span class="muted">${equilibre >= 0 ? 'Excédent prévu' : 'Déficit prévu'}</span><b class="num ${equilibre < 0 ? 'negatif' : ''}">${eur(Math.abs(equilibre))}</b><span class="muted">résultat réalisé ${eur(B.resReel - B.empReel)}</span></div>
+    </div>
+    ${vide ? `<div class="info info-action"><span><b>Budget ${an} à construire.</b> Saisissez le montant prévu de chaque ressource et de chaque emploi${B.resN1 || B.empN1 ? `, ou partez du réalisé ${an - 1}` : ''}.</span>${gere && (B.resN1 || B.empN1) ? `<button class="btn-primaire btn-petit" id="b-reprendre">Reprendre le réalisé ${an - 1}</button>` : ''}</div>`
+      : equilibre < 0 ? `<div class="alerte">Les emplois prévus dépassent les ressources de ${eur(-equilibre)}. À couvrir par la réserve ou par des ressources supplémentaires.</div>` : ''}
+    <div class="grille grille-2 budget-colonnes">
+      <section class="carte"><h2>Ressources <span class="muted">(recettes)</span></h2>${tableau(B.ressources, 'recette')}</section>
+      <section class="carte"><h2>Emplois <span class="muted">(dépenses)</span></h2>${tableau(B.emplois, 'depense')}</section>
+    </div>
+    <section class="carte"><div class="page-titre" style="margin:0"><h2 style="flex:1;margin:0">Activités</h2>${gere ? '<button class="btn-tonal btn-petit" id="b-ligne-act">Prévoir pour une activité</button>' : ''}</div>
+      ${B.activites.length ? `<div class="grille grille-2">${B.activites.map(carteActivite).join('')}</div>` : '<p class="muted">Aucune activité budgétée. Une activité suivie apparaît ici dès qu’une ligne est prévue ou qu’une opération y est rattachée.</p>'}</section>
+    ${gere ? `<p class="muted aide-bas">Le montant prévu s’enregistre dès que vous quittez la case. Les catégories se créent dans Paramètres, Montants et comptes.</p>` : ''}
+  </div>`);
+  const recharger = () => pageBudget().catch(erreur);
+  $('#an').addEventListener('change', (e) => { S.anneeBudget = Number(e.target.value); recharger(); });
+  $('#b-pdf-budget').addEventListener('click', () => choisirFormat(`Budget ${an}`, () => pdfBudget(an), () => exporter('budget', an).catch(erreur)));
+  document.querySelectorAll('[data-cat]').forEach((i) => i.addEventListener('change', async () => {
+    const v = Number(String(i.value).replace(',', '.')) || 0;
+    try {
+      if (i.dataset.ligne && v === 0) await q(sb.from('budgets').delete().eq('id', i.dataset.ligne));
+      else if (i.dataset.ligne) await q(sb.from('budgets').update({ montant_prevu: v }).eq('id', i.dataset.ligne));
+      else if (v > 0) await q(sb.from('budgets').insert({ annee: an, category_id: i.dataset.cat, project_id: null, montant_prevu: v, seuil_alerte_pct: Number(S.settings.seuil_alerte_budget_pct ?? 90) }));
+      toast('Budget enregistré'); recharger();
+    } catch (e) { erreur(e); }
+  }));
+  $('#b-reprendre')?.addEventListener('click', async () => {
+    try {
+      const a = [...B.ressources, ...B.emplois].filter((x) => x.n1 > 0 && !x.ligne);
+      if (a.length) await q(sb.from('budgets').insert(a.map((x) => ({ annee: an, category_id: x.cat.id, project_id: null, montant_prevu: Math.round(x.n1), seuil_alerte_pct: Number(S.settings.seuil_alerte_budget_pct ?? 90) }))));
+      toast(`${a.length} ligne${a.length > 1 ? 's' : ''} reprise${a.length > 1 ? 's' : ''} : ajustez les montants`); recharger();
+    } catch (e) { erreur(e); }
+  });
+  $('#b-ligne-act')?.addEventListener('click', () => feuilleLigneBudget(an, recharger));
+  document.querySelectorAll('[data-prevoir]').forEach((b) => b.addEventListener('click', () => feuilleLigneBudget(an, recharger, b.dataset.prevoir)));
+  document.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', async () => {
+    try { await q(sb.from('budgets').delete().eq('id', b.dataset.retirer)); toast('Ligne retirée'); recharger(); } catch (e) { erreur(e); }
+  }));
+}
+
+// Ligne de budget d'une activité : ressource ou emploi
+function feuilleLigneBudget(an, apres, projet = '') {
+  const groupe = (sens) => S.categories.filter((c) => c.sens === sens).map((c) => `<option value="${c.id}">${esc(c.nom)}</option>`).join('');
+  const activites = (S.projets || []).filter((p) => p.type === 'activite' || p.id === projet);
+  ouvrirFeuille(`<form id="f-bud" class="champs"><h2>Budget d’une activité ${an}</h2>
+    <label class="champ"><span class="obligatoire">Activité</span><select name="projet" required>${activites.length ? activites.map((p) => `<option value="${p.id}" ${p.id === projet ? 'selected' : ''}>${esc(p.nom)}</option>`).join('') : '<option value="">Aucune activité suivie</option>'}</select></label>
+    <div class="groupe" role="group" aria-label="Nature">
+      <button type="button" data-sens="recette" aria-pressed="false">Ressource</button>
+      <button type="button" data-sens="depense" aria-pressed="true">Emploi</button></div>
+    <label class="champ"><span class="obligatoire">Poste</span><select name="categorie">${groupe('depense')}</select></label>
+    <label class="champ"><span class="obligatoire">Montant prévu (€)</span><input name="montant" type="number" step="0.01" min="0.01" inputmode="decimal" required></label>
+    ${activites.length ? '' : '<p class="muted">Créez d’abord l’activité dans le Planning en cochant « Suivre le budget ».</p>'}
+    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire" ${activites.length ? '' : 'disabled'}>Ajouter</button></div></form>`, (root) => {
+    const f = $('#f-bud', root);
+    root.querySelectorAll('[data-sens]').forEach((b) => b.addEventListener('click', () => {
+      root.querySelectorAll('[data-sens]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+      f.categorie.innerHTML = groupe(b.dataset.sens);
+    }));
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const existe = (await q(sb.from('budgets').select('*').eq('annee', an).eq('category_id', f.categorie.value).eq('project_id', f.projet.value)))[0];
+        if (existe) await q(sb.from('budgets').update({ montant_prevu: Number(existe.montant_prevu) + Number(f.montant.value) }).eq('id', existe.id));
+        else await q(sb.from('budgets').insert({ annee: an, category_id: f.categorie.value, project_id: f.projet.value,
+          montant_prevu: Number(f.montant.value), seuil_alerte_pct: Number(S.settings.seuil_alerte_budget_pct ?? 90) }));
+        fermerFeuille(); toast('Ligne ajoutée'); apres();
+      } catch (err) { erreur(err); }
+    });
+  });
+}
+
+async function pdfBudget(an) {
+  S.projets = S.projets || await q(sb.from('projects').select('*'));
+  const B = await calculBudget(an);
+  const pct = (r, p) => (p > 0 ? `${Math.round(100 * r / p)}&nbsp;%` : '–');
+  const bloc = (postes, titre, sens) => {
+    const l = postes.filter((x) => x.prevu || x.realise || x.n1);
+    const tp = l.reduce((s, x) => s + x.prevu, 0), tr = l.reduce((s, x) => s + x.realise, 0), tn = l.reduce((s, x) => s + x.n1, 0);
+    return `<h2>${titre}</h2>${tableDocument([['Poste', 'large'], ['Prévu', 'd'], ['Réalisé', 'd'], ['Écart', 'd'], ['Taux', 'd'], [`Réalisé ${an - 1}`, 'd']],
+      l.map((x) => [esc(x.cat.nom), eur(x.prevu), eur(x.realise), eur(x.realise - x.prevu), pct(x.realise, x.prevu) + (sens === 'depense' && x.prevu && x.realise > x.prevu ? ' <b>dépassé</b>' : ''), eur(x.n1)]),
+      ['<b>Total</b>', `<b>${eur(tp)}</b>`, `<b>${eur(tr)}</b>`, `<b>${eur(tr - tp)}</b>`, `<b>${pct(tr, tp)}</b>`, `<b>${eur(tn)}</b>`])}`;
+  };
+  const eq = B.resPrevu - B.empPrevu;
+  afficherDocument(`Budget ${an}`, `${enteteDocument(`Budget ${an} : prévu et réalisé`, `Arrêté au ${dateFr(aujourdhui())}`)}
+    ${syntheseDocument([['Ressources prévues', eur(B.resPrevu), '#1B77B0'], ['Emplois prévus', eur(B.empPrevu), '#C23E10'], [eq >= 0 ? 'Excédent prévu' : 'Déficit prévu', eur(Math.abs(eq)), eq < 0 ? '#BA1A1A' : ''], ['Résultat réalisé', eur(B.resReel - B.empReel)]])}
+    ${bloc(B.ressources, 'Ressources (recettes)', 'recette')}${bloc(B.emplois, 'Emplois (dépenses)', 'depense')}
+    ${B.activites.length ? `<h2>Activités</h2>${tableDocument([['Activité', 'large'], ['Ressources prévues', 'd'], ['Ressources réalisées', 'd'], ['Emplois prévus', 'd'], ['Emplois réalisés', 'd'], ['Résultat', 'd']],
+      B.activites.map((a) => [esc(a.p.nom), eur(a.resPrevu), eur(a.resReel), eur(a.empPrevu), eur(a.empReel), eur(a.resReel - a.empReel)]))}` : ''}
+    <p class="muted">Le réalisé reprend toutes les opérations de l’exercice par catégorie, activités comprises.</p>${signaturesDocument()}`);
+}
+
+// =====================================================================
+// Planning : calendrier (affichage mois ou semaine) et liste des rendez-vous à venir
+// =====================================================================
+const preferencePlanning = (cle, def) => { try { return localStorage.getItem(cle) || def; } catch { return def; } };
+const garderPreference = (cle, v) => { try { localStorage.setItem(cle, v); } catch { /* stockage indisponible */ } };
+
+async function pageActivites() {
+  const P = (S.planning ||= { vue: preferencePlanning('vuePlanning2', 'calendrier'), affichage: preferencePlanning('affichagePlanning', 'mois'), ref: isoLocal(new Date()) });
+  if (!['calendrier', 'avenir'].includes(P.vue)) P.vue = 'calendrier';
+  const ref = dateDe(P.ref);
+  let debut, fin, titre;
+  if (P.vue === 'avenir') { debut = new Date(); fin = ajouterJours(debut, 365); titre = ''; }
+  else if (P.affichage === 'semaine') { debut = lundiDe(ref); fin = ajouterJours(debut, 6); titre = `Semaine du ${debut.getDate()} ${MOIS[debut.getMonth()]}${debut.getMonth() !== fin.getMonth() ? '' : ''}`; }
+  else {
+    const premier = new Date(ref.getFullYear(), ref.getMonth(), 1, 12);
+    debut = lundiDe(premier); fin = ajouterJours(lundiDe(new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 12)), 6);
+    titre = majuscule(`${MOIS[ref.getMonth()]} ${ref.getFullYear()}`);
+  }
+  const moisVus = P.vue === 'avenir' ? [] : [...new Set([debut, ajouterJours(debut, 15), fin, ref].map((d) => d.getMonth() + 1))];
+  const [evts, ...anniv] = await Promise.all([
+    q(sb.rpc('planning_activites', { p_debut: isoLocal(debut), p_fin: isoLocal(fin) })),
+    ...moisVus.map((m) => q(sb.rpc('anniversaires_du_mois', { p_mois: m })).then((l) => l.map((a) => ({ ...a, mois: m })))),
+  ]);
+  const parJour = {};
+  evts.forEach((e) => {
+    let d = dateDe(e.date_debut); const f = dateDe(e.date_fin || e.date_debut);
+    for (let i = 0; d <= f && i < 62; i++, d = ajouterJours(d, 1)) (parJour[isoLocal(d)] ||= []).push(e);
+  });
+  const annivDe = (s) => { const d = dateDe(s); return anniv.flat().filter((a) => a.mois === d.getMonth() + 1 && a.jour === d.getDate()); };
+  const auj = isoLocal(new Date());
+  const puce = (e) => `<button class="evt" data-evt="${e.id}">${e.heure_debut ? `<small>${String(e.heure_debut).slice(0, 5)}</small> ` : ''}${esc(e.nom)}</button>`;
+  const ligneEvt = (e) => `<button class="agenda-evt" data-evt="${e.id}"><b>${esc(e.nom)}</b><span>${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Toute la journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}</span>${e.participation ? `<span class="puce puce-partiel">Participation ${eur(e.participation)}</span>` : ''}</button>`;
+  let corps = '';
+  if (P.vue === 'avenir') {
+    const groupes = {};
+    evts.filter((e) => (e.date_fin || e.date_debut) >= auj).forEach((e) => { (groupes[e.date_debut.slice(0, 7)] ||= []).push(e); });
+    corps = Object.keys(groupes).length ? Object.entries(groupes).map(([m, l]) => `<section class="carte"><h2>${majuscule(MOIS[Number(m.slice(5, 7)) - 1])} ${m.slice(0, 4)}</h2>
+      <ul class="liste agenda">${l.map((e) => `<li class="agenda-jour ${e.date_debut === auj ? 'auj' : ''}"><span class="agenda-date"><b>${Number(e.date_debut.slice(8))}</b><span>${JOURS_COURTS[(dateDe(e.date_debut).getDay() + 6) % 7]}</span></span>
+        <div class="corps">${ligneEvt(e)}${e.date_fin && e.date_fin !== e.date_debut ? `<span class="muted">Jusqu’au ${esc(jourLong(e.date_fin))}</span>` : ''}</div></li>`).join('')}</ul></section>`).join('')
+      : `<div class="carte vide">Aucun rendez-vous prévu.${peut('gerer_activites') ? '<button class="btn-primaire" id="b-evt-vide">Ajouter un rendez-vous</button>' : ''}</div>`;
+  } else if (P.affichage === 'mois') {
+    const cases = [];
+    for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) cases.push(isoLocal(d));
+    corps = `<div class="cal"><div class="cal-tete">${JOURS_COURTS.map((j) => `<span>${j}</span>`).join('')}</div>
+      <div class="cal-grille">${cases.map((s) => {
+        const e = parJour[s] || [], a = annivDe(s), horsMois = dateDe(s).getMonth() !== ref.getMonth();
+        return `<div class="cal-jour ${horsMois ? 'hors' : ''} ${s === auj ? 'auj' : ''}" data-jour="${s}" tabindex="0" role="button" aria-label="${jourLong(s)}${e.length ? ', ' + e.length + ' rendez-vous' : ''}">
+          <span class="num-jour">${Number(s.slice(8))}</span>${e.slice(0, 3).map(puce).join('')}${e.length > 3 ? `<small class="muted">+${e.length - 3}</small>` : ''}
+          ${a.length ? `<small class="anniv" title="Anniversaire : ${esc(a.map((x) => x.prenom).join(', '))}">${esc(a.map((x) => x.prenom).join(', '))}</small>` : ''}</div>`;
+      }).join('')}</div></div>
+      <div class="legende muted"><span><i class="pastille-legende leg-evt"></i>Rendez-vous</span><span><i class="pastille-legende leg-anniv"></i>Anniversaire</span><span>Touchez un jour pour le détail</span></div>`;
+  } else {
+    const jours = [];
+    for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) jours.push(isoLocal(d));
+    corps = `<section class="carte"><ul class="liste agenda">${jours.map((s) => `<li class="agenda-jour ${s === auj ? 'auj' : ''}">
+      <button class="agenda-date" data-jour="${s}"><b>${Number(s.slice(8))}</b><span>${JOURS_COURTS[(dateDe(s).getDay() + 6) % 7]}</span></button>
+      <div class="corps">${(parJour[s] || []).map(ligneEvt).join('')}
+        ${annivDe(s).map((a) => `<span class="anniv">Anniversaire de ${esc(a.prenom)} ${esc(a.nom)}</span>`).join('')}
+        ${!(parJour[s] || []).length && !annivDe(s).length ? '<span class="muted">–</span>' : ''}</div></li>`).join('')}</ul></section>`;
+  }
+  rendre(`<div class="page">
+    <div class="page-titre"><h1>Planning</h1></div>
+    <div class="onglets" role="tablist">${[['calendrier', 'Calendrier'], ['avenir', 'À venir']].map(([k, l]) => `<button role="tab" aria-selected="${P.vue === k}" data-vue="${k}">${l}</button>`).join('')}</div>
+    ${P.vue === 'calendrier' ? `<div class="filtres cal-nav">
+      <div class="groupe groupe-compact" role="group" aria-label="Affichage">${[['mois', 'Mois'], ['semaine', 'Semaine']].map(([k, l]) => `<button type="button" data-affichage="${k}" aria-pressed="${P.affichage === k}">${l}</button>`).join('')}</div>
+      <button class="btn-texte btn-petit" id="b-prec" aria-label="Précédent">‹</button><h2 style="margin:0;flex:1;text-align:center">${esc(titre)}</h2><button class="btn-texte btn-petit" id="b-suiv" aria-label="Suivant">›</button>
+      <button class="btn-tonal btn-petit" id="b-auj">Aujourd’hui</button></div>` : '<p class="muted" style="margin:0">Les rendez-vous des douze prochains mois.</p>'}
+    ${corps}
+    ${peut('gerer_activites') ? `<button class="fab" id="b-evt" aria-label="Nouveau rendez-vous" title="Nouveau rendez-vous"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
+  </div>`);
+  const recharger = () => pageActivites().catch(erreur);
+  document.querySelectorAll('[data-vue]').forEach((b) => b.addEventListener('click', () => { P.vue = b.dataset.vue; garderPreference('vuePlanning2', P.vue); recharger(); }));
+  document.querySelectorAll('[data-affichage]').forEach((b) => b.addEventListener('click', () => { P.affichage = b.dataset.affichage; garderPreference('affichagePlanning', P.affichage); recharger(); }));
+  const decaler = (n) => {
+    const d = dateDe(P.ref);
+    P.ref = P.affichage === 'mois' ? isoLocal(new Date(d.getFullYear(), d.getMonth() + n, 1, 12)) : isoLocal(ajouterJours(d, n * 7));
+    recharger();
+  };
+  $('#b-prec')?.addEventListener('click', () => decaler(-1));
+  $('#b-suiv')?.addEventListener('click', () => decaler(1));
+  $('#b-auj')?.addEventListener('click', () => { P.ref = isoLocal(new Date()); recharger(); });
+  ['#b-evt', '#b-evt-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleActivite(null, recharger, { date: P.vue === 'calendrier' && P.affichage === 'mois' && dateDe(P.ref).getMonth() !== new Date().getMonth() ? P.ref : auj })));
+  document.querySelectorAll('[data-evt]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); detailEvenement(evts.find((x) => x.id === b.dataset.evt), recharger); }));
+  document.querySelectorAll('[data-jour]').forEach((c) => {
+    const ouvrir = () => feuilleJour(c.dataset.jour, parJour[c.dataset.jour] || [], annivDe(c.dataset.jour), recharger);
+    c.addEventListener('click', ouvrir); c.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+  });
+}
+
+// =====================================================================
+// Matériel : inventaire des biens de l'association
+// =====================================================================
+const CATEGORIES_MATERIEL = { instrument: 'Instruments de musique', sonorisation: 'Sonorisation et éclairage', informatique: 'Informatique et vidéo', mobilier: 'Mobilier', textile: 'Tenues et textiles', cuisine: 'Cuisine et réception', autre: 'Autres' };
+const ETATS_MATERIEL = { neuf: ['puce-ok', 'Neuf'], bon: ['puce-ok', 'Bon état'], usage: ['puce-neutre', 'Usé'], a_reparer: ['puce-partiel', 'À réparer'], hors_service: ['puce-ko', 'Hors service'] };
+const ORIGINES_MATERIEL = { achat: 'Acheté', don: 'Reçu en don', pret: 'Prêté par un tiers' };
+const MOTIFS_SORTIE = { vendu: 'Vendu', donne: 'Donné', perdu: 'Perdu', vole: 'Volé', detruit: 'Détruit ou jeté', rendu: 'Rendu au propriétaire' };
+const MOUVEMENTS = { entree: 'Entrée à l’inventaire', pret: 'Prêté', retour: 'Rendu', reparation: 'Réparation', inventaire: 'Vérifié', sortie: 'Sorti de l’inventaire', modification: 'Fiche modifiée' };
+const aVerifier = (x) => !x.sorti_le && (!x.verifie_le || (Date.now() - new Date(x.verifie_le)) / 864e5 > 365);
+
+async function pageMateriel() {
+  const items = await q(sb.from('materiel').select('*').order('designation'));
+  await chargerPhotos(items);
+  const gere = peut('gerer_materiel');
+  const filtre = S.filtreMateriel || 'service';
+  const enService = items.filter((x) => !x.sorti_le);
+  const filtres = {
+    service: ['En service', enService], pretes: ['Chez un membre', enService.filter((x) => x.detenteur_id)],
+    reparer: ['À réparer', enService.filter((x) => ['a_reparer', 'hors_service'].includes(x.etat))],
+    verifier: ['À vérifier', enService.filter(aVerifier)], sortis: ['Sortis', items.filter((x) => x.sorti_le)],
+  };
+  const vus = filtres[filtre][1];
+  const propre = (l) => l.filter((x) => x.origine !== 'pret');
+  const valAchat = propre(enService).reduce((s, x) => s + Number(x.valeur_acquisition || 0), 0);
+  const valActuelle = propre(enService).reduce((s, x) => s + Number(x.valeur_actuelle ?? x.valeur_acquisition ?? 0), 0);
+  const nbArticles = enService.reduce((s, x) => s + Number(x.quantite || 1), 0);
+  const parCat = {};
+  vus.forEach((x) => (parCat[x.categorie] ||= []).push(x));
+  const ligneM = (x) => `<li class="cliquable" data-mat="${x.id}" tabindex="0" role="button" data-nom="${esc(sansAccents(x.designation + ' ' + (x.marque || '')))}">
+      ${x.photo_path && S.photos[x.photo_path] ? `<span class="avatar avatar-carre"><img src="${esc(S.photos[x.photo_path])}" alt=""></span>` : `<span class="avatar avatar-carre" aria-hidden="true">${esc((x.designation[0] || '').toUpperCase())}</span>`}
+      <div class="corps"><b>${esc(x.designation)}${x.quantite > 1 ? ` <span class="muted">× ${x.quantite}</span>` : ''}</b>
+        <span>${[x.marque, x.lieu].filter(Boolean).map(esc).join(' · ') || ORIGINES_MATERIEL[x.origine]}</span>
+        <div class="membre-etats">${x.sorti_le ? `<span class="puce puce-neutre">${MOTIFS_SORTIE[x.motif_sortie]} le ${dateFr(x.sorti_le)}</span>` : `${['bon', 'neuf'].includes(x.etat) ? '' : `<span class="puce ${ETATS_MATERIEL[x.etat][0]}">${ETATS_MATERIEL[x.etat][1]}</span>`}
+          ${x.detenteur_id ? `<span class="puce puce-partiel">Chez ${esc(nomMembre(x.detenteur_id) || 'un membre')}</span>` : ''}
+          ${x.origine === 'pret' ? '<span class="puce puce-neutre">Prêt d’un tiers</span>' : ''}${aVerifier(x) ? '<span class="puce puce-neutre">À vérifier</span>' : ''}`}</div></div>
+      ${x.origine !== 'pret' && (x.valeur_actuelle ?? x.valeur_acquisition) != null ? `<span class="num">${eur(x.valeur_actuelle ?? x.valeur_acquisition)}</span>` : ''}
+    </li>`;
+  rendre(`<div class="page">
+    <div class="page-titre"><h1>Matériel</h1>
+      <button class="btn-bleu btn-petit" id="b-export-mat">Exporter</button></div>
+    <div class="kpis">
+      <div class="carte"><span class="muted">Articles en service</span><b class="num">${nbArticles}</b><span class="muted">${enService.length} ligne${enService.length > 1 ? 's' : ''} d’inventaire</span></div>
+      <div class="carte"><span class="muted">Valeur d’achat</span><b class="num">${eur(valAchat)}</b><span class="muted">dons compris, hors prêts</span></div>
+      <div class="carte"><span class="muted">Valeur actuelle estimée</span><b class="num">${eur(valActuelle)}</b><span class="muted">${filtres.verifier[1].length ? `${filtres.verifier[1].length} à vérifier` : 'Inventaire à jour'}</span></div>
+    </div>
+    <div class="filtres">${Object.entries(filtres).map(([k, [l, liste]]) => `<button class="puce-filtre" data-filtre-mat="${k}" aria-pressed="${filtre === k}">${l} (${liste.length})</button>`).join('')}</div>
+    ${items.length ? '<input type="search" id="recherche-mat" placeholder="Rechercher : guitare, micro, numéro de série…" aria-label="Rechercher dans le matériel">' : ''}
+    ${vus.length ? Object.keys(CATEGORIES_MATERIEL).filter((c) => parCat[c]).map((c) => `<section class="carte"><h2>${CATEGORIES_MATERIEL[c]} <span class="muted">${parCat[c].reduce((s, x) => s + x.quantite, 0)}</span></h2>
+      <ul class="liste liste-materiel">${parCat[c].map(ligneM).join('')}</ul></section>`).join('')
+      : `<div class="carte vide">${items.length ? 'Aucun article dans cette vue.' : `Aucun matériel inscrit.${gere ? '<span>Instruments, sonorisation, informatique, tenues : inscrivez chaque bien de l’association, avec sa valeur et son lieu de rangement.</span><button class="btn-primaire" id="b-mat-vide">Ajouter un article</button>' : ''}`}</div>`}
+    ${gere && items.length ? '<p class="muted aide-bas">Une fois par an, avant l’assemblée générale, vérifiez chaque article sur place et touchez « Vérifié ». L’inventaire PDF se signe et se joint au rapport.</p>' : ''}
+    ${gere ? `<button class="fab" id="b-mat" aria-label="Ajouter un article" title="Ajouter un article"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
+  </div>`);
+  const recharger = () => pageMateriel().catch(erreur);
+  document.querySelectorAll('[data-filtre-mat]').forEach((b) => b.addEventListener('click', () => { S.filtreMateriel = b.dataset.filtreMat; recharger(); }));
+  $('#recherche-mat')?.addEventListener('input', (e) => {
+    const v = sansAccents(e.target.value);
+    document.querySelectorAll('.liste-materiel li').forEach((li) => { li.hidden = v && !li.dataset.nom.includes(v); });
+  });
+  ['#b-mat', '#b-mat-vide'].forEach((s) => $(s)?.addEventListener('click', () => feuilleMateriel(null, recharger)));
+  document.querySelectorAll('[data-mat]').forEach((li) => {
+    const ouvrir = () => ficheMateriel(items.find((x) => x.id === li.dataset.mat), recharger);
+    li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+  });
+  $('#b-export-mat').addEventListener('click', () => choisirFormat('Exporter l’inventaire', () => pdfInventaire(), () => telechargerCsv(`inventaire-materiel-${aujourdhui()}.csv`,
+    ['Désignation', 'Catégorie', 'Marque et modèle', 'N° de série', 'Quantité', 'Origine', 'Acquis le', 'Valeur d’achat', 'Valeur actuelle', 'État', 'Lieu', 'Chez', 'Vérifié le', 'Sorti le', 'Motif'],
+    items.map((x) => [x.designation, CATEGORIES_MATERIEL[x.categorie], x.marque, x.numero_serie, x.quantite, ORIGINES_MATERIEL[x.origine], x.date_acquisition ? dateFr(x.date_acquisition) : '',
+      x.valeur_acquisition == null ? '' : Number(x.valeur_acquisition), x.valeur_actuelle == null ? '' : Number(x.valeur_actuelle), ETATS_MATERIEL[x.etat][1], x.lieu, x.detenteur_id ? nomMembre(x.detenteur_id) : '',
+      x.verifie_le ? dateFr(x.verifie_le) : '', x.sorti_le ? dateFr(x.sorti_le) : '', x.motif_sortie ? MOTIFS_SORTIE[x.motif_sortie] : '']))));
+}
+
+async function mouvement(materielId, type, memberId = null, notes = null) {
+  await q(sb.from('materiel_mouvements').insert({ materiel_id: materielId, type, member_id: memberId, notes, date_mvt: aujourdhui(), par: S.profil.id }));
+}
+
+async function ficheMateriel(x, apres) {
+  const mvts = await q(sb.from('materiel_mouvements').select('*').eq('materiel_id', x.id).order('created_at', { ascending: false }));
+  const achat = x.transaction_id && peut('consulter_finances') ? (await q(sb.from('transactions').select('*').eq('id', x.transaction_id)))[0] : null;
+  const gere = peut('gerer_materiel');
+  const ligneD = (l, v) => (v ? `<div class="ligne-detail"><span class="muted">${l}</span><span>${v}</span></div>` : '');
+  const photo = x.photo_path && S.photos[x.photo_path];
+  ouvrirFeuille(`${photo ? `<img class="photo-materiel" src="${esc(photo)}" alt="">` : ''}
+    <div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(x.designation)}${x.quantite > 1 ? ` × ${x.quantite}` : ''}</h2><span class="puce ${ETATS_MATERIEL[x.etat][0]}">${ETATS_MATERIEL[x.etat][1]}</span></div>
+    <div class="details">
+      ${ligneD('Catégorie', CATEGORIES_MATERIEL[x.categorie])}${ligneD('Marque et modèle', esc(x.marque || ''))}${ligneD('N° de série', esc(x.numero_serie || ''))}
+      ${ligneD('Origine', ORIGINES_MATERIEL[x.origine] + (x.date_acquisition ? ` le ${dateFr(x.date_acquisition)}` : ''))}
+      ${x.origine !== 'pret' ? ligneD('Valeur d’achat', x.valeur_acquisition != null ? eur(x.valeur_acquisition) : '') + ligneD('Valeur actuelle', x.valeur_actuelle != null ? eur(x.valeur_actuelle) : '') : ''}
+      ${ligneD('Rangé', esc(x.lieu || ''))}${ligneD('Chez', x.detenteur_id ? esc(nomMembre(x.detenteur_id)) : '')}
+      ${ligneD('Dernière vérification', x.verifie_le ? dateFr(x.verifie_le) : '<b>jamais</b>')}
+      ${x.sorti_le ? ligneD('Sorti', `${MOTIFS_SORTIE[x.motif_sortie]} le ${dateFr(x.sorti_le)}`) : ''}
+    </div>
+    ${x.notes ? `<p class="texte-libre">${esc(x.notes)}</p>` : ''}
+    ${achat ? `<div class="info">Achat enregistré le ${dateFr(achat.date_op)} : ${esc(achat.libelle)}, ${eur(achat.montant)}</div>` : ''}
+    ${mvts.length ? `<h3>Historique</h3><ul class="liste liste-compacte">${mvts.map((m) => `<li><div class="corps"><b>${MOUVEMENTS[m.type]}${m.member_id ? ` : ${esc(nomMembre(m.member_id))}` : ''}</b><span>${dateFr(m.date_mvt)}${m.notes ? ' · ' + esc(m.notes) : ''}</span></div></li>`).join('')}</ul>` : ''}
+    <div id="z-action"></div>
+    <div class="actions actions-materiel">
+      ${gere && !x.sorti_le ? `${x.detenteur_id ? '<button class="btn-tonal" id="b-retour">Récupéré</button>' : '<button class="btn-tonal" id="b-preter">Confier à un membre</button>'}
+        <button class="btn-tonal" id="b-verifie">Vérifié</button>
+        <button class="btn-texte" id="b-modifier">Modifier</button><button class="btn-texte" id="b-sortir">Sortir</button>` : ''}
+      <button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    const fin = (msg) => { toast(msg); fermerFeuille(); apres(); };
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#b-modifier', root)?.addEventListener('click', () => feuilleMateriel(x, apres));
+    $('#b-verifie', root)?.addEventListener('click', async () => {
+      try { await q(sb.from('materiel').update({ verifie_le: aujourdhui() }).eq('id', x.id)); await mouvement(x.id, 'inventaire'); fin('Vérification enregistrée'); } catch (e) { erreur(e); }
+    });
+    $('#b-retour', root)?.addEventListener('click', async () => {
+      try { const m = x.detenteur_id; await q(sb.from('materiel').update({ detenteur_id: null }).eq('id', x.id)); await mouvement(x.id, 'retour', m); fin('Retour enregistré'); } catch (e) { erreur(e); }
+    });
+    $('#b-preter', root)?.addEventListener('click', () => {
+      $('#z-action', root).innerHTML = `<form id="f-pret" class="champs carte-interne"><h3>Confier à un membre</h3>
+        <label class="champ"><span class="obligatoire">Membre</span><select name="membre" required><option value="">Choisir</option>${S.membres.filter((m) => m.actif).map((m) => `<option value="${m.id}">${esc(nomComplet(m))}</option>`).join('')}</select></label>
+        <label class="champ">Motif<input name="notes" maxlength="120" placeholder="Répétitions, concert du 12 juin…"></label>
+        <div class="actions"><button class="btn-primaire">Enregistrer</button></div></form>`;
+      const f = $('#f-pret', root);
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { await q(sb.from('materiel').update({ detenteur_id: f.membre.value }).eq('id', x.id)); await mouvement(x.id, 'pret', f.membre.value, f.notes.value.trim() || null); fin('Article confié'); } catch (err) { erreur(err); }
+      });
+    });
+    $('#b-sortir', root)?.addEventListener('click', () => {
+      $('#z-action', root).innerHTML = `<form id="f-sortie" class="champs carte-interne"><h3>Sortir de l’inventaire</h3>
+        <div class="champs champs-2"><label class="champ"><span class="obligatoire">Motif</span><select name="motif">${Object.entries(MOTIFS_SORTIE).filter(([k]) => x.origine === 'pret' || k !== 'rendu').map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+          <label class="champ"><span class="obligatoire">Date</span><input type="date" name="date" value="${aujourdhui()}" required></label></div>
+        <label class="champ">Précision<input name="notes" maxlength="160" placeholder="Vendu 80 € à…, déclaration de vol du…"></label>
+        <p class="muted" style="margin:0">L’article reste dans l’historique. Une vente s’enregistre aussi en recette dans Opérations.</p>
+        <div class="actions"><button class="btn-primaire">Confirmer la sortie</button></div></form>`;
+      const f = $('#f-sortie', root);
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { await q(sb.from('materiel').update({ sorti_le: f.date.value, motif_sortie: f.motif.value, detenteur_id: null }).eq('id', x.id)); await mouvement(x.id, 'sortie', null, [MOTIFS_SORTIE[f.motif.value], f.notes.value.trim()].filter(Boolean).join(' : ')); fin('Article sorti de l’inventaire'); } catch (err) { erreur(err); }
+      });
+    });
+  });
+}
+
+function feuilleMateriel(x = null, apres = () => {}, pre = {}) {
+  const v = x || { designation: '', categorie: 'instrument', marque: '', numero_serie: '', quantite: 1, origine: 'achat', date_acquisition: aujourdhui(), valeur_acquisition: '', valeur_actuelle: '', etat: 'bon', lieu: '', notes: '', ...pre };
+  const opt = (o, choisi) => Object.entries(o).map(([k, l]) => `<option value="${k}" ${k === choisi ? 'selected' : ''}>${Array.isArray(l) ? l[1] : l}</option>`).join('');
+  ouvrirFeuille(`<form id="f-mat" class="champs"><h2>${x ? 'Modifier l’article' : 'Nouvel article'}</h2>
+    <label class="champ"><span class="obligatoire">Désignation</span><input name="designation" value="${esc(v.designation)}" maxlength="80" required placeholder="Guitare basse, enceinte, vidéoprojecteur…"></label>
+    <div class="champs champs-2">
+      <label class="champ">Catégorie<select name="categorie">${opt(CATEGORIES_MATERIEL, v.categorie)}</select></label>
+      <label class="champ">Quantité<input name="quantite" type="number" min="1" step="1" value="${esc(v.quantite)}" required></label>
+      <label class="champ">Marque et modèle<input name="marque" value="${esc(v.marque || '')}" maxlength="80"></label>
+      <label class="champ">N° de série<input name="serie" value="${esc(v.numero_serie || '')}" maxlength="60"></label>
+      <label class="champ">Origine<select name="origine">${opt(ORIGINES_MATERIEL, v.origine)}</select></label>
+      <label class="champ">Date d’entrée<input type="date" name="date" value="${esc(v.date_acquisition || '')}"></label>
+      <label class="champ" data-valeur>Valeur d’achat ou du don (€)<input name="valeur" type="number" min="0" step="0.01" inputmode="decimal" value="${v.valeur_acquisition ?? ''}"></label>
+      <label class="champ" data-valeur>Valeur actuelle estimée (€)<input name="actuelle" type="number" min="0" step="0.01" inputmode="decimal" value="${v.valeur_actuelle ?? ''}" placeholder="Prix d’occasion"></label>
+      <label class="champ">État<select name="etat">${opt(ETATS_MATERIEL, v.etat)}</select></label>
+      <label class="champ">Lieu de rangement<input name="lieu" value="${esc(v.lieu || '')}" maxlength="80" placeholder="Église, local du fond"></label>
+    </div>
+    <label class="champ">Notes<textarea name="notes" rows="2" maxlength="500" placeholder="Accessoires, propriétaire en cas de prêt, garantie…">${esc(v.notes || '')}</textarea></label>
+    <div class="champ"><span>Photo</span><div style="display:flex;gap:12px;align-items:center">
+      <span class="avatar avatar-carre" id="apercu-mat">${x?.photo_path && S.photos[x.photo_path] ? `<img src="${esc(S.photos[x.photo_path])}" alt="">` : '–'}</span>
+      <label class="btn btn-tonal btn-petit">Choisir une photo<input type="file" name="photo" accept="image/*" capture="environment" hidden></label></div></div>
+    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div></form>`, (root) => {
+    const f = $('#f-mat', root);
+    let photo = null;
+    const majValeur = () => root.querySelectorAll('[data-valeur]').forEach((l) => { l.hidden = f.origine.value === 'pret'; });
+    f.origine.addEventListener('change', majValeur); majValeur();
+    f.photo.addEventListener('change', async () => { const file = f.photo.files[0]; if (!file) return; photo = await compresserImage(file, 900, 0.8); $('#apercu-mat', root).innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="">`; });
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nb = (s) => (s === '' ? null : Number(s));
+      const d = { designation: f.designation.value.trim(), categorie: f.categorie.value, quantite: Number(f.quantite.value || 1), marque: f.marque.value.trim() || null,
+        numero_serie: f.serie.value.trim() || null, origine: f.origine.value, date_acquisition: f.date.value || null,
+        valeur_acquisition: f.origine.value === 'pret' ? null : nb(f.valeur.value), valeur_actuelle: f.origine.value === 'pret' ? null : nb(f.actuelle.value),
+        etat: f.etat.value, lieu: f.lieu.value.trim() || null, notes: f.notes.value.trim() || null };
+      if (!x && pre.transaction_id) d.transaction_id = pre.transaction_id;
+      try {
+        if (photo) { const chemin = `materiel/${Date.now()}.jpg`; await q(sb.storage.from('photos').upload(chemin, photo, { contentType: 'image/jpeg' })); d.photo_path = chemin; }
+        if (x) { await q(sb.from('materiel').update(d).eq('id', x.id)); await mouvement(x.id, 'modification'); }
+        else { const n = (await q(sb.from('materiel').insert({ ...d, verifie_le: aujourdhui() }).select()))[0]; await mouvement(n.id, 'entree', null, ORIGINES_MATERIEL[d.origine]); }
+        if (d.photo_path) await chargerPhotos([d]);
+        fermerFeuille(); toast(x ? 'Article modifié' : 'Article inscrit à l’inventaire'); apres();
+      } catch (err) { erreur(err); }
+    });
+  });
+}
+
+async function pdfInventaire() {
+  const items = (await q(sb.from('materiel').select('*').order('designation'))).filter((x) => !x.sorti_le);
+  const sortis = (await q(sb.from('materiel').select('*'))).filter((x) => x.sorti_le && x.sorti_le >= `${new Date().getFullYear()}-01-01`);
+  const propre = items.filter((x) => x.origine !== 'pret');
+  const va = propre.reduce((s, x) => s + Number(x.valeur_acquisition || 0), 0), vc = propre.reduce((s, x) => s + Number(x.valeur_actuelle ?? x.valeur_acquisition ?? 0), 0);
+  const blocs = Object.keys(CATEGORIES_MATERIEL).filter((c) => items.some((x) => x.categorie === c)).map((c) => `<h2>${CATEGORIES_MATERIEL[c]}</h2>${tableDocument(
+    [['Désignation', 'large'], ['Qté', 'd'], ['N° de série'], ['Origine'], ['Entrée', 'nw'], ['Valeur d’achat', 'd'], ['Valeur actuelle', 'd'], ['État'], ['Lieu ou détenteur'], ['Vérifié', 'nw']],
+    items.filter((x) => x.categorie === c).map((x) => [esc(x.designation) + (x.marque ? `<br><span class="muted">${esc(x.marque)}</span>` : ''), x.quantite, esc(x.numero_serie || ''), ORIGINES_MATERIEL[x.origine],
+      x.date_acquisition ? dateFr(x.date_acquisition) : '', x.origine === 'pret' ? '–' : eur(x.valeur_acquisition || 0), x.origine === 'pret' ? '–' : eur(x.valeur_actuelle ?? x.valeur_acquisition ?? 0),
+      ETATS_MATERIEL[x.etat][1], esc(x.detenteur_id ? 'Chez ' + nomMembre(x.detenteur_id) : (x.lieu || '')), x.verifie_le ? dateFr(x.verifie_le) : '<b>non</b>']))}`).join('');
+  afficherDocument('Inventaire du matériel', `${enteteDocument('Inventaire du matériel', `Arrêté au ${dateFr(aujourdhui())}`)}
+    ${syntheseDocument([['Articles en service', String(items.reduce((s, x) => s + x.quantite, 0))], ['Valeur d’achat', eur(va)], ['Valeur actuelle estimée', eur(vc)], ['Non vérifiés depuis un an', String(items.filter(aVerifier).length)]])}
+    ${blocs || '<p class="muted">Aucun article.</p>'}
+    ${sortis.length ? `<h2>Sorties de l’exercice</h2>${tableDocument([['Désignation', 'large'], ['Date', 'nw'], ['Motif']], sortis.map((x) => [esc(x.designation), dateFr(x.sorti_le), MOTIFS_SORTIE[x.motif_sortie]]))}` : ''}
+    <p class="muted">Le matériel prêté par un tiers figure pour mémoire, sans valeur. Les valeurs actuelles sont des estimations du bureau.</p>${signaturesDocument()}`);
 }
 
 demarrer().catch((e) => { erreur(e); $('#app').innerHTML = `<p class="chargement">Impossible de démarrer : ${esc(e.message)}</p>`; });
