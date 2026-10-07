@@ -451,14 +451,19 @@ async function pageTableau() {
     q(sb.from('expense_requests').select('*')),
     q(sb.from('v_budget_suivi').select('*').eq('annee', new Date().getFullYear())),
   ]);
+  // Paiement neutralisé par contre-passation : plus de justificatif attendu
+  const annulees = new Set(toutes.filter((t) => t.request_id && toutes.some((c) => c.contrepasse_de === t.id)).map((t) => t.request_id));
+  const retardsActifs = retards.filter((r) => !annulees.has(r.id));
+  const aRegul = demandes.filter((d) => d.regularisation && d.statut === 'refusee' && !annulees.has(d.id));
   const aValider = demandes.filter((d) => d.statut === 'soumise');
   const aPayer = demandes.filter((d) => d.statut === 'validee');
-  const aJustifier = demandes.filter((d) => d.statut === 'payee' && (peut('payer_depenses', 'saisir_ecritures') || d.demandeur === S.profil.id));
+  const aJustifier = demandes.filter((d) => d.statut === 'payee' && !annulees.has(d.id) && (peut('payer_depenses', 'saisir_ecritures') || d.demandeur === S.profil.id));
   const alertesBudget = budget.filter((b) => b.alerte);
   const pl = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
   const somme = (l) => l.reduce((t, d) => t + Number(d.montant), 0);
   const taches = [
-    retards.length ? `<li class="tache-alerte"><div class="corps"><b>${pl(retards.length, 'justificatif')} en retard</b><span>${retards.map((r) => `${esc(r.objet)} (${eur(r.montant)}, ${r.jours}&nbsp;jours)`).join(', ')}</span></div><a class="btn btn-tonal btn-petit" href="#depenses">Voir</a></li>` : '',
+    peut('saisir_ecritures') && aRegul.length ? `<li class="tache-alerte"><div class="corps"><b>${pl(aRegul.length, 'dépense')} refusée${aRegul.length > 1 ? 's' : ''} après paiement</b><span>À régulariser&nbsp;: ${eur(somme(aRegul))}</span></div><a class="btn btn-tonal btn-petit" href="#depenses" data-filtre-dep="a_regulariser">Voir</a></li>` : '',
+    retardsActifs.length ? `<li class="tache-alerte"><div class="corps"><b>${pl(retardsActifs.length, 'justificatif')} en retard</b><span>${retardsActifs.map((r) => `${esc(r.objet)} (${eur(r.montant)}, ${r.jours}&nbsp;jours)`).join(', ')}</span></div><a class="btn btn-tonal btn-petit" href="#depenses">Voir</a></li>` : '',
     peut('valider_depenses') && aValider.length ? `<li><div class="corps"><b>${pl(aValider.length, 'demande')} à valider</b><span>${eur(somme(aValider))}</span></div><a class="btn btn-primaire btn-petit" href="#depenses">Valider</a></li>` : '',
     peut('payer_depenses') && aPayer.length ? `<li><div class="corps"><b>${pl(aPayer.length, 'demande')} à payer</b><span>${eur(somme(aPayer))}</span></div><a class="btn btn-primaire btn-petit" href="#depenses">Payer</a></li>` : '',
     aJustifier.length ? `<li><div class="corps"><b>${pl(aJustifier.length, 'justificatif')} à joindre</b><span>Délai de ${S.settings.delai_justificatif_jours ?? 7}&nbsp;jours après paiement</span></div><a class="btn btn-tonal btn-petit" href="#depenses">Joindre</a></li>` : '',
@@ -483,12 +488,12 @@ async function pageTableau() {
   const txtVar = (v) => (v == null ? 'Pas de comparaison' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}&nbsp;% sur un an`);
   const signeEur = (n) => `${n >= 0 ? '+' : '−'}&nbsp;${eur0(Math.abs(n))}`;
   const ecart12 = serie.length ? serie[serie.length - 1].solde - (serie[0].solde - serie[0].rec + serie[0].dep) : 0;
-  const reserveTxt = reserve == null ? '–' : `${reserve.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}&nbsp;mois`;
+  const reserveTxt = reserve == null ? '<span title="Calculée à partir des dépenses moyennes des 12 derniers mois : pas encore de dépenses">Non définie</span>' : `${reserve.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}&nbsp;mois`;
 
   const situation = banniere(`<a class="banniere-solde" href="#ecritures" data-compte=""><span>Trésorerie au ${dateFr(jour)}</span><b class="num">${eur(total)}</b></a>
     <div class="banniere-indic">
       <span>Résultat ${an}<b class="num">${signeEur(resultat)}</b></span>
-      <span>Réserve<b class="num">${reserveTxt}</b></span>
+      <span title="Nombre de mois de dépenses que la trésorerie actuelle permet de couvrir">Réserve<b class="num">${reserveTxt}</b></span>
       ${exigible > 0 ? `<span>Cotisations<b class="num">${Math.round(100 * encaisse / exigible)}&nbsp;%</b></span>` : ''}
     </div>`);
   const comptes = `<nav class="comptes" aria-label="Comptes">${soldes.map((c) => `<a class="compte" href="#ecritures" data-compte="${c.id}">
@@ -525,6 +530,8 @@ async function pageTableau() {
     ? rubrique('demarrer', 'Bien démarrer', `${faites} sur ${etapesDemarrage.length}`, `<ol class="etapes-demarrage">${etapesDemarrage.map(([t, fait, lien, id]) => `<li class="${fait ? 'fait' : ''}"><span class="coche" aria-hidden="true">${fait ? '✓' : ''}</span><a href="${lien}" ${id ? `id="${id}"` : ''}>${t}</a>${fait ? '<span class="sr-only"> (fait)</span>' : ''}</li>`).join('')}</ol>`, { classe: 'rub-demarrer' })
     : '';
   const sansOperations = !toutes.length;
+  // Opérations saisies puis toutes annulées : rien à représenter sur 12 mois
+  const sansMouvementNet = !sansOperations && serie.every((x) => !Math.round(x.rec * 100) && !Math.round(x.dep * 100));
   rendre(`<div class="page accueil">
     ${situation}
     ${comptes}
@@ -532,11 +539,12 @@ async function pageTableau() {
     ${demarrage}
     ${S.profil.member_id ? rubrique('masituation', 'Ma situation', retardDe(maCot) > 0 ? `Cotisation : ${eur(retardDe(maCot))} en retard` : 'Cotisation à jour',
       `${blocMaCotisation(maCot)}${mesParts.length ? `<h3>Mes participations</h3>${listeParticipations(mesParts)}` : ''}`, { ouverte: retardDe(maCot) > 0 }) : ''}
-    ${taches.length ? rubrique('traiter', 'À traiter', pl(taches.length, 'action'), `<ul class="liste">${taches.join('')}</ul>`, { classe: retards.length ? 'rub-alerte' : '' }) : ''}
+    ${taches.length ? rubrique('traiter', 'À traiter', pl(taches.length, 'action'), `<ul class="liste">${taches.join('')}</ul>`, { classe: retardsActifs.length || aRegul.length ? 'rub-alerte' : '' }) : ''}
     ${sansOperations ? rubrique('indicateurs', `Chiffres ${an}`, 'Aucune opération', `<div class="vide">Les chiffres et les graphiques apparaissent dès la première opération.${peut('saisir_ecritures') ? '<a class="btn btn-primaire" href="#ecritures">Nouvelle opération</a>' : ''}</div>`) : `
     ${rubrique('indicateurs', `Chiffres ${an}`, `Recettes ${eur0(rec)} · Dépenses ${eur0(dep)}`, indicateurs)}
+    ${sansMouvementNet ? rubrique('evolution', 'Évolution sur 12 mois', 'Aucun mouvement net', `<div class="vide">Aucune opération nette sur les 12 derniers mois&nbsp;: les opérations saisies ont été annulées par contre-passation. Elles restent visibles dans <a href="#ecritures">Opérations</a>.</div>`) : `
     ${rubrique('evolution', 'Évolution sur 12 mois', `Trésorerie ${signeEur(ecart12)}`, evolution)}
-    ${rubrique('repartition', `Répartition ${an}`, depCat.length ? `Premier poste de dépense&nbsp;: ${esc(depCat[0].nom)}` : '', repartition)}`}
+    ${rubrique('repartition', `Répartition ${an}`, depCat.length ? `Premier poste de dépense&nbsp;: ${esc(depCat[0].nom)}` : '', repartition)}`}`}
     <div class="grille grille-2 rub-grille">
       ${rubrique('anniversaires', `Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}`, anniv.length ? pl(anniv.length, 'personne') : 'Aucun', listeAnniversaires(anniv, mois))}
       ${rubrique('operations', 'Dernières opérations', '', operations)}
@@ -544,6 +552,7 @@ async function pageTableau() {
   </div>`);
   brancherInfobulles($('.contenu'));
   brancherRubriques();
+  document.querySelectorAll('[data-filtre-dep]').forEach((a) => a.addEventListener('click', () => { S.filtreDepenses = a.dataset.filtreDep; }));
   $('#b-dem-fiche')?.addEventListener('click', (e) => { e.preventDefault(); feuilleMembre(null, { lierAMoi: true, apres: () => router() }); });
   $('#b-dem-soldes')?.addEventListener('click', () => { S.ongletParam = 'finances'; });
   $('#b-dem-asso')?.addEventListener('click', () => { S.ongletParam = 'association'; });
@@ -594,9 +603,10 @@ async function pageEcritures() {
   const [toutes, piecesListe, demandesListe] = await Promise.all([
     q(sb.from('transactions').select('*').order('date_op', { ascending: false }).order('created_at', { ascending: false })),
     q(sb.from('attachments').select('*')),
-    q(sb.from('expense_requests').select('id,statut')).catch(() => []),
+    q(sb.from('expense_requests').select('id,statut,regularisation')).catch(() => []),
   ]);
   const statutDemande = Object.fromEntries((demandesListe || []).map((d) => [d.id, d.statut]));
+  const regularisation = new Set((demandesListe || []).filter((d) => d.regularisation).map((d) => d.id));
   const pieces = {};
   piecesListe.forEach((a) => { if (a.transaction_id) pieces[a.transaction_id] = a; });
   const contrepassees = new Set(toutes.filter((t) => t.contrepasse_de).map((t) => t.contrepasse_de));
@@ -618,11 +628,11 @@ async function pageEcritures() {
     + toutes.filter((t) => (!f.au || t.date_op <= f.au) && comptesVus.some((c) => c.id === t.account_id)).reduce((s, t) => s + signe(t), 0);
   const filtresActifs = f.sens || f.compte || f.categorie || f.rubrique || f.texte || f.sansPiece || f.periode !== 'annee';
   const puceEtat = (t) => statutDemande[t.request_id] === 'soumise' ? '<span class="puce puce-partiel">À valider</span>'
-    : statutDemande[t.request_id] === 'refusee' && !contrepassees.has(t.id) ? '<span class="puce puce-ko">Refusée</span>'
+    : statutDemande[t.request_id] === 'refusee' && !contrepassees.has(t.id) ? `<span class="puce puce-ko">${regularisation.has(t.request_id) ? 'Refusée · à régulariser' : 'Refusée'}</span>`
     : t.rapproche ? '<span class="puce puce-ok">Rapprochée</span>' : t.contrepasse_de ? '<span class="puce puce-neutre">Correction</span>'
     : contrepassees.has(t.id) ? '<span class="puce puce-neutre">Annulée</span>' : '';
   const iconePiece = (t) => pieces[t.id] ? `<span class="trombone" role="img" aria-label="Pièce jointe">${icone('trombone', 16)}</span>`
-    : t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de ? '<span class="puce puce-ko">Sans pièce</span>' : '';
+    : t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id) ? '<span class="puce puce-ko">Sans pièce</span>' : '';
 
   rendre(`<div class="page">
     <div class="page-titre"><h1>Opérations</h1><button class="btn-bleu btn-petit" id="b-export">Exporter</button></div>
@@ -670,10 +680,15 @@ async function pageEcritures() {
   $('#b-export').addEventListener('click', () => choisirFormat('Exporter les opérations affichées',
     () => pdfJournal({ du: f.du, au: f.au, compte: f.compte, sens: f.sens, categorie: f.categorie }), exportCsv));
   document.querySelectorAll('[data-detail]').forEach((li) => {
-    const ouvrir = () => detailEcriture(toutes.find((t) => t.id === li.dataset.detail), pieces, contrepassees, recharger);
+    const ouvrir = () => detailEcriture(toutes.find((t) => t.id === li.dataset.detail), pieces, contrepassees, recharger, toutes);
     li.addEventListener('click', ouvrir);
     li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrir(); } });
   });
+  // Ouverture demandée depuis une autre page (« Voir l'opération » d'une demande)
+  if (S.ouvrirOperation) {
+    const t = toutes.find((x) => x.id === S.ouvrirOperation); S.ouvrirOperation = null;
+    if (t) detailEcriture(t, pieces, contrepassees, recharger, toutes);
+  }
 }
 
 // Fiche d'une opération : détails, pièce jointe affichée, actions
@@ -685,7 +700,12 @@ function etatValidation(d) {
   return `Validée le ${dateFr(String(d.validee_le || '').slice(0, 10))}${d.regularisation ? ' (après paiement)' : ''}`;
 }
 
-async function detailEcriture(t, pieces, contrepassees, recharger) {
+// Référence courte et stable d'une opération, citée dans l'historique et les échanges
+const refOperation = (t) => 'OP-' + String(t.id).replace(/-/g, '').slice(0, 6).toUpperCase();
+const auteurDe = (id) => !id ? '' : id === S.profil.id ? 'vous' : (S.profils || []).find((p) => p.id === id)?.nom || 'une personne du bureau';
+const heureDe = (ts) => ts ? new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+
+async function detailEcriture(t, pieces, contrepassees, recharger, toutes = []) {
   const piece = pieces[t.id];
   let apercu = '';
   if (piece) {
@@ -699,22 +719,36 @@ async function detailEcriture(t, pieces, contrepassees, recharger) {
   const demande = t.request_id ? (await q(sb.from('expense_requests').select('*').eq('id', t.request_id)))[0] : null;
   const ligne = (l, v) => v ? `<div class="ligne-detail"><span class="muted">${l}</span><span>${v}</span></div>` : '';
   const peutCorriger = peut('saisir_ecritures') && !t.rapproche && !t.contrepasse_de && !contrepassees.has(t.id);
+  const correction = toutes.find((x) => x.contrepasse_de === t.id);
+  const origine = t.contrepasse_de ? toutes.find((x) => x.id === t.contrepasse_de) : null;
+  const alerteMode = incoherenceMode(t.account_id, t.mode);
+  const evt = (quand, quoi, bouton = '') => `<li><span class="muted">${quand}</span><span>${quoi}${bouton}</span></li>`;
+  const historique = `<h3>Historique</h3><ol class="historique">
+      ${evt(`${dateFr(String(t.created_at || '').slice(0, 10))} ${heureDe(t.created_at)}`, `${t.contrepasse_de ? 'Correction saisie' : 'Saisie'}${t.created_by ? ' par ' + esc(auteurDe(t.created_by)) : ''}`)}
+      ${origine ? evt(dateFr(origine.date_op), `Corrige «&nbsp;${esc(origine.libelle)}&nbsp;» (${refOperation(origine)})${motifDe(t) ? ', motif&nbsp;: ' + esc(motifDe(t)) : ''}`, ` <button class="btn-texte btn-petit" data-voir-op="${origine.id}">Voir</button>`) : ''}
+      ${demande ? evt(dateFr(String(demande.created_at || '').slice(0, 10)), `Demande de validation${demande.validee_le ? `, validée le ${dateFr(String(demande.validee_le).slice(0, 10))}` : demande.statut === 'refusee' ? ', refusée' : ''}`) : ''}
+      ${correction ? evt(`${dateFr(correction.date_op)}`, `Annulée (${esc(correction.libelle.split(SEP_MOTIF)[0].split(' : ')[0].toLowerCase())})${correction.created_by ? ', saisie par ' + esc(auteurDe(correction.created_by)) : ''}${motifDe(correction) ? ', motif&nbsp;: ' + esc(motifDe(correction)) : ''} (${refOperation(correction)})`, ` <button class="btn-texte btn-petit" data-voir-op="${correction.id}">Voir</button>`) : ''}
+      ${t.rapproche ? evt(dateFr(t.date_rapprochement), 'Rapprochée avec le relevé, verrouillée') : ''}
+    </ol>`;
   ouvrirFeuille(`<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><h2>${esc(t.libelle)}</h2>${montantSigne(t)}</div>
     <div class="details">
       ${ligne('Date', dateFr(t.date_op))}
       ${ligne('Catégorie', esc(nomCategorie(t.category_id)))}
       ${ligne('Compte', esc(S.comptes.find((c) => c.id === t.account_id)?.nom || ''))}
-      ${ligne('Mode', MODES[t.mode])}
+      ${ligne('Mode', MODES[t.mode] + (alerteMode ? ` <span class="puce puce-partiel" title="${esc(alerteMode)}">À vérifier</span>` : ''))}
       ${ligne('Activité', esc(nomProjet(t.project_id)))}
       ${ligne('Tiers', esc(nomTiers(t)))}
       ${ligne('Rubrique', esc(nomRubrique(t)))}
       ${ligne('Validation', demande ? etatValidation(demande) : '')}
-      ${ligne('État', t.rapproche ? 'Rapprochée, verrouillée' : t.contrepasse_de ? 'Correction d’une autre écriture' : contrepassees.has(t.id) ? 'Annulée par contre-passation' : '')}
+      ${ligne('État', t.rapproche ? 'Rapprochée, verrouillée' : t.contrepasse_de ? 'Correction d’une autre écriture' : contrepassees.has(t.id) ? 'Annulée par contre-passation' : 'Active')}
+      ${ligne('Référence', refOperation(t))}
     </div>
+    ${alerteMode ? `<p class="info">${esc(alerteMode)}</p>` : ''}
+    ${historique}
     ${apercu}
     <div class="actions">
       ${demande?.signature_path ? `<button class="btn-texte" data-voir="${esc(demande.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
-      ${!piece && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">Joindre une pièce</button>` : ''}
+      ${!piece && !correction && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">Joindre une pièce</button>` : ''}
       ${!demande && peutCorriger && t.sens === 'depense' && t.montant > 0 ? '<button class="btn-tonal" id="b-faire-valider">Faire valider par le président</button>' : ''}
       ${t.sens === 'depense' && t.montant > 0 && /mat[ée]riel|instrument|[ée]quipement/i.test(nomCategorie(t.category_id)) && peut('gerer_materiel') ? '<button class="btn-texte" id="b-inventaire">Inscrire à l’inventaire</button>' : ''}
       ${peutCorriger ? `<button class="btn-texte" id="b-contre">Contre-passer</button>` : ''}
@@ -722,6 +756,10 @@ async function detailEcriture(t, pieces, contrepassees, recharger) {
     </div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-contre', root)?.addEventListener('click', () => contrePasser(t));
+    root.querySelectorAll('[data-voir-op]').forEach((b) => b.addEventListener('click', () => {
+      const autre = toutes.find((x) => x.id === b.dataset.voirOp);
+      if (autre) detailEcriture(autre, pieces, contrepassees, recharger, toutes);
+    }));
     $('#b-inventaire', root)?.addEventListener('click', () => feuilleMateriel(null, () => toast('Voir la page Matériel'), { designation: t.libelle, valeur_acquisition: Number(t.montant), valeur_actuelle: Number(t.montant), date_acquisition: t.date_op, etat: 'neuf', transaction_id: t.id }));
     $('#b-faire-valider', root)?.addEventListener('click', async () => {
       try { await q(sb.rpc('demander_validation_operation', { p_transaction: t.id })); fermerFeuille(); toast('Dépense envoyée au président pour validation'); recharger(); }
@@ -729,6 +767,15 @@ async function detailEcriture(t, pieces, contrepassees, recharger) {
     });
     brancherPieces(() => { fermerFeuille(); recharger(); });
   });
+}
+
+// Mode de paiement inhabituel pour le compte : espèces sur la banque, virement ou carte sur la caisse
+function incoherenceMode(compteId, mode) {
+  const c = S.comptes.find((x) => x.id === compteId);
+  if (!c) return '';
+  if (c.type === 'banque' && mode === 'especes') return `Espèces sur le compte « ${c.nom} » : une opération en espèces passe normalement par la caisse. Vérifiez le compte ou le mode.`;
+  if (c.type === 'caisse' && mode && mode !== 'especes') return `${MODES[mode]} sur la caisse : un virement, un chèque ou une carte passe normalement par la banque. Vérifiez le compte ou le mode.`;
+  return '';
 }
 
 // Saisie d'une opération. Une recette se rattache à un tiers et, si besoin, à une rubrique :
@@ -760,6 +807,7 @@ function feuilleEcriture(pre = {}) {
       <label class="champ">Activité<select name="projet"><option value="">Aucune</option>${optionsProjets()}</select></label>
       <label class="champ" id="l-piece">Justificatif<input type="file" name="piece" accept="image/*,application/pdf"></label>
     </div>
+    <p class="info" id="i-mode" hidden></p>
     <label class="case" id="l-valid"><input type="checkbox" name="valider" checked> Faire valider par le président</label>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div>
   </form>`, (root) => {
@@ -812,6 +860,10 @@ function feuilleEcriture(pre = {}) {
       const t = f.mode.value === 'especes' ? 'caisse' : f.mode.value === 'virement' ? 'banque' : null;
       const c = t && S.comptes.find((x) => x.type === t); if (c) f.compte.value = c.id;
     });
+    // Signale une combinaison compte / mode inhabituelle ; l'enregistrement demande alors une confirmation
+    let modeConfirme = false;
+    const majMode = () => { const m = incoherenceMode(f.compte.value, f.mode.value); const i = $('#i-mode', root); i.textContent = m; i.hidden = !m; modeConfirme = false; };
+    f.mode.addEventListener('change', majMode); f.compte.addEventListener('change', majMode);
     f.mode.dispatchEvent(new Event('change'));
     maj().catch(erreur);
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
@@ -819,6 +871,7 @@ function feuilleEcriture(pre = {}) {
       e.preventDefault();
       const rub = sens === 'recette' ? f.rubrique.value : '';
       if (rub === 'cotisation' && !trouverTiers(f.tiers.value).member_id) return toast('Une cotisation se rattache à un membre : choisissez-le dans la liste');
+      if (incoherenceMode(f.compte.value, f.mode.value) && !modeConfirme) { modeConfirme = true; $('#i-mode', root).focus?.(); return toast('Compte et mode inhabituels : vérifiez, puis enregistrez à nouveau pour confirmer'); }
       const btn = f.querySelector('button:not([type])'); btn.disabled = true;
       try {
         const tiers = await resoudreTiers(f.tiers.value, sens);
@@ -838,22 +891,69 @@ function feuilleEcriture(pre = {}) {
   });
 }
 
-// Pas de suppression : une erreur se corrige par une écriture inverse (contre-passation)
+// Pas de suppression : une erreur se corrige par une écriture inverse (contre-passation).
+// Le motif est gardé dans le libellé (« … · motif : … ») pour être relu dans l'historique.
+const SEP_MOTIF = ' · motif : ';
+const motifDe = (t) => (String(t?.libelle || '').split(SEP_MOTIF)[1] || '').trim();
+function libelleCorrection(prefixe, t, motif) {
+  const fin = motif ? SEP_MOTIF + motif.trim() : '';
+  return `${prefixe} : ${t.libelle}`.slice(0, Math.max(20, 120 - fin.length)) + fin.slice(0, 100);
+}
+async function inscrireContrePassation(t, { prefixe = 'Contre-passation', motif = '', date = aujourdhui(), compte = t.account_id, mode = t.mode } = {}) {
+  await q(sb.from('transactions').insert({
+    date_op: date, sens: t.sens, montant: -Number(t.montant), contrepasse_de: t.id,
+    libelle: libelleCorrection(prefixe, t, motif), category_id: t.category_id, project_id: t.project_id,
+    account_id: compte, mode, member_id: t.member_id, tiers_id: t.tiers_id,
+    est_cotisation: !!t.est_cotisation, collecte_id: t.collecte_id || null, created_by: S.profil.id,
+  }));
+}
 function contrePasser(t) {
-  ouvrirFeuille(`<h2>Contre-passer cette opération&#8239;?</h2>
-    <p>Une opération de <b>−${eur(t.montant)}</b> annule «&nbsp;${esc(t.libelle)}&nbsp;» à la date du jour. L’opération d’origine reste dans l’historique.</p>
-    <div class="actions"><button class="btn-texte" id="b-non">Annuler</button><button class="btn-danger" id="b-oui">Contre-passer</button></div>`, (root) => {
+  ouvrirFeuille(`<form id="f-cp" class="champs"><h2>Contre-passer cette opération&#8239;?</h2>
+    <p>Une opération de <b>−${eur(t.montant)}</b> annule «&nbsp;${esc(t.libelle)}&nbsp;» à la date du jour. L’opération d’origine reste dans l’historique, reliée à sa correction.</p>
+    <label class="champ"><span class="obligatoire">Motif</span><input name="motif" maxlength="100" required placeholder="Erreur de montant, doublon, dépense refusée…"></label>
+    <div class="actions"><button type="button" class="btn-texte" id="b-non">Annuler</button><button class="btn-danger">Contre-passer</button></div></form>`, (root) => {
+    const f = $('#f-cp', root);
     $('#b-non', root).addEventListener('click', fermerFeuille);
-    $('#b-oui', root).addEventListener('click', async () => {
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = f.querySelector('button:not([type])'); btn.disabled = true;
+      try { await inscrireContrePassation(t, { motif: f.motif.value }); fermerFeuille(); toast('Opération contre-passée'); router(); }
+      catch (err) { btn.disabled = false; erreur(err); }
+    });
+  });
+}
+
+// Dépense payée puis refusée : soit la dépense n'a jamais eu lieu (erreur de saisie),
+// soit la personne a rendu l'argent (remboursement reçu, à la date et sur le compte où il est arrivé).
+// Tant qu'aucun des deux n'est enregistré, la demande reste « à régulariser ».
+function feuilleRegulariser(d, t, apres) {
+  ouvrirFeuille(`<form id="f-reg" class="champs"><h2>Régulariser la dépense refusée</h2>
+    <p><b>${esc(t.libelle)}</b>, ${eur(t.montant)}, payée le ${dateFr(t.date_op)}${d.motif_refus ? `<br><span class="muted">Motif du refus&nbsp;: ${esc(d.motif_refus)}</span>` : ''}</p>
+    <div class="champs" role="radiogroup" aria-label="Situation">
+      <label class="case"><input type="radio" name="cas" value="erreur" checked> <span><b>Erreur de saisie</b>&nbsp;: la dépense n’a pas eu lieu, aucun argent n’est sorti</span></label>
+      <label class="case"><input type="radio" name="cas" value="rembourse"> <span><b>Remboursement reçu</b>&nbsp;: la personne a rendu l’argent</span></label>
+    </div>
+    <div class="champs champs-2" id="z-remb" hidden>
+      <label class="champ">Date du remboursement<input type="date" name="date" value="${aujourdhui()}" max="${aujourdhui()}"></label>
+      <label class="champ">Arrivé sur le compte<select name="compte">${S.comptes.map((c) => `<option value="${c.id}" ${c.id === t.account_id ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select></label>
+      <label class="champ">Mode<select name="mode">${Object.entries(MODES).map(([k, v]) => `<option value="${k}" ${k === t.mode ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    </div>
+    <p class="muted">Si l’argent n’a pas encore été rendu, ne faites rien&nbsp;: la demande reste dans «&nbsp;À régulariser&nbsp;».</p>
+    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div></form>`, (root) => {
+    const f = $('#f-reg', root);
+    const maj = () => { $('#z-remb', root).hidden = f.cas.value !== 'rembourse'; };
+    root.querySelectorAll('[name="cas"]').forEach((r) => r.addEventListener('change', maj));
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = f.querySelector('button:not([type])'); btn.disabled = true;
+      const rembourse = f.cas.value === 'rembourse';
       try {
-        await q(sb.from('transactions').insert({
-          date_op: aujourdhui(), sens: t.sens, montant: -Number(t.montant), contrepasse_de: t.id,
-          libelle: `Contre-passation : ${t.libelle}`.slice(0, 120), category_id: t.category_id, project_id: t.project_id,
-          account_id: t.account_id, mode: t.mode, member_id: t.member_id, tiers_id: t.tiers_id,
-          est_cotisation: !!t.est_cotisation, collecte_id: t.collecte_id || null, created_by: S.profil.id,
-        }));
-        fermerFeuille(); toast('Opération contre-passée'); router();
-      } catch (err) { erreur(err); }
+        await inscrireContrePassation(t, rembourse
+          ? { prefixe: 'Remboursement reçu', motif: 'dépense refusée', date: f.date.value, compte: f.compte.value, mode: f.mode.value }
+          : { prefixe: 'Erreur de saisie', motif: 'dépense refusée' });
+        fermerFeuille(); toast(rembourse ? 'Remboursement enregistré' : 'Dépense annulée'); apres();
+      } catch (err) { btn.disabled = false; erreur(err); }
     });
   });
 }
@@ -1218,7 +1318,7 @@ async function ongletCotisations(zone) {
         <div class="corps"><b class="lien" data-fiche="${m.id}" role="button" tabindex="0">${esc(nomComplet(m))}</b>
           <div class="grille-periodes" style="grid-template-columns:repeat(${cases.length},1fr)">${cases.map((p) => {
             const x = parCase[cle(m.id, p)];
-            return `<i class="case-p p-${x ? x.statut : 'vide'}" title="${esc(nomPeriode(p))} : ${x ? STATUT_PERIODE[x.statut][1] : 'non dû'}"><small>${pasCotis() === 1 ? MOIS[Number(p.slice(5, 7)) - 1][0].toUpperCase() : ''}</small></i>`;
+            return `<i class="case-p p-${x ? x.statut : 'vide'}" role="img" title="${esc(nomPeriode(p))} : ${x ? STATUT_PERIODE[x.statut][1] : 'non dû'}" aria-label="${esc(nomPeriode(p))} : ${x ? STATUT_PERIODE[x.statut][1] : 'non dû'}"><small>${pasCotis() === 1 ? MOIS_COURTS[Number(p.slice(5, 7)) - 1] : ''}</small></i>`;
           }).join('')}</div></div>
         ${Number(c.retard) > 0 ? `<span class="puce puce-ko">Retard ${eur(c.retard)}</span>` : '<span class="puce puce-ok">À jour</span>'}
         ${Number(c.avance) > 0 ? `<span class="puce puce-neutre">Avance ${eur(c.avance)}</span>` : ''}
@@ -1308,7 +1408,7 @@ function blocMaCotisation(periodes) {
   return `<p class="muted">${an}</p>
     <p>${retard > 0 ? `<span class="num" style="font-size:28px;font-weight:600;color:var(--erreur)">${eur(retard)}</span> en retard`
       : `<span class="num" style="font-size:28px;font-weight:600">À jour</span>${regles.length ? ` jusqu’à ${esc(nomPeriode(regles[regles.length - 1]))}` : ''}`}</p>
-    ${l.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${l.length},1fr)">${l.map((p) => `<i class="case-p p-${p.statut}" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS[Number(p.periode.slice(5, 7)) - 1][0].toUpperCase() : ''}</small></i>`).join('')}</div>` : ''}`;
+    ${l.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${l.length},1fr)">${l.map((p) => `<i class="case-p p-${p.statut}" role="img" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}" aria-label="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS_COURTS[Number(p.periode.slice(5, 7)) - 1] : ''}</small></i>`).join('')}</div>` : ''}`;
 }
 
 function listeParticipations(parts) {
@@ -2027,45 +2127,59 @@ async function pageDepenses() {
     q(sb.from('expense_requests').select('*').order('created_at', { ascending: false })),
     q(sb.from('profiles').select('*')).catch(() => [S.profil]),
     q(sb.from('attachments').select('*')),
-    q(sb.from('transactions').select('id,request_id')).catch(() => []),
+    q(sb.from('transactions').select('*')).catch(() => []),
   ]);
-  const operationDe = Object.fromEntries((liees || []).filter((t) => t.request_id).map((t) => [t.request_id, t.id]));
+  // Opération payée de chaque demande, et sa contre-passation éventuelle (paiement neutralisé)
+  const opDe = Object.fromEntries((liees || []).filter((t) => t.request_id && !t.contrepasse_de).map((t) => [t.request_id, t]));
+  const correctionDe = Object.fromEntries((liees || []).filter((t) => t.contrepasse_de).map((t) => [t.contrepasse_de, t]));
+  const operationDe = Object.fromEntries(Object.entries(opDe).map(([k, t]) => [k, t.id]));
+  const annulation = (d) => opDe[d.id] && correctionDe[opDe[d.id].id];
+  // Déjà payée puis refusée par le président : l'argent est sorti, le trésorier doit régulariser
+  const aRegulariser = (d) => d.regularisation && d.statut === 'refusee' && opDe[d.id] && !annulation(d);
   const nomDe = (id) => id === S.profil.id ? 'Vous' : profils.find((p) => p.id === id)?.nom || 'Membre du bureau';
   const pieceDe = (d) => pieces.find((a) => a.request_id === d.id || (operationDe[d.id] && a.transaction_id === operationDe[d.id]));
   const delai = Number(S.settings.delai_justificatif_jours ?? 7);
   const FILTRES = {
     a_valider: ['À valider', (d) => d.statut === 'soumise'],
     a_payer: ['À payer', (d) => d.statut === 'validee'],
-    a_justifier: ['Justificatif attendu', (d) => d.statut === 'payee'],
-    terminees: ['Terminées', (d) => ['justifiee', 'refusee', 'annulee'].includes(d.statut)],
+    a_justifier: ['Justificatif attendu', (d) => d.statut === 'payee' && !annulation(d)],
+    a_regulariser: ['À régulariser', aRegulariser],
+    terminees: ['Terminées', (d) => !aRegulariser(d) && (['justifiee', 'refusee', 'annulee'].includes(d.statut) || !!annulation(d))],
     toutes: ['Toutes', () => true],
   };
+  if (S.filtreDepenses === 'a_regulariser' && !demandes.some(aRegulariser)) S.filtreDepenses = 'toutes';
   if (!S.filtreDepenses) S.filtreDepenses = peut('valider_depenses') ? 'a_valider' : peut('payer_depenses') ? 'a_payer' : 'toutes';
   const liste = demandes.filter(FILTRES[S.filtreDepenses][1]);
   const peutDemander = peut('demander_depenses');
 
   const carte = (d) => {
     const piece = pieceDe(d);
-    const retard = d.statut === 'payee' && d.payee_le && joursDepuis(d.payee_le) > delai;
+    const annul = annulation(d), op = opDe[d.id];
+    const retard = d.statut === 'payee' && !annul && d.payee_le && joursDepuis(d.payee_le) > delai;
+    const puce = annul ? ['puce-neutre', 'Opération annulée'] : aRegulariser(d) ? ['puce-ko', 'Refusée · à régulariser'] : STATUTS[d.statut];
     const actions = [];
     if (peut('valider_depenses') && d.statut === 'soumise') actions.push(`<button class="btn-texte" data-refuser="${d.id}">Refuser</button>`, `<button class="btn-primaire" data-valider="${d.id}">Valider et signer</button>`);
     if (peut('payer_depenses') && d.statut === 'validee' && d.validee_par !== S.profil.id) actions.push(`<button class="btn-primaire" data-payer="${d.id}">Payer</button>`);
-    if (d.statut === 'payee' && (peut('payer_depenses', 'saisir_ecritures') || d.demandeur === S.profil.id)) actions.push(`<button class="btn-tonal" data-justifier="${d.id}">Joindre le justificatif</button>`);
+    if (aRegulariser(d) && peut('saisir_ecritures') && !op.rapproche) actions.push(`<button class="btn-primaire" data-regulariser="${d.id}">Régulariser</button>`);
+    if (d.statut === 'payee' && !annul && (peut('payer_depenses', 'saisir_ecritures') || d.demandeur === S.profil.id)) actions.push(`<button class="btn-tonal" data-justifier="${d.id}">Joindre le justificatif</button>`);
     if (d.statut === 'soumise' && d.demandeur === S.profil.id) actions.push(`<button class="btn-texte" data-annuler="${d.id}">Annuler la demande</button>`);
     return `<article class="carte">
       <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
         <div style="flex:1;min-width:180px"><h3 style="font-size:18px">${esc(d.objet)}</h3>
           ${d.regularisation ? '<span class="puce puce-neutre" title="Saisie directement dans les opérations, validation après paiement">Déjà payée</span> ' : ''}<span class="muted">${esc(nomDe(d.demandeur))} · ${dateFr(String(d.created_at).slice(0, 10))} · ${esc(nomCategorie(d.category_id))}${d.project_id ? ' · ' + esc(nomProjet(d.project_id)) : ''}</span></div>
-        <div style="text-align:right"><b class="num" style="font-size:22px">${eur(d.montant)}</b><br><span class="puce ${STATUTS[d.statut][0]}">${STATUTS[d.statut][1]}</span></div>
+        <div style="text-align:right"><b class="num" style="font-size:22px">${eur(d.montant)}</b><br><span class="puce ${puce[0]}">${puce[1]}</span></div>
       </div>
       ${etapes(d)}
       ${retard ? `<div class="alerte">Justificatif en retard&nbsp;: payé il y a ${joursDepuis(d.payee_le)}&nbsp;jours, délai de ${delai}&nbsp;jours.</div>` : ''}
       ${d.statut === 'refusee' && d.motif_refus ? `<p class="muted">Motif du refus&nbsp;: ${esc(d.motif_refus)}</p>` : ''}
+      ${annul ? `<p class="info">Paiement du ${dateFr(op.date_op)} neutralisé par contre-passation le ${dateFr(annul.date_op)}${motifDe(annul) ? ` (${esc(motifDe(annul))})` : ''}. Le montant n’entre plus dans les comptes${d.statut === 'payee' ? '&nbsp;; aucun justificatif n’est plus demandé' : ''}.</p>` : ''}
+      ${aRegulariser(d) ? `<div class="alerte">Dépense déjà payée, puis refusée par le président&nbsp;: l’argent est sorti ${S.comptes.find((c) => c.id === op.account_id)?.type === 'caisse' ? 'de la caisse' : 'du compte bancaire'}. ${peut('saisir_ecritures') ? 'Régularisez-la&nbsp;: erreur de saisie, ou remboursement reçu de la personne concernée.' : 'Le trésorier doit la régulariser (erreur de saisie ou remboursement).'}</div>` : ''}
       <div class="filtres">
         ${d.signature_path ? `<button class="btn-texte btn-petit" data-voir="${esc(d.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
         ${piece ? `<button class="btn-texte btn-petit" data-voir="${esc(piece.storage_path)}">Justificatif</button>` : ''}
         ${d.validee_le ? `<span class="muted">Validée le ${dateFr(String(d.validee_le).slice(0, 10))}</span>` : ''}
         ${d.payee_le ? `<span class="muted">Payée le ${dateFr(String(d.payee_le).slice(0, 10))}</span>` : ''}
+        ${op && peut('consulter_finances', 'saisir_ecritures') ? `<button class="btn-texte btn-petit" data-voir-op="${op.id}">Voir l’opération</button>` : ''}
       </div>
       ${actions.length ? `<div class="actions">${actions.join('')}</div>` : ''}
     </article>`;
@@ -2073,7 +2187,7 @@ async function pageDepenses() {
 
   rendre(`<div class="page">
     <div class="page-titre"><h1>Demandes de dépense</h1>${peutDemander ? '<button class="btn-primaire" id="b-demande">Nouvelle demande</button>' : ''}</div>
-    <div class="filtres" role="tablist">${Object.entries(FILTRES).map(([k, [l, f]]) => {
+    <div class="filtres" role="tablist">${Object.entries(FILTRES).filter(([k, [, f]]) => k !== 'a_regulariser' || demandes.some(f)).map(([k, [l, f]]) => {
       const n = demandes.filter(f).length;
       return `<button class="btn-petit ${S.filtreDepenses === k ? 'btn-primaire' : ''}" data-filtre="${k}" role="tab" aria-selected="${S.filtreDepenses === k}">${l}${k !== 'toutes' && k !== 'terminees' && n ? ` (${n})` : ''}</button>`;
     }).join('')}</div>
@@ -2088,6 +2202,8 @@ async function pageDepenses() {
   document.querySelectorAll('[data-refuser]').forEach((b) => b.addEventListener('click', () => feuilleRefuser(trouver(b.dataset.refuser), recharger)));
   document.querySelectorAll('[data-payer]').forEach((b) => b.addEventListener('click', () => feuillePayer(trouver(b.dataset.payer), recharger)));
   document.querySelectorAll('[data-justifier]').forEach((b) => b.addEventListener('click', () => feuilleJustifier(trouver(b.dataset.justifier), recharger)));
+  document.querySelectorAll('[data-regulariser]').forEach((b) => b.addEventListener('click', () => { const d = trouver(b.dataset.regulariser); feuilleRegulariser(d, opDe[d.id], recharger); }));
+  document.querySelectorAll('[data-voir-op]').forEach((b) => b.addEventListener('click', () => { S.ouvrirOperation = b.dataset.voirOp; location.hash = '#ecritures'; }));
   document.querySelectorAll('[data-annuler]').forEach((b) => b.addEventListener('click', () => {
     const d = trouver(b.dataset.annuler);
     ouvrirFeuille(`<h2>Annuler cette demande&#8239;?</h2><p>«&nbsp;${esc(d.objet)}&nbsp;», ${eur(d.montant)}</p>
@@ -2343,7 +2459,9 @@ async function pageRapprochement() {
       <td data-label="Relevé">${r.statement_path ? `<button class="btn-texte btn-petit" data-voir="${esc(r.statement_path)}" data-bucket="releves">Voir</button>` : ''}</td><td data-label="Terminé le">${r.termine_le ? dateFr(String(r.termine_le).slice(0, 10)) : '<span class="puce puce-partiel">En cours</span>'}</td></tr>`).join('')}</tbody></table></div>`
     : '<p class="muted">Aucun rapprochement terminé.</p>';
   if (!peut('rapprocher')) {
-    rendre(`<div class="page"><h1>Rapprochement</h1><section class="carte"><h2>Historique</h2>${tableHist}</section></div>`);
+    rendre(`<div class="page"><h1>Rapprochement</h1>
+      <p class="info">Consultation&nbsp;: le rapprochement est fait par le trésorier. Il compare chaque mois les opérations enregistrées au relevé de la banque et au comptage de la caisse&nbsp;; une période rapprochée est verrouillée. ${historique.length ? '' : 'Aucun rapprochement n’a encore été terminé.'}</p>
+      <section class="carte"><h2>Historique</h2>${tableHist}</section></div>`);
     return brancherPieces(() => {});
   }
   if (!S.rapp) S.rapp = { compte: S.comptes.find((c) => c.type === 'banque')?.id || S.comptes[0]?.id };
@@ -2433,6 +2551,7 @@ async function pageRapports() {
       <section class="carte"><h2>Rapport périodique</h2>
         <div class="champs champs-2"><label class="champ">Du<input type="date" id="rp-debut" value="${aujourdhui().slice(0, 8)}01"></label>
           <label class="champ">Au<input type="date" id="rp-fin" value="${aujourdhui()}"></label></div>
+        <p class="muted" id="rp-rappel" aria-live="polite"></p>
         <button class="btn-primaire" id="b-rp">Exporter en PDF</button></section>
       <section class="carte"><h2>Documents PDF</h2>
         <label class="champ">Exercice<select id="doc-an">${[an, an - 1, an - 2].map((a) => `<option>${a}</option>`).join('')}</select></label>
@@ -2459,6 +2578,10 @@ async function pageRapports() {
       ${peut('administrer') ? `<section class="carte"><h2>Sauvegarde complète</h2>
         <button class="btn-tonal" id="b-sauve">Télécharger la sauvegarde</button></section>` : ''}
     </div></div>`);
+  // Rappel en toutes lettres : le format des champs de date dépend du navigateur (parfois mois/jour/année)
+  const dateLongue = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).replace(/^1 /, '1er ') : '…';
+  const rappel = () => { $('#rp-rappel').textContent = `Période : du ${dateLongue($('#rp-debut').value)} au ${dateLongue($('#rp-fin').value)}`; };
+  ['#rp-debut', '#rp-fin'].forEach((sel) => $(sel).addEventListener('change', rappel)); rappel();
   $('#b-ag').addEventListener('click', () => { const a = Number($('#ag-an').value); imprimerRapport(`${a}-01-01`, `${a}-12-31`, `Rapport financier de l’exercice ${a}`); });
   $('#b-rp').addEventListener('click', () => {
     const d = $('#rp-debut').value, f = $('#rp-fin').value;
@@ -2865,7 +2988,7 @@ async function pageLien(jeton, retour = null) {
     ${retour ? `<div class="info info-action"><span>Aperçu de ce que voit ${esc(d.membre?.prenom || '')} avec son lien.</span><button class="btn-primaire btn-petit" id="b-retour">Revenir</button></div>` : ''}
     <section class="carte">
       <h2>Ma cotisation ${an}</h2>
-      ${deLAnnee.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${deLAnnee.length},1fr)">${deLAnnee.map((p) => `<i class="case-p p-${p.statut}" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS[Number(p.periode.slice(5, 7)) - 1][0].toUpperCase() : ''}</small></i>`).join('')}</div>
+      ${deLAnnee.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${deLAnnee.length},1fr)">${deLAnnee.map((p) => `<i class="case-p p-${p.statut}" role="img" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}" aria-label="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS_COURTS[Number(p.periode.slice(5, 7)) - 1] : ''}</small></i>`).join('')}</div>
         <div class="legende muted">${Object.entries(STATUT_PERIODE).filter(([k]) => deLAnnee.some((p) => p.statut === k)).map(([k, [, l]]) => `<span><i class="case-p p-${k}"></i>${l}</span>`).join('')}</div>` : '<p class="muted">Aucune cotisation enregistrée pour cette année.</p>'}
       <ul class="liste">
         <li><div class="corps"><b>Montant</b><span>${eur(d.reglages?.montant)} par ${{ 1: 'mois', 3: 'trimestre', 6: 'semestre', 12: 'an' }[pasCotis()] || 'période'}</span></div></li>
@@ -3041,7 +3164,8 @@ async function pageBudget() {
       <div class="carte"><span class="muted">Emplois prévus</span><b class="num depense">${eur(B.empPrevu)}</b><span class="muted">réalisé ${eur(B.empReel)}</span></div>
       <div class="carte"><span class="muted">${equilibre >= 0 ? 'Excédent prévu' : 'Déficit prévu'}</span><b class="num ${equilibre < 0 ? 'negatif' : ''}">${eur(Math.abs(equilibre))}</b><span class="muted">résultat réalisé ${eur(B.resReel - B.empReel)}</span></div>
     </div>
-    ${vide ? `<div class="info info-action"><span><b>Budget ${an} à construire.</b> Saisissez le montant prévu de chaque ressource et de chaque emploi${B.resN1 || B.empN1 ? `, ou partez du réalisé ${an - 1}` : ''}.</span>${gere && (B.resN1 || B.empN1) ? `<button class="btn-primaire btn-petit" id="b-reprendre">Reprendre le réalisé ${an - 1}</button>` : ''}</div>`
+    ${!gere ? `<p class="info">Consultation&nbsp;: le budget est construit par le trésorier. ${vide ? `Aucun montant prévu pour ${an} pour l’instant.` : 'Vous voyez le prévu et le réalisé de chaque poste.'}</p>` : ''}
+    ${vide && gere ? `<div class="info info-action"><span><b>Budget ${an} à construire.</b> Saisissez le montant prévu de chaque ressource et de chaque emploi${B.resN1 || B.empN1 ? `, ou partez du réalisé ${an - 1}` : ''}.</span>${gere && (B.resN1 || B.empN1) ? `<button class="btn-primaire btn-petit" id="b-reprendre">Reprendre le réalisé ${an - 1}</button>` : ''}</div>`
       : equilibre < 0 ? `<div class="alerte">Les emplois prévus dépassent les ressources de ${eur(-equilibre)}. À couvrir par la réserve ou par des ressources supplémentaires.</div>` : ''}
     <div class="grille grille-2 budget-colonnes">
       <section class="carte"><h2>Ressources <span class="muted">(recettes)</span></h2>${tableau(B.ressources, 'recette')}</section>

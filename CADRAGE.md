@@ -76,3 +76,15 @@ Phases 1, 2 et 3 livrées le 3 octobre 2026 :
 - application Android 0.2.0 compilée sur GitHub Actions (accueil, dépenses avec signature, écritures, cotisations, membres, budget, activités, rapprochement).
 
 Restent à faire : sauvegarde automatique vers Google Drive (aujourd'hui manuelle, une fois par mois), signature d'une version Android définitive, création de la base Supabase réelle.
+
+### Audit du 7 octobre 2026 (note 7/10) : corrections sur le site
+
+- **Lot A** : une dépense annulée par contre-passation apparaît « Opération annulée » dans Demandes, quitte « Justificatif attendu » et les retards de l'accueil.
+- **Lot B** : une dépense payée puis refusée est « à régulariser » (onglet dédié, alerte sur l'accueil) jusqu'à ce que le trésorier choisisse : erreur de saisie, ou remboursement reçu (date, compte, mode).
+- **Lot C** : le détail d'une opération montre une référence (OP-XXXXXX) et un historique (saisie, auteur, demande, annulation, motif, lien vers la correction). Toute contre-passation demande un motif.
+- **Lot D** : espèces sur la banque, ou virement/chèque/carte sur la caisse, est signalé et demande une confirmation.
+- **Lot E** : budget et rapprochement expliquent au bureau qu'il est en consultation.
+- **Lot F** : mois en toutes lettres abrégées dans les cotisations (deux lignes de six sur téléphone), contributeurs comptés sur le net, graduations sans répétition, réserve « Non définie », accueil « Aucune opération nette », période du rapport rappelée en toutes lettres.
+- **Base** : `supabase/correctifs-audit-2026-10.sql` à exécuter une fois (deux vues remplacées, aucune donnée modifiée).
+
+Restent à faire : mêmes corrections dans l'application Android ; parcours de virement interne caisse/banque (hors recettes et dépenses) ; justification et devis dans le formulaire de demande (colonnes à ajouter) ; recette technique sur données fictives (grille page 17 de l'audit).

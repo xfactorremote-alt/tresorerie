@@ -21,7 +21,8 @@ function graduations(min, max, n = 4) {
   if (max === min) max = min + 1;
   const brut = (max - min) / n;
   const p = 10 ** Math.floor(Math.log10(brut));
-  const pas = [1, 2, 2.5, 5, 10].map((k) => k * p).find((s) => s >= brut);
+  // Montants en euros : jamais de pas inférieur à 1 €, sinon les graduations arrondies se répètent (0, 0, 1, 1)
+  const pas = Math.max(1, [1, 2, 2.5, 5, 10].map((k) => k * p).find((s) => s >= brut));
   const bas = Math.floor(min / pas) * pas, haut = Math.ceil(max / pas) * pas;
   const t = []; for (let v = bas; v <= haut + pas / 2; v += pas) t.push(Math.round(v * 100) / 100);
   return t;

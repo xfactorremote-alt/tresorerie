@@ -347,7 +347,7 @@ export function createMockClient() {
         if (!(finances || d.has('gerer_cotisations') || d.has('gerer_activites') || d.has('saisir_ecritures'))) return [];
         return t.collectes.map((c) => {
           const tx = t.transactions.filter((x) => x.collecte_id === c.id);
-          return { ...c, total_recu: tx.reduce((s, x) => s + Number(x.montant), 0), nb_contributeurs: new Set(tx.map((x) => x.member_id || x.tiers_id || x.id)).size,
+          return { ...c, total_recu: tx.reduce((s, x) => s + Number(x.montant), 0), nb_contributeurs: (() => { const net = {}; tx.forEach((x) => { const k = x.member_id || x.tiers_id || x.contrepasse_de || x.id; net[k] = (net[k] || 0) + Number(x.montant); }); return Object.values(net).filter((v) => v > 0).length; })(),
             nb_concernes: c.tous_membres ? t.members.filter((m) => m.actif).length : t.collecte_membres.filter((x) => x.collecte_id === c.id).length };
         });
       }
