@@ -1,6 +1,7 @@
 // Trésorerie JP Grenoble — site web, phase 1
 // Connexion, soldes, écritures, membres (fiche + import), cotisations, paramètres et accès.
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { ICONES_FLUENT } from './icones.js';
 import { C, eur0, colonnesGroupees, ligne, barresH, anneau, jauge, budgetBarres, serieMensuelle, reserveEnMois, libelleMois, brancherInfobulles, CSS_GRAPHIQUES } from './graphiques.js';
 
 // Styles des graphiques (partagés par le tableau de bord et le rapport d'AG)
@@ -56,12 +57,23 @@ async function q(promise) {           // exécute une requête et lève l'erreur
   if (error) throw error;
   return data;
 }
+// Feuille (dialogue Fluent) ; navigateurs sans <dialog> (Safari avant 15.4) : affichage de repli
+const dialogueNatif = typeof HTMLDialogElement === 'function' && typeof document.createElement('dialog').showModal === 'function';
 function ouvrirFeuille(html, onReady) {
   const d = $('#sheet'); $('#sheet-body').innerHTML = html;
-  if (!d.open) d.showModal();
+  if (!d.hasAttribute('open')) {
+    S.focusAvant = document.activeElement;
+    if (dialogueNatif) d.showModal(); else { d.setAttribute('open', ''); document.body.classList.add('feuille-ouverte'); }
+  }
+  d.scrollTop = 0;
   onReady?.($('#sheet-body'));
 }
-function fermerFeuille() { const d = $('#sheet'); if (d.open) d.close(); }
+function fermerFeuille() {
+  const d = $('#sheet'); if (!d.hasAttribute('open')) return;
+  if (dialogueNatif) d.close(); else { d.removeAttribute('open'); document.body.classList.remove('feuille-ouverte'); }
+  if (S.focusAvant && document.contains(S.focusAvant)) try { S.focusAvant.focus({ preventScroll: true }); } catch { /* élément disparu */ }
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !dialogueNatif) fermerFeuille(); });
 $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') fermerFeuille(); });
 
 // Numéro WhatsApp : 06 12 34 56 78 -> 33612345678 (format attendu par wa.me)
@@ -75,7 +87,9 @@ function numeroWa(n) {
 
 // Réduit une photo avant envoi : 400 px de côté, JPEG qualité 0,8 (environ 30 à 60 Ko)
 async function compresserImage(file, max = 400, qualite = 0.8) {
-  const bmp = await createImageBitmap(file);
+  // createImageBitmap absent des anciens Safari : chargement par <img>
+  const bmp = typeof createImageBitmap === 'function' ? await createImageBitmap(file)
+    : await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(new Error('Image illisible')); i.src = URL.createObjectURL(file); });
   const r = Math.min(1, max / Math.max(bmp.width, bmp.height));
   const c = document.createElement('canvas');
   c.width = Math.round(bmp.width * r); c.height = Math.round(bmp.height * r);
@@ -277,22 +291,10 @@ function ecranSansAcces() {
 }
 
 // ---------- Navigation ----------
-const ICONES = {
-  tableau: '<path d="M4 13h7V4H4zm9 7h7V4h-7zM4 20h7v-5H4z"/>',
-  ecritures: '<path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/>',
-  membres: '<path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 9a7 7 0 0 1 14 0M17 11a3 3 0 1 0 0-6M22 20a5 5 0 0 0-4-4.9"/>',
-  cotisations: '<path d="M3 7h18v12H3zM3 11h18M7 15h4"/>',
-  depenses: '<path d="M12 3v18M17 7.5C17 5.6 14.8 4.5 12 4.5S7 5.6 7 7.5 9.2 10.3 12 11s5 1.6 5 3.5-2.2 3-5 3-5-1.1-5-3"/>',
-  budget: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
-  activites: '<path d="M4 6h16v14H4zM4 10h16M9 3v5M15 3v5"/>',
-  rapprochement: '<path d="M4 7h11M4 7l3-3M4 7l3 3M20 17H9M20 17l-3-3M20 17l-3 3"/>',
-  rapports: '<path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7"/>',
-  tiers: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6"/>',
-  materiel: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
-  plus: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
-  parametres: '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
-};
-const icone = (k) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[k]}</svg>`;
+// Icônes Fluent : contour au repos, pleine quand l'entrée est sélectionnée
+const svgFluent = (d, taille = 20, cls = '') => `<svg class="ic ${cls}" width="${taille}" height="${taille}" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">${d}</svg>`;
+const icone = (k, taille = 20) => svgFluent((ICONES_FLUENT[k] || ICONES_FLUENT.plus)[0], taille);
+const iconeNav = (k) => { const [c, p] = ICONES_FLUENT[k] || ICONES_FLUENT.plus; return `${svgFluent(c, 20, 'ic-contour')}${svgFluent(p, 20, 'ic-plein')}`; };
 
 // Les écrans affichés dépendent des droits du rôle de la personne
 function pagesAutorisees() {
@@ -313,37 +315,54 @@ function pagesAutorisees() {
   ].filter((x) => x[2]).map(([k, l]) => [k, l]);
 }
 
+// Structure Fluent : volet de navigation à gauche (déplié sur grand écran, icônes seules sur tablette),
+// barre d'onglets en bas sur téléphone. Paramètres toujours accessibles.
+const voletReduit = () => { try { return localStorage.getItem('voletReduit') === '1'; } catch { return false; } };
 function coquille(page, contenu) {
   const pages = pagesAutorisees();
-  const lien = ([k, l]) => `<a href="#${k}" ${k === page ? 'aria-current="page"' : ''}><span class="pastille">${icone(k)}</span>${l}</a>`;
-  // Ordinateur : rail défilant, Paramètres toujours visible en bas
+  const lien = ([k, l]) => `<a href="#${k}" class="nav-item" title="${esc(l)}" ${k === page ? 'aria-current="page"' : ''}><span class="nav-icone">${iconeNav(k)}</span><span class="nav-texte">${l}</span></a>`;
   const principales = pages.filter(([k]) => k !== 'parametres');
-  const nav = principales.map(lien).join('');
   // Téléphone : 4 entrées + « Plus » si la liste est longue
   const courtes = pages.length > 5 ? pages.slice(0, 4) : pages;
   const autres = pages.length > 5 ? pages.slice(4) : [];
   const enPlus = autres.some(([k]) => k === page);
-  const navMobile = courtes.map(lien).join('') + (autres.length ? `<a href="#" id="b-plus" ${enPlus ? 'aria-current="page"' : ''}><span class="pastille">${icone('plus')}</span>Plus</a>` : '');
+  const onglet = ([k, l]) => `<a href="#${k}" ${k === page ? 'aria-current="page"' : ''}><span class="nav-icone">${iconeNav(k)}</span><span>${l}</span></a>`;
+  const navMobile = courtes.map(onglet).join('') + (autres.length ? `<a href="#" id="b-plus" ${enPlus ? 'aria-current="page"' : ''}><span class="nav-icone">${iconeNav('plus')}</span><span>Plus</span></a>` : '');
   $('#app').innerHTML = `
-  <div class="shell ${page === 'tableau' ? 'shell-accueil' : ''}">
-    <nav class="rail" aria-label="Navigation">
-      <a href="#tableau" class="rail-logo" aria-label="Accueil"><img src="${esc(S.logoUrl)}" alt=""></a>
-      <div class="rail-liens">${nav}</div>
+  <div class="shell ${page === 'tableau' ? 'shell-accueil' : ''} ${voletReduit() ? 'volet-reduit' : ''}">
+    <nav class="rail" aria-label="Navigation principale">
+      <div class="rail-tete">
+        <button class="nav-bascule" id="b-volet" type="button" aria-label="Afficher ou masquer les libellés du menu" title="Menu">${icone('menu')}</button>
+        <a href="#tableau" class="rail-logo" aria-label="Accueil"><img src="${esc(S.logoUrl)}" alt=""><span class="nav-texte">${esc(S.org?.nom || 'Trésorerie')}</span></a>
+      </div>
+      <div class="rail-liens">${principales.map(lien).join('')}</div>
       <div class="rail-bas">${lien(['parametres', 'Paramètres'])}</div>
     </nav>
+    <div class="volet-voile" id="volet-voile" hidden></div>
     <div class="cadre">
       <header class="entete">
         <img class="logo-mobile" src="${esc(S.logoUrl)}" alt="">
         <div class="titre"><b>${esc(S.org?.nom || 'Trésorerie')}</b></div>
         <a class="entete-reglages" href="#parametres" aria-label="Paramètres" title="Paramètres" ${page === 'parametres' ? 'aria-current="page"' : ''}>${icone('parametres')}</a>
       </header>
-      <main class="contenu">${contenu}</main>
+      <main class="contenu" id="contenu">${contenu}</main>
     </div>
     <nav class="barre-nav" aria-label="Navigation">${navMobile}</nav>
   </div>`;
+  // Volet : sur grand écran, réduit ou déplié (mémorisé) ; sur tablette, s'ouvre par-dessus le contenu
+  const shell = $('.shell');
+  const fermerVolet = () => { shell.classList.remove('volet-ouvert'); $('#volet-voile').hidden = true; };
+  $('#b-volet').addEventListener('click', () => {
+    if (window.innerWidth >= 1200) {
+      const r = !shell.classList.contains('volet-reduit'); shell.classList.toggle('volet-reduit', r);
+      try { localStorage.setItem('voletReduit', r ? '1' : '0'); } catch { /* stockage indisponible */ }
+    } else { const o = !shell.classList.contains('volet-ouvert'); shell.classList.toggle('volet-ouvert', o); $('#volet-voile').hidden = !o; }
+  });
+  $('#volet-voile').addEventListener('click', fermerVolet);
+  shell.querySelectorAll('.rail a').forEach((a) => a.addEventListener('click', fermerVolet));
   $('#b-plus')?.addEventListener('click', (e) => {
     e.preventDefault();
-    ouvrirFeuille(`<h2>Plus</h2><ul class="liste">${autres.map(([k, l]) => `<li><a href="#${k}" class="lien-plus" style="display:flex;align-items:center;gap:12px;width:100%;color:inherit;text-decoration:none;font-weight:600;min-height:44px">${icone(k)}${l}</a></li>`).join('')}</ul>`,
+    ouvrirFeuille(`<h2>Plus</h2><ul class="liste liste-menu">${autres.map(([k, l]) => `<li><a href="#${k}" class="lien-plus">${icone(k)}<span>${l}</span></a></li>`).join('')}</ul>`,
       (root) => root.querySelectorAll('.lien-plus').forEach((a) => a.addEventListener('click', fermerFeuille)));
   });
 }
@@ -361,7 +380,16 @@ async function router() {
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', router);
-const rendre = (html) => { $('.contenu').innerHTML = html; };
+const rendre = (html) => {
+  const c = $('.contenu'); c.innerHTML = html;
+  // Commande principale (+) : bouton dans l'en-tête de page sur tablette et ordinateur, bouton flottant sur téléphone
+  const fab = c.querySelector('.page > .fab'); const titre = c.querySelector('.page > .page-titre');
+  if (fab) {
+    fab.closest('.page').classList.add('avec-fab');
+    fab.innerHTML = `${icone('ajout', 20)}<span class="fab-texte">${esc(fab.getAttribute('aria-label') || 'Ajouter')}</span>`;
+    if (titre) titre.appendChild(fab);
+  }
+};
 
 // ---------- Tableau de bord ----------
 // ---------- Accueil ----------
@@ -373,7 +401,7 @@ function rubrique(id, titre, resume, contenu, { ouverte = true, classe = '' } = 
   const ouvert = etat === undefined ? ouverte : etat;
   return `<details class="carte rubrique ${classe}" data-rub="${id}" ${ouvert ? 'open' : ''}>
     <summary><span class="rub-titre"><h2>${titre}</h2>${resume ? `<span class="rub-resume">${resume}</span>` : ''}</span>
-      <svg class="chevron" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+      ${icone('chevron')}</summary>
     <div class="rub-corps">${contenu}</div></details>`;
 }
 function brancherRubriques() {
@@ -398,14 +426,14 @@ function banniere(contenu) {
   const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return `<section class="banniere ${S.banniereUrl ? 'avec-photo' : ''}"${fond} aria-label="${esc(S.org?.nom || 'Association')}">
     <div class="banniere-tete"><img src="${esc(S.logoUrl)}" alt=""><div><b>${esc(S.org?.nom || '')}</b><span>Bonjour ${premier} · ${date}</span></div>
-      ${!S.banniereUrl && peut('administrer') ? '<a class="banniere-ajout" href="#parametres" aria-label="Ajouter une photo" title="Ajouter une photo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Ajouter une photo</span></a>' : ''}</div>
+      ${!S.banniereUrl && peut('administrer') ? '<a class="banniere-ajout" href="#parametres" aria-label="Ajouter une photo" title="Ajouter une photo">' + icone('camera') + '<span>Ajouter une photo</span></a>' : ''}</div>
     <a class="banniere-reglages" href="#parametres" aria-label="Paramètres" title="Paramètres">${icone('parametres')}</a>
     ${contenu}</section>`;
 }
 
 const ICONE_COMPTE = {
-  caisse: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="2.5"/><path d="M6 10v5M18 10v5"/></svg>',
-  banque: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>',
+  caisse: icone('caisse', 20),
+  banque: icone('banque', 20),
 };
 
 async function pageTableau() {
@@ -593,7 +621,7 @@ async function pageEcritures() {
     : statutDemande[t.request_id] === 'refusee' && !contrepassees.has(t.id) ? '<span class="puce puce-ko">Refusée</span>'
     : t.rapproche ? '<span class="puce puce-ok">Rapprochée</span>' : t.contrepasse_de ? '<span class="puce puce-neutre">Correction</span>'
     : contrepassees.has(t.id) ? '<span class="puce puce-neutre">Annulée</span>' : '';
-  const iconePiece = (t) => pieces[t.id] ? '<svg class="trombone" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" role="img" aria-label="Pièce jointe"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>'
+  const iconePiece = (t) => pieces[t.id] ? `<span class="trombone" role="img" aria-label="Pièce jointe">${icone('trombone', 16)}</span>`
     : t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de ? '<span class="puce puce-ko">Sans pièce</span>' : '';
 
   rendre(`<div class="page">
@@ -621,7 +649,7 @@ async function pageEcritures() {
         ${puceEtat(t)} ${iconePiece(t)} ${montantSigne(t)}</li>`).join('')}</ul>`
       : `<div class="vide">Aucune opération${filtresActifs ? ' pour ces filtres' : ''}.${peut('saisir_ecritures') && !filtresActifs ? '<button class="btn-primaire" id="b-nouvelle-vide">Nouvelle opération</button>' : ''}</div>`}
     </section>
-    ${peut('saisir_ecritures') ? `<button class="fab" id="b-nouvelle" aria-label="Nouvelle opération" title="Nouvelle opération"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
+    ${peut('saisir_ecritures') ? `<button class="fab" id="b-nouvelle" aria-label="Nouvelle opération" title="Nouvelle opération"></button>` : ''}
   </div>`);
 
   const recharger = () => pageEcritures().catch(erreur);
@@ -870,7 +898,7 @@ async function pageMembres() {
   rendre(`<div class="page">
     <div class="page-titre"><h1>Membres</h1>
       <span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? `, ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
-      ${peut('gerer_membres', 'gerer_cotisations') && S.membres.length ? '<button class="btn-primaire btn-petit" id="b-liens">Liens personnels</button>' : ''}
+      ${peut('gerer_membres', 'gerer_cotisations') && S.membres.length ? '<button class="btn-tonal btn-petit" id="b-liens">Liens personnels</button>' : ''}
       ${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-import">Importer (CSV, Excel)</button>' : ''}
       <button class="btn-bleu btn-petit" id="b-export-m">Exporter</button>
     </div>
@@ -884,7 +912,7 @@ async function pageMembres() {
       : `<div class="vide">Aucun membre.${peut('gerer_membres') ? '<span>Ajoutez-les un par un ou importez votre liste.</span>' : ''}</div>`}
     </section>
     ${admin ? '<p class="muted aide-bas">« Lien » : la page personnelle d’un membre (cotisation, participations, rendez-vous), sans compte ni mot de passe. « Fonction » : désigner un membre du bureau et lui donner un compte. Les fonctions et leurs droits se règlent dans Paramètres, Rôles et droits.</p>' : ''}
-    ${peut('gerer_membres') ? `<button class="fab" id="b-ajout" aria-label="Ajouter un membre" title="Ajouter un membre"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
+    ${peut('gerer_membres') ? `<button class="fab" id="b-ajout" aria-label="Ajouter un membre" title="Ajouter un membre"></button>` : ''}
   </div>`);
   $('#recherche')?.addEventListener('input', (e) => {
     const v = sansAccents(e.target.value);
@@ -1278,8 +1306,8 @@ function blocMaCotisation(periodes) {
   const retard = retardDe(periodes);
   const regles = periodes.filter((p) => ['regle', 'dispense'].includes(p.statut)).map((p) => p.periode).sort();
   return `<p class="muted">${an}</p>
-    <p>${retard > 0 ? `<span class="num" style="font-size:28px;font-weight:800;color:var(--erreur)">${eur(retard)}</span> en retard`
-      : `<span class="num" style="font-size:28px;font-weight:800">À jour</span>${regles.length ? ` jusqu’à ${esc(nomPeriode(regles.at(-1)))}` : ''}`}</p>
+    <p>${retard > 0 ? `<span class="num" style="font-size:28px;font-weight:600;color:var(--erreur)">${eur(retard)}</span> en retard`
+      : `<span class="num" style="font-size:28px;font-weight:600">À jour</span>${regles.length ? ` jusqu’à ${esc(nomPeriode(regles[regles.length - 1]))}` : ''}`}</p>
     ${l.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${l.length},1fr)">${l.map((p) => `<i class="case-p p-${p.statut}" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS[Number(p.periode.slice(5, 7)) - 1][0].toUpperCase() : ''}</small></i>`).join('')}</div>` : ''}`;
 }
 
@@ -1305,7 +1333,7 @@ async function ongletParticipations(zone) {
       return `<article class="carte cliquable-carte" data-collecte="${c.id}" tabindex="0" role="button">
         <div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(c.nom)}</h2>${c.cloturee ? '<span class="puce puce-neutre">Clôturée</span>' : ''}</div>
         <span class="muted">${c.project_id ? esc(nomProjet(c.project_id)) + ' · ' : ''}${c.montant_attendu ? eur(c.montant_attendu) + ' par personne' : 'Montant libre'}${c.date_limite ? ' · avant le ' + dateFr(c.date_limite) : ''}</span>
-        <p><span class="num" style="font-size:24px;font-weight:800">${eur(c.total_recu)}</span>${v ? ` sur ${eur(v)}` : ''}</p>
+        <p><span class="num" style="font-size:24px;font-weight:600">${eur(c.total_recu)}</span>${v ? ` sur ${eur(v)}` : ''}</p>
         ${pct != null ? `<div class="barre"><span style="width:${pct}%"></span></div>` : ''}
         <span class="muted">${c.nb_contributeurs} contributeur${c.nb_contributeurs > 1 ? 's' : ''} · ${c.nb_concernes} membre${c.nb_concernes > 1 ? 's' : ''} concerné${c.nb_concernes > 1 ? 's' : ''}</span>
       </article>`;
@@ -1420,7 +1448,7 @@ async function pageTiers() {
     q(sb.from('tiers').select('*').order('nom')),
   ]);
   S.tiers = tiers;
-  const f = (S.filtreTiers ||= { type: 'tous', texte: '', an: String(new Date().getFullYear()) });
+  const f = (S.filtreTiers = S.filtreTiers || { type: 'tous', texte: '', an: String(new Date().getFullYear()) });
   const dansAn = (t) => f.an === 'tout' || t.date_op.startsWith(f.an);
   const cumul = (filtre) => {
     const l = txs.filter((t) => filtre(t) && dansAn(t));
@@ -1925,7 +1953,7 @@ async function ouvrirFichier(bucket, chemin) {
     const d = await q(sb.storage.from(bucket).createSignedUrl(chemin, 600));
     const image = /\.(jpe?g|png|webp)$/i.test(chemin) || /^data:image|^blob:/.test(d.signedUrl);
     ouvrirFeuille(`<h2>${bucket === 'signatures' ? 'Signature du président' : bucket === 'releves' ? 'Relevé' : 'Justificatif'}</h2>
-      ${image ? `<img src="${esc(d.signedUrl)}" alt="Document joint" style="width:100%;border-radius:16px;border:1px solid var(--bord);background:#fff">` : ''}
+      ${image ? `<img src="${esc(d.signedUrl)}" alt="Document joint" style="width:100%;border-radius:4px;border:1px solid var(--bord);background:#fff">` : ''}
       <div class="actions"><a class="btn btn-texte" href="${esc(d.signedUrl)}" target="_blank" rel="noopener">Ouvrir dans un onglet</a><button class="btn-tonal" id="b-fermer">Fermer</button></div>`,
       (root) => $('#b-fermer', root).addEventListener('click', fermerFeuille));
   } catch (e) { erreur(e); }
@@ -2104,7 +2132,7 @@ function feuilleValider(d, nomDe, apres) {
   ouvrirFeuille(`<h2>Valider cette dépense&#8239;?</h2>
     <p><b>${esc(d.objet)}</b>, ${eur(d.montant)}<br><span class="muted">Demandée par ${esc(nomDe(d.demandeur))} · ${esc(nomCategorie(d.category_id))}</span></p>
     <label class="champ obligatoire" for="sig">Signature</label>
-    <canvas id="sig" style="width:100%;height:180px;border:1px dashed var(--bord);border-radius:20px;background:#FFF;touch-action:none"></canvas>
+    <canvas id="sig" style="width:100%;height:180px;border:1px dashed var(--bord-fort);border-radius:4px;background:#FFF;touch-action:none"></canvas>
     <div class="actions" style="justify-content:space-between"><button class="btn-texte" id="b-effacer">Effacer</button>
       <span><button class="btn-texte" id="b-annuler">Annuler</button> <button class="btn-primaire" id="b-signer">Signer et valider</button></span></div>`, (root) => {
     const zone = zoneSignature($('#sig', root));
@@ -2826,7 +2854,7 @@ async function pageLien(jeton, retour = null) {
   const partsDues = parts.filter((p) => p.montant_attendu && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
   const etat = retard > 0
     ? `<div class="situation situation-retard"><span>Cotisation</span><b class="num">${eur(retard)}</b><small>en retard${prochaine ? ` depuis ${esc(nomPeriode(prochaine.periode))}` : ''}</small></div>`
-    : `<div class="situation situation-ok"><span>Cotisation</span><b>À jour</b><small>${regles.length ? `réglée jusqu’à ${esc(nomPeriode(regles.at(-1)))}` : 'aucune période due'}</small></div>`;
+    : `<div class="situation situation-ok"><span>Cotisation</span><b>À jour</b><small>${regles.length ? `réglée jusqu’à ${esc(nomPeriode(regles[regles.length - 1]))}` : 'aucune période due'}</small></div>`;
   const avance = Number(d.avance || 0);
   document.title = `${d.association?.nom || 'Association'} · ${d.membre?.prenom || ''}`;
   $('#app').innerHTML = `<main class="espace-membre">
@@ -2852,7 +2880,7 @@ async function pageLien(jeton, retour = null) {
         <div class="corps"><b>${esc(p.nom)}</b><span>${esc(jourLong(p.date_debut))}${p.heure_debut ? ' · ' + heure(p.heure_debut) : ''}${p.lieu ? ' · ' + esc(p.lieu) : ''}</span>${p.description ? `<small class="muted descr">${esc(p.description)}</small>` : ''}</div></li>`).join('')}</ul>` : '<p class="muted">Aucun rendez-vous annoncé.</p>'}
     </section>
     ${(d.versements || []).length ? `<details class="carte rubrique"><summary><span class="rub-titre"><h2>Mes versements</h2><span class="rub-resume">${d.versements.length} dernier${d.versements.length > 1 ? 's' : ''}</span></span>
-      <svg class="chevron" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+      ${icone('chevron')}</summary>
       <div class="rub-corps"><ul class="liste">${d.versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul></div></details>` : ''}
     <section class="pied-membre">
       <p>Ce lien vous est personnel. Pour l’ouvrir en un geste, ajoutez cette page à l’écran d’accueil de votre téléphone (menu du navigateur, « Ajouter à l’écran d’accueil »).</p>
@@ -3108,7 +3136,7 @@ const preferencePlanning = (cle, def) => { try { return localStorage.getItem(cle
 const garderPreference = (cle, v) => { try { localStorage.setItem(cle, v); } catch { /* stockage indisponible */ } };
 
 async function pageActivites() {
-  const P = (S.planning ||= { vue: preferencePlanning('vuePlanning2', 'calendrier'), affichage: preferencePlanning('affichagePlanning', 'mois'), ref: isoLocal(new Date()) });
+  const P = (S.planning = S.planning || { vue: preferencePlanning('vuePlanning2', 'calendrier'), affichage: preferencePlanning('affichagePlanning', 'mois'), ref: isoLocal(new Date()) });
   if (!['calendrier', 'avenir'].includes(P.vue)) P.vue = 'calendrier';
   const ref = dateDe(P.ref);
   let debut, fin, titre;
@@ -3127,7 +3155,7 @@ async function pageActivites() {
   const parJour = {};
   evts.forEach((e) => {
     let d = dateDe(e.date_debut); const f = dateDe(e.date_fin || e.date_debut);
-    for (let i = 0; d <= f && i < 62; i++, d = ajouterJours(d, 1)) (parJour[isoLocal(d)] ||= []).push(e);
+    for (let i = 0; d <= f && i < 62; i++, d = ajouterJours(d, 1)) (parJour[isoLocal(d)] = parJour[isoLocal(d)] || []).push(e);
   });
   const annivDe = (s) => { const d = dateDe(s); return anniv.flat().filter((a) => a.mois === d.getMonth() + 1 && a.jour === d.getDate()); };
   const auj = isoLocal(new Date());
@@ -3136,7 +3164,7 @@ async function pageActivites() {
   let corps = '';
   if (P.vue === 'avenir') {
     const groupes = {};
-    evts.filter((e) => (e.date_fin || e.date_debut) >= auj).forEach((e) => { (groupes[e.date_debut.slice(0, 7)] ||= []).push(e); });
+    evts.filter((e) => (e.date_fin || e.date_debut) >= auj).forEach((e) => { (groupes[e.date_debut.slice(0, 7)] = groupes[e.date_debut.slice(0, 7)] || []).push(e); });
     corps = Object.keys(groupes).length ? Object.entries(groupes).map(([m, l]) => `<section class="carte"><h2>${majuscule(MOIS[Number(m.slice(5, 7)) - 1])} ${m.slice(0, 4)}</h2>
       <ul class="liste agenda">${l.map((e) => `<li class="agenda-jour ${e.date_debut === auj ? 'auj' : ''}"><span class="agenda-date"><b>${Number(e.date_debut.slice(8))}</b><span>${JOURS_COURTS[(dateDe(e.date_debut).getDay() + 6) % 7]}</span></span>
         <div class="corps">${ligneEvt(e)}${e.date_fin && e.date_fin !== e.date_debut ? `<span class="muted">Jusqu’au ${esc(jourLong(e.date_fin))}</span>` : ''}</div></li>`).join('')}</ul></section>`).join('')
@@ -3166,10 +3194,10 @@ async function pageActivites() {
     <div class="onglets" role="tablist">${[['calendrier', 'Calendrier'], ['avenir', 'À venir']].map(([k, l]) => `<button role="tab" aria-selected="${P.vue === k}" data-vue="${k}">${l}</button>`).join('')}</div>
     ${P.vue === 'calendrier' ? `<div class="filtres cal-nav">
       <div class="groupe groupe-compact" role="group" aria-label="Affichage">${[['mois', 'Mois'], ['semaine', 'Semaine']].map(([k, l]) => `<button type="button" data-affichage="${k}" aria-pressed="${P.affichage === k}">${l}</button>`).join('')}</div>
-      <button class="btn-texte btn-petit" id="b-prec" aria-label="Précédent">‹</button><h2 style="margin:0;flex:1;text-align:center">${esc(titre)}</h2><button class="btn-texte btn-petit" id="b-suiv" aria-label="Suivant">›</button>
+      <button class="btn-texte btn-petit" id="b-prec" aria-label="Précédent" title="Précédent">${icone('precedent')}</button><h2 style="margin:0;flex:1;text-align:center">${esc(titre)}</h2><button class="btn-texte btn-petit" id="b-suiv" aria-label="Suivant" title="Suivant">${icone('suivant')}</button>
       <button class="btn-tonal btn-petit" id="b-auj">Aujourd’hui</button></div>` : '<p class="muted" style="margin:0">Les rendez-vous des douze prochains mois.</p>'}
     ${corps}
-    ${peut('gerer_activites') ? `<button class="fab" id="b-evt" aria-label="Nouveau rendez-vous" title="Nouveau rendez-vous"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
+    ${peut('gerer_activites') ? `<button class="fab" id="b-evt" aria-label="Nouveau rendez-vous" title="Nouveau rendez-vous"></button>` : ''}
   </div>`);
   const recharger = () => pageActivites().catch(erreur);
   document.querySelectorAll('[data-vue]').forEach((b) => b.addEventListener('click', () => { P.vue = b.dataset.vue; garderPreference('vuePlanning2', P.vue); recharger(); }));
@@ -3217,7 +3245,7 @@ async function pageMateriel() {
   const valActuelle = propre(enService).reduce((s, x) => s + Number(x.valeur_actuelle ?? x.valeur_acquisition ?? 0), 0);
   const nbArticles = enService.reduce((s, x) => s + Number(x.quantite || 1), 0);
   const parCat = {};
-  vus.forEach((x) => (parCat[x.categorie] ||= []).push(x));
+  vus.forEach((x) => (parCat[x.categorie] = parCat[x.categorie] || []).push(x));
   const ligneM = (x) => `<li class="cliquable" data-mat="${x.id}" tabindex="0" role="button" data-nom="${esc(sansAccents(x.designation + ' ' + (x.marque || '')))}">
       ${x.photo_path && S.photos[x.photo_path] ? `<span class="avatar avatar-carre"><img src="${esc(S.photos[x.photo_path])}" alt=""></span>` : `<span class="avatar avatar-carre" aria-hidden="true">${esc((x.designation[0] || '').toUpperCase())}</span>`}
       <div class="corps"><b>${esc(x.designation)}${x.quantite > 1 ? ` <span class="muted">× ${x.quantite}</span>` : ''}</b>
@@ -3241,7 +3269,7 @@ async function pageMateriel() {
       <ul class="liste liste-materiel">${parCat[c].map(ligneM).join('')}</ul></section>`).join('')
       : `<div class="carte vide">${items.length ? 'Aucun article dans cette vue.' : `Aucun matériel inscrit.${gere ? '<span>Instruments, sonorisation, informatique, tenues : inscrivez chaque bien de l’association, avec sa valeur et son lieu de rangement.</span><button class="btn-primaire" id="b-mat-vide">Ajouter un article</button>' : ''}`}</div>`}
     ${gere && items.length ? '<p class="muted aide-bas">Une fois par an, avant l’assemblée générale, vérifiez chaque article sur place et touchez « Vérifié ». L’inventaire PDF se signe et se joint au rapport.</p>' : ''}
-    ${gere ? `<button class="fab" id="b-mat" aria-label="Ajouter un article" title="Ajouter un article"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ''}
+    ${gere ? `<button class="fab" id="b-mat" aria-label="Ajouter un article" title="Ajouter un article"></button>` : ''}
   </div>`);
   const recharger = () => pageMateriel().catch(erreur);
   document.querySelectorAll('[data-filtre-mat]').forEach((b) => b.addEventListener('click', () => { S.filtreMateriel = b.dataset.filtreMat; recharger(); }));

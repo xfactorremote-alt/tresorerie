@@ -45,7 +45,7 @@ export function colonnesGroupees({ libelles, series, titre, hauteur = 220 }) {
   const L = 640, H = hauteur, g = 44, d = 8, h = 16, b = 26;
   const toutes = series.flatMap((s) => s.valeurs);
   const t = graduations(Math.min(0, ...toutes), Math.max(0, ...toutes));
-  const y = (v) => h + (H - h - b) * (1 - (v - t[0]) / (t.at(-1) - t[0]));
+  const y = (v) => h + (H - h - b) * (1 - (v - t[0]) / (t[t.length - 1] - t[0]));
   const bande = (L - g - d) / libelles.length;
   const l = Math.min(18, (bande * 0.7 - 2 * (series.length - 1)) / series.length);
   const bloc = series.length * l + 2 * (series.length - 1);
@@ -69,7 +69,7 @@ export function colonnesGroupees({ libelles, series, titre, hauteur = 220 }) {
 export function ligne({ libelles, valeurs, couleur = C.tresorerie, titre, hauteur = 180 }) {
   const L = 640, H = hauteur, g = 44, d = 70, h = 16, b = 26;
   const t = graduations(Math.min(0, ...valeurs), Math.max(...valeurs, 1));
-  const y = (v) => h + (H - h - b) * (1 - (v - t[0]) / (t.at(-1) - t[0]));
+  const y = (v) => h + (H - h - b) * (1 - (v - t[0]) / (t[t.length - 1] - t[0]));
   const pas = libelles.length > 1 ? (L - g - d) / (libelles.length - 1) : 0;
   const x = (i) => g + i * pas;
   const pts = valeurs.map((v, i) => `${x(i)},${y(v)}`).join(' ');
@@ -208,22 +208,22 @@ export function brancherInfobulles(racine = document) {
 
 export const CSS_GRAPHIQUES = `
 .graphique{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}
-.graphique figcaption{font-weight:700;font-size:14px;color:${C.encre}}
+.graphique figcaption{font-weight:600;font-size:14px;line-height:20px;color:${C.encre}}
 .graphique svg{width:100%;height:auto;display:block;overflow:visible}
-.g-axe{font:11px system-ui,sans-serif;fill:${C.encre2};font-variant-numeric:tabular-nums}
-.g-valeur{font:600 12px system-ui,sans-serif;fill:${C.encre}}
+.g-axe{font-family:inherit;font-size:11px;fill:${C.encre2};font-variant-numeric:tabular-nums}
+.g-valeur{font-family:inherit;font-weight:600;font-size:12px;fill:${C.encre}}
 .g-legende{display:flex;gap:14px;font-size:12px;color:${C.encre2};flex-wrap:wrap}
 .g-legende span{display:inline-flex;align-items:center;gap:6px}
-.g-legende i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.g-legende i{width:10px;height:10px;border-radius:2px;display:inline-block}
 .g-barres{display:flex;flex-direction:column;gap:8px}
 .g-ligne{display:grid;grid-template-columns:minmax(90px,34%) 1fr auto;gap:10px;align-items:center;font-size:13px}
 .g-nom{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${C.encre}}
-.g-piste{height:10px;border-radius:5px;background:#F1EEEC;overflow:hidden;display:block}
-.g-piste i{display:block;height:100%;border-radius:0 5px 5px 0}
+.g-piste{height:8px;border-radius:2px;background:#EFEDEC;overflow:hidden;display:block}
+.g-piste i{display:block;height:100%;border-radius:0 2px 2px 0}
 .g-piste-jauge{height:12px}
 .g-val{font-variant-numeric:tabular-nums;color:${C.encre};white-space:nowrap;text-align:right}
 .g-val small{color:${C.encre2}}
-.g-depasse{font-style:normal;font-size:11px;font-weight:700;color:#410002;background:#FFDAD6;border-radius:8px;padding:1px 6px}
+.g-depasse{font-style:normal;font-size:11px;font-weight:600;color:#410002;background:#FFDAD6;border:1px solid #F2A8A0;border-radius:10000px;padding:0 6px}
 .g-jauge{display:flex;flex-direction:column;gap:6px}
 .g-jauge-tete{display:flex;justify-content:space-between;font-size:13px;color:${C.encre2}}
 .g-jauge-tete b{color:${C.encre};font-size:15px}
@@ -231,12 +231,12 @@ export const CSS_GRAPHIQUES = `
 .g-vide{color:${C.encre2};font-size:13px;margin:0}
 .g-anneau{display:grid;grid-template-columns:minmax(120px,170px) 1fr;gap:16px;align-items:center}
 .g-anneau svg{max-width:170px}
-.g-centre{font:700 15px system-ui,sans-serif;fill:${C.encre}}
+.g-centre{font-family:inherit;font-weight:600;font-size:15px;fill:${C.encre}}
 .g-parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px;min-width:0}
 .g-parts li{display:grid;grid-template-columns:12px 1fr auto auto;gap:8px;align-items:center}
-.g-parts i{width:12px;height:12px;border-radius:3px;display:block}
+.g-parts i{width:12px;height:12px;border-radius:2px;display:block}
 .g-parts b{font-variant-numeric:tabular-nums}
 .g-parts small{color:${C.encre2};font-variant-numeric:tabular-nums;min-width:64px;text-align:right}
 @media (max-width:420px){.g-anneau{grid-template-columns:1fr}.g-anneau svg{margin:0 auto}}
-#g-bulle{position:fixed;z-index:200;pointer-events:none;background:${C.encre};color:#fff;font-size:12px;padding:6px 10px;border-radius:8px;max-width:280px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+#g-bulle{position:fixed;z-index:200;pointer-events:none;background:#fff;color:#1C1B1A;font-size:12px;line-height:16px;padding:5px 11px 7px;border-radius:4px;max-width:280px;box-shadow:0 0 2px rgba(0,0,0,.12),0 8px 16px rgba(0,0,0,.14)}
 `;

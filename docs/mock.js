@@ -199,7 +199,7 @@ function periodesCotisation(t) {
   const paye = {};
   t.transactions.filter((x) => x.est_cotisation).forEach((x) => { paye[x.member_id] = (paye[x.member_id] || 0) + Number(x.montant); });
   const parMembre = {};
-  [...t.cotisations].sort((a, b) => (a.periode > b.periode ? 1 : -1)).forEach((c) => (parMembre[c.member_id] ||= []).push(c));
+  [...t.cotisations].sort((a, b) => (a.periode > b.periode ? 1 : -1)).forEach((c) => (parMembre[c.member_id] = parMembre[c.member_id] || []).push(c));
   const res = [];
   Object.entries(parMembre).forEach(([mid, liste]) => {
     let avant = 0;
@@ -333,14 +333,14 @@ export function createMockClient() {
         const { periodes, paye } = periodesCotisation(t);
         const auj = new Date().toISOString().slice(0, 10);
         const groupes = {};
-        periodes.forEach((p) => (groupes[p.member_id + '|' + p.annee] ||= []).push(p));
+        periodes.forEach((p) => (groupes[p.member_id + '|' + p.annee] = groupes[p.member_id + '|' + p.annee] || []).push(p));
         return Object.values(groupes).map((l) => {
           const du = l.reduce((s, p) => s + p.montant_du, 0), regle = l.reduce((s, p) => s + p.regle, 0);
           const exigible = l.filter((p) => p.periode <= auj).reduce((s, p) => s + p.montant_du, 0);
           const totalDu = periodes.filter((p) => p.member_id === l[0].member_id).reduce((s, p) => s + p.montant_du, 0);
           const ok = l.filter((p) => ['regle', 'dispense'].includes(p.statut)).map((p) => p.periode).sort();
           return { member_id: l[0].member_id, annee: l[0].annee, montant_du: du, montant_paye: regle, reste: du - regle, exigible, retard: Math.max(0, exigible - regle),
-            statut: regle >= exigible ? 'a_jour' : regle > 0 ? 'partiel' : 'impaye', regle_jusqu_a: ok.at(-1) || null, avance: Math.max(0, (paye[l[0].member_id] || 0) - totalDu) };
+            statut: regle >= exigible ? 'a_jour' : regle > 0 ? 'partiel' : 'impaye', regle_jusqu_a: ok[ok.length - 1] || null, avance: Math.max(0, (paye[l[0].member_id] || 0) - totalDu) };
         });
       }
       if (nom === 'v_collectes') {

@@ -4,14 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Trésorerie JP Grenoble</title>
-<meta name="theme-color" content="#C23E10">
+<meta name="theme-color" content="#F6F6F6">
+<meta name="color-scheme" content="light">
+<meta name="format-detection" content="telephone=no">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -20,5 +21,7 @@
 <dialog id="sheet"><div id="sheet-body"></div></dialog>
 <div id="toast" role="status" hidden></div>
 <script type="module" src="app.js"></script>
+<script nomodule>document.getElementById('app').innerHTML = '<p class="chargement">Ce navigateur est trop ancien pour la trésorerie. Ouvrez la page avec Chrome, Edge, Firefox ou Safari à jour.</p>';</script>
+<noscript><p class="chargement">La trésorerie a besoin de JavaScript : activez-le dans le navigateur.</p></noscript>
 </body>
 </html>
