@@ -489,12 +489,12 @@ async function pageTableau() {
   const txtVar = (v) => (v == null ? 'Pas de comparaison' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}&nbsp;% sur un an`);
   const signeEur = (n) => `${n >= 0 ? '+' : '−'}&nbsp;${eur0(Math.abs(n))}`;
   const ecart12 = serie.length ? serie[serie.length - 1].solde - (serie[0].solde - serie[0].rec + serie[0].dep) : 0;
-  const reserveTxt = reserve == null ? '<span title="Calculée à partir des dépenses moyennes des 12 derniers mois : pas encore de dépenses">Non définie</span>' : `${reserve.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}&nbsp;mois`;
+  const reserveTxt = reserve == null ? 'Non définie' : `${reserve.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}&nbsp;mois`;
 
   const situation = banniere(`<a class="banniere-solde" href="#ecritures" data-compte=""><span>Trésorerie au ${dateFr(jour)}</span><b class="num">${eur(total)}</b></a>
     <div class="banniere-indic">
       <span>Résultat ${an}<b class="num">${signeEur(resultat)}</b></span>
-      <span title="Nombre de mois de dépenses que la trésorerie actuelle permet de couvrir">Réserve<b class="num">${reserveTxt}</b></span>
+      <span title="${reserve == null ? 'Calculée sur les dépenses moyennes des 12 derniers mois : pas encore de dépenses' : 'Nombre de mois de dépenses que la trésorerie actuelle permet de couvrir'}">Réserve<b class="num">${reserveTxt}</b></span>
       ${exigible > 0 ? `<span>Cotisations<b class="num">${Math.round(100 * encaisse / exigible)}&nbsp;%</b></span>` : ''}
     </div>`);
   const comptes = `<nav class="comptes" aria-label="Comptes">${soldes.map((c) => `<a class="compte" href="#ecritures" data-compte="${c.id}">

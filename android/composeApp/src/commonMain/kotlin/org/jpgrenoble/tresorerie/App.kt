@@ -258,7 +258,8 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
         if (vueAdherent == 1) vueAdherent = 0 else if (retour != null) retour() else onglet = Onglet.Accueil
     }
     Scaffold(
-        topBar = { BarreHaut(d, retour, sousEcran == "parametres") { if (!adherentSeul) onglet = Onglet.Plus; sousEcran = "parametres" } },
+        // Accueil : pas de barre du haut, la bannière porte déjà le logo, le nom et la roue dentée
+        topBar = { if (adherentSeul || onglet != Onglet.Accueil) BarreHaut(d, retour, sousEcran == "parametres") { if (!adherentSeul) onglet = Onglet.Plus; sousEcran = "parametres" } },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (adherentSeul) NavigationBar {

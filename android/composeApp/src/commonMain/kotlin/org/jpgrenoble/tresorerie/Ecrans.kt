@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -140,7 +141,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         erreur?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         item {
-            Banniere(d) {
+            Banniere(d, onReglages = { onAller("parametres") }) {
                 if (voitSoldes) {
                     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable { onAller("operations:") }) {
                         Text("Trésorerie au ${dateFr(jour)}", color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -257,7 +258,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
 
 // Bannière : photo de l'association si elle existe, sinon aplat neutre ; voile sombre pour la lisibilité
 @Composable
-private fun Banniere(d: Donnees, contenu: @Composable ColumnScope.() -> Unit) {
+private fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, contenu: @Composable ColumnScope.() -> Unit) {
     val octets by Repo.banniere.collectAsState()
     val photo = remember(octets) { octets?.let { imageDepuisOctets(it) } }
     val forme = RoundedCornerShape(28.dp)
@@ -271,8 +272,13 @@ private fun Banniere(d: Donnees, contenu: @Composable ColumnScope.() -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(48.dp).clip(CircleShape).background(Color.White)) { LogoAsso(Modifier.fillMaxSize()) }
                 Column(Modifier.weight(1f)) {
-                    Text(d.organisation.nom, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(d.organisation.nom, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text("Bonjour ${d.membres.firstOrNull { it.id == d.profil.memberId }?.prenom ?: d.profil.nom.substringBefore('@').substringBefore(' ')} · ${dateFr(aujourdhui().toString())}", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // Roue dentée des Paramètres, posée sur la photo (l'accueil n'a pas de barre du haut)
+                if (onReglages != null) Surface(onClick = onReglages, color = Color.White.copy(alpha = 0.16f), contentColor = Color.White, shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)), modifier = Modifier.size(44.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Settings, contentDescription = "Paramètres") }
                 }
             }
             contenu()
