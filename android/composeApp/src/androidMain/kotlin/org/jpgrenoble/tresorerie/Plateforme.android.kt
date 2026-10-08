@@ -58,12 +58,15 @@ actual fun rememberChoixFichier(pdfAccepte: Boolean, quandChoisi: (Fichier?, Str
         try {
             val mime = contexte.contentResolver.getType(uri) ?: ""
             val octets = contexte.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalStateException("Fichier illisible")
+            val nom = try {
+                contexte.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            } catch (_: Exception) { null }
             when {
                 mime == "application/pdf" -> {
                     if (octets.size > 3 * 1024 * 1024) quandChoisi(null, "Ce PDF dépasse 3 Mo. Photographiez plutôt la page.")
-                    else quandChoisi(Fichier(octets, "application/pdf", "pdf"), null)
+                    else quandChoisi(Fichier(octets, "application/pdf", "pdf", nom), null)
                 }
-                mime.startsWith("image/") -> quandChoisi(Fichier(reduirePhoto(octets), "image/jpeg", "jpg"), null)
+                mime.startsWith("image/") -> quandChoisi(Fichier(reduirePhoto(octets), "image/jpeg", "jpg", nom), null)
                 else -> quandChoisi(null, "Format accepté : photo ou PDF")
             }
         } catch (e: Exception) { quandChoisi(null, e.message ?: "Fichier illisible") }

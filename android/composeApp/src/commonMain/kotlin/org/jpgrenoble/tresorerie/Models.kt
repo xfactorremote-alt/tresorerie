@@ -268,7 +268,7 @@ data class NouveauMembre(
 data class ProfilCourt(val id: String, val nom: String)
 
 // Fichier choisi sur le téléphone, déjà réduit (photo) ou contrôlé (PDF)
-class Fichier(val octets: ByteArray, val mime: String, val extension: String) {
+class Fichier(val octets: ByteArray, val mime: String, val extension: String, val nom: String? = null) {   // nom : nom d'origine du fichier choisi
     val ko get() = octets.size / 1024
 }
 

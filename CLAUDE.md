@@ -17,15 +17,15 @@ Avant de dire qu'un travail est fini :
 
 | Écran | À retrouver à l'identique sur le site et sur Android |
 |---|---|
-| Accueil | Bannière (photo, logo, nom, roue dentée), soldes, comptes ; rubriques Bien démarrer, Ma situation, À traiter, Chiffres, Évolution, Répartition, Anniversaires, Dernières opérations |
+| Accueil (adhérent compris) | Bannière (photo, logo, nom, roue dentée), soldes, comptes ; rubriques Bien démarrer, Ma situation, À traiter, Chiffres, Évolution, Répartition, Anniversaires, Dernières opérations |
 | Opérations | Recherche + bouton Filtres (pastilles retirables), totaux, Exporter, détail avec historique, contre-passation avec motif, virement interne |
-| Demandes | Filtres d'état (dont À régulariser), justification, date, devis, signature, régularisation, voir l'opération |
-| Cotisations | Onglets Cotisations / Participations, grille des mois, encaisser, relancer, exporter |
+| Demandes | Filtres d'état (dont À régulariser), justification, date, devis, signature, régularisation, voir l'opération ; activité sur la carte ; date de paiement modifiable ; annulation confirmée (Garder / Annuler la demande) ; motif du refus seulement si refusée |
+| Cotisations | Onglets Cotisations / Participations, grille des mois, encaisser, relancer, exporter ; situation (Réglé, Partiel, À régler, Donné, Libre) toujours visible ; CSV avec Statut |
 | Budget | Trois chiffres (ressources, emplois, excédent/déficit prévus), saisie du prévu dans la ligne, « Reprendre le réalisé N-1 », alerte de déficit, ressources et emplois (prévu / réalisé / avancement / N-1, Dépassé, Non prévu), cartes d'activité (Prévoir une ligne, Retirer), consultation pour le bureau, exporter PDF et Excel identiques |
-| Planning | Onglets Calendrier / À venir ; Mois / Semaine ; détail du jour ; logo en filigrane |
+| Planning | Onglets Calendrier / À venir ; Mois / Semaine (noms des rendez-vous dans les cases, +N, prénoms des anniversaires) ; détail du jour (« Budget suivi ») ; détail d'un rendez-vous (Voir le budget, Voir les participations, Modifier) ; formulaire « Nouveau rendez-vous » avec la case « Suivre le budget » ; logo en filigrane |
 | Matériel | Inventaire, fiche, confier / récupérer / vérifier / sortir, export |
-| Tiers, Membres | Recherche, fiches, fonction et accès, liens personnels, import, export |
-| Rapprochement | Relevé obligatoire, pointage, écart, historique, consultation pour le bureau |
+| Tiers, Membres | Recherche, fiches (Exporter, Modifier, Cotisation), fonction et accès, liens personnels, import, export |
+| Rapprochement | Début et Fin modifiables, relevé obligatoire (nom d'origine conservé), pointage (« période précédente »), Relevé / Pointé / Écart, historique (Voir, Terminé le ou En cours), consultation pour le bureau |
 | Rapports | Un seul formulaire : document, période, format |
 | Paramètres | Onglets Mon compte, Association, Montants et comptes, Rôles et droits, Accès ; roue dentée seulement (pas dans « Plus ») |
 

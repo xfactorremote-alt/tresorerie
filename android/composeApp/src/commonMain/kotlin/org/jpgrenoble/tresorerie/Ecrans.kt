@@ -256,18 +256,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
         }
         item {
             Rubrique("anniversaires", "Anniversaires ${deMois(mois)}", if (anniv.isEmpty()) "Aucun" else "${anniv.size} personne${s(anniv.size)}") {
-                if (anniv.isEmpty()) Text("Aucun anniversaire ce mois-ci", color = Couleurs.Texte2)
-                anniv.forEach { a ->
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
-                        Avatar(a.prenom, a.nom)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("${a.prenom} ${a.nom}", fontWeight = FontWeight.SemiBold)
-                            Text("${a.jour} ${MOIS[mois - 1]}" + (a.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
-                        }
-                        if (a.jour == auj.dayOfMonth) Pastille("Aujourd’hui", Couleurs.JauneClair, Couleurs.SurJaune)
-                    }
-                }
+                ListeAnniversaires(anniv, mois)
             }
         }
         if (voitSoldes) item {
@@ -292,7 +281,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
 
 // Bannière : photo de l'association si elle existe, sinon aplat neutre ; voile sombre pour la lisibilité
 @Composable
-private fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, contenu: @Composable ColumnScope.() -> Unit) {
+internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, contenu: @Composable ColumnScope.() -> Unit) {
     val octets by Repo.banniere.collectAsState()
     val photo = remember(octets) { octets?.let { imageDepuisOctets(it) } }
     val forme = RoundedCornerShape(28.dp)
@@ -354,6 +343,25 @@ private fun Tuile(titre: String, valeur: String, detail: String, couleur: Color,
             Text(detail, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
+
+// Anniversaires du mois (même liste que listeAnniversaires() du site) : Aujourd'hui, Passé
+@Composable
+internal fun ListeAnniversaires(anniv: List<Anniversaire>, mois: Int) {
+    val jour = aujourdhui().dayOfMonth
+    if (anniv.isEmpty()) Text("Aucun anniversaire ce mois-ci.", color = Couleurs.Texte2)
+    anniv.forEach { a ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
+            Avatar(a.prenom, a.nom)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("${a.prenom} ${a.nom}", fontWeight = FontWeight.SemiBold)
+                Text("${a.jour} ${MOIS[mois - 1]}" + (a.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
+            }
+            if (a.jour == jour) Pastille("Aujourd’hui", Couleurs.JauneClair, Couleurs.SurJaune)
+            else if (a.jour < jour) Pastille("Passé", Color(0xFFEFEDEC), Couleurs.Texte2)
+        }
+    }
+}
 
 // Rubrique dépliable : un appui sur l'en-tête ouvre ou ferme ; repliée, elle montre un résumé
 @Composable

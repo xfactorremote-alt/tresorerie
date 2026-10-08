@@ -518,63 +518,6 @@ fun DialogueSimple(titre: String, bouton: String, valide: Boolean, onAnnuler: ()
 // =====================================================================
 // Activités et planning
 // =====================================================================
-@Composable
-fun EcranActivites(d: Donnees, message: (String) -> Unit) {
-    var projets by remember { mutableStateOf<List<Projet>?>(null) }
-    var ecritures by remember { mutableStateOf<List<Ecriture>>(emptyList()) }
-    var budgets by remember { mutableStateOf<List<LigneBudget>>(emptyList()) }
-    var version by remember { mutableStateOf(0) }
-    var edition by remember { mutableStateOf<Projet?>(null) }
-    var nouvelle by remember { mutableStateOf(false) }
-    val vue = "toutes"
-    LaunchedEffect(version) {
-        try { projets = Repo.projets(); ecritures = Repo.toutesEcritures(); budgets = Repo.budget(aujourdhui().year) } catch (e: Exception) { message(traduireErreur(e)) }
-    }
-    val aujourd = aujourdhui().toString()
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val l = projets?.filter { it.type == "activite" }
-            if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            else {
-                val vus = l
-                if (vus.isEmpty()) item {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Aucune activité", color = Couleurs.Texte2)
-                        if (d.peut("gerer_activites")) Button(onClick = { nouvelle = true }) { Text("Nouvelle activité") }
-                    }
-                }
-                items(vus, key = { it.id }) { p ->
-                    val dep = ecritures.filter { it.projetId == p.id && it.sens == "depense" && it.estFlux }.sumOf { it.montant }
-                    val rec = ecritures.filter { it.projetId == p.id && it.sens == "recette" && it.estFlux }.sumOf { it.montant }
-                    val prevu = budgets.filter { it.projetId == p.id && it.sens == "depense" }.sumOf { it.prevu }
-                    CarteBlanche {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(p.nom, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                            if (p.visible) Puce("Tous les membres", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("Bureau", Color(0xFFEFEDEC), Couleurs.Texte2)
-                        }
-                        Text((p.debut?.let { dateFr(it) + (if (p.fin != null && p.fin != p.debut) " au " + dateFr(p.fin) else "") } ?: "Date à fixer") + (p.lieu?.let { " · $it" } ?: ""),
-                            fontSize = 13.sp, color = Couleurs.Texte2)
-                        p.description?.let { Text(it) }
-                        if (vue == "toutes") {
-                            Text("Budget ${euros(prevu)} · dépensé ${euros(dep)} · recettes ${euros(rec)}", fontSize = 13.sp, color = Couleurs.Texte2)
-                            if (prevu > 0 && dep > prevu) Text("Budget de l’activité dépassé", color = Couleurs.Erreur, fontSize = 13.sp)
-                        }
-                        if (d.peut("gerer_activites")) TextButton(onClick = { edition = p }, modifier = Modifier.align(Alignment.End)) { Text("Modifier") }
-                    }
-                }
-            }
-        }
-        if (d.peut("gerer_activites")) {
-            ExtendedFloatingActionButton(onClick = { nouvelle = true }, containerColor = Couleurs.Jaune, contentColor = Couleurs.SurJaune,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) }, text = { Text("Nouvelle activité") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp))
-        }
-    }
-    if (nouvelle || edition != null) {
-        FormulaireActivite(edition, onFini = { ok -> if (ok) { message(if (edition != null) "Activité modifiée" else "Activité créée"); version++ }; nouvelle = false; edition = null }, message, typeInitial = "activite")
-    }
-}
-
 // Activité ou événement du planning ; « Demander une participation » crée la collecte liée
 @Composable
 fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) -> Unit, dateInitiale: String? = null, typeInitial: String = "evenement") {
@@ -600,7 +543,7 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
     val datesOk = (debut.isBlank() || dDebut != null) && (fin.isBlank() || dFin != null) && (dDebut == null || dFin == null || dFin >= dDebut) &&
         (type == "activite" || dDebut != null) && hD != null && hF != null && (hD.isEmpty() || hF.isEmpty() || dFin != null || hF >= hD) &&
         (!participation || ((attendu.isBlank() || lireMontant(attendu)?.let { it > 0 } == true) && (limite.isBlank() || dLimite != null)))
-    DialogueSimple(if (p == null) "Ajouter au planning" else "Modifier", "Enregistrer", nom.isNotBlank() && datesOk && !enCours, { onFini(false) }, {
+    DialogueSimple(if (p == null) "Nouveau rendez-vous" else "Modifier le rendez-vous", "Enregistrer", nom.isNotBlank() && datesOk && !enCours, { onFini(false) }, {
         enCours = true
         scope.launch {
             try {
@@ -612,12 +555,7 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
             } catch (e: Exception) { message(traduireErreur(e)); onFini(false) }
         }
     }) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("evenement" to "Événement", "activite" to "Activité").forEachIndexed { i, (k, v) ->
-                SegmentedButton(selected = type == k, onClick = { type = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(v) }
-            }
-        }
-        OutlinedTextField(nom, { nom = it.take(80) }, label = { Text("Nom") }, singleLine = true)
+        OutlinedTextField(nom, { nom = it.take(80) }, label = { Text("Nom") }, placeholder = { Text("Répétition, réunion, concert, sortie…") }, singleLine = true)
         OutlinedTextField(debut, { debut = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
             isError = (debut.isNotBlank() && dDebut == null) || (type == "evenement" && debut.isBlank()))
         OutlinedTextField(fin, { fin = it }, label = { Text("Jusqu’au") }, placeholder = { Text("Même jour") }, singleLine = true,
@@ -632,6 +570,14 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
         OutlinedTextField(description, { description = it.take(500) }, label = { Text("Description") }, minLines = 2)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { visible = !visible }) {
             Checkbox(visible, { visible = it }); Text("Visible de tous les membres", fontSize = 14.sp)
+        }
+        // Comme le site : une case « Suivre le budget » plutôt qu'un choix Événement / Activité
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { type = if (type == "activite") "evenement" else "activite" }) {
+            Checkbox(type == "activite", { type = if (it) "activite" else "evenement" })
+            Column {
+                Text("Suivre le budget de cette activité", fontSize = 14.sp)
+                Text("Ressources, emplois et résultat dans Budget$NBSP; la date peut rester à fixer", fontSize = 12.sp, color = Couleurs.Texte2)
+            }
         }
         if (p == null) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { participation = !participation }) {
@@ -1125,7 +1071,7 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
 private data class Quadruple(val a: String, val b: String, val c: List<String>, val d: String)
 
 // CSV lisible par Excel en français : BOM, séparateur « ; », virgule décimale
-private fun csv(entetes: List<String>, lignes: List<List<Any?>>): String {
+internal fun csv(entetes: List<String>, lignes: List<List<Any?>>): String {
     fun cel(v: Any?): String {
         val s = when (v) { is Double -> v.toString().replace('.', ','); null -> ""; else -> v.toString() }
         return if (s.any { it == ';' || it == '"' || it == '\n' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
@@ -1270,52 +1216,69 @@ ${if (budgetL.isNotEmpty()) "<h2>Budget $an : réalisé sur prévu</h2><div clas
 // Adhérent : sa cotisation, les anniversaires, le planning
 // =====================================================================
 @Composable
-fun EcranAdherent(d: Donnees, onPlanning: (() -> Unit)? = null) {
+fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() -> Unit)? = null, onPlanning: (() -> Unit)? = null) {
+    // Même accueil que pageTableauAdherent() du site : bannière, Tout replier, rubriques dépliables
     var cotis by remember { mutableStateOf<List<PeriodeCotisation>>(emptyList()) }
     var parts by remember { mutableStateOf<List<Participation>>(emptyList()) }
     var anniv by remember { mutableStateOf<List<Anniversaire>>(emptyList()) }
     var planning by remember { mutableStateOf<List<Projet>>(emptyList()) }
     var pas by remember { mutableStateOf(1) }
-    LaunchedEffect(Unit) {
+    var version by remember { mutableStateOf(0) }
+    var detail by remember { mutableStateOf<Projet?>(null) }
+    LaunchedEffect(version) {
         try { cotis = Repo.maCotisation() } catch (_: Exception) { }
         try { parts = Repo.mesParticipations() } catch (_: Exception) { }
-        try { anniv = Repo.anniversaires(); planning = Repo.planning(aujourdhui().toString()).take(5) } catch (_: Exception) { }
+        try { anniv = Repo.anniversaires(); planning = Repo.planning(aujourdhui().toString()) } catch (_: Exception) { }
         try { pas = (Repo.reglages()["cotisation_periode_mois"] ?: 1.0).toInt() } catch (_: Exception) { }
     }
     val mois = aujourdhui().monthNumber
+    val rubriques = listOf("macotisation", "anniversaires", "avenir") + if (parts.isNotEmpty()) listOf("participations") else emptyList()
+    val toutOuvert = rubriques.all { EtatAccueil.ouvertes[it] ?: true }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (onReglages != null) item { Banniere(d, onReglages) { } }
         item {
-            CarteBlanche {
-                Text("Ma cotisation", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                BlocMaCotisation(cotis, pas)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { val v = !toutOuvert; rubriques.forEach { EtatAccueil.ouvertes[it] = v } }) { Text(if (toutOuvert) "Tout replier" else "Tout déplier") }
             }
         }
-        if (parts.isNotEmpty()) item {
-            CarteBlanche {
-                Text("Mes participations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                ListeParticipations(parts)
+        item { Rubrique("macotisation", "Ma cotisation", "") { BlocMaCotisation(cotis, pas) } }
+        item {
+            Rubrique("anniversaires", "Anniversaires ${deMois(mois)}", if (anniv.isEmpty()) "Aucun" else "${anniv.size} personne${if (anniv.size > 1) "s" else ""}") {
+                ListeAnniversaires(anniv, mois)
             }
         }
         item {
-            CarteBlanche {
-                Text("À venir", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                if (planning.isEmpty()) Text("Aucune activité prévue", color = Couleurs.Texte2)
-                planning.forEach { p ->
-                    Column(Modifier.padding(vertical = 4.dp)) {
-                        Text(p.nom, fontWeight = FontWeight.SemiBold)
-                        Text(listOfNotNull(p.debut?.let { jourLong(it) }, p.heureDebut?.let { heureFr(it) }, p.lieu, p.participation?.let { "participation ${euros(it)}" }).joinToString(" · "),
-                            fontSize = 13.sp, color = Couleurs.Texte2)
+            val cinq = planning.take(5)
+            Rubrique("avenir", "À venir", if (cinq.isEmpty()) "" else "${cinq.size} rendez-vous") {
+                if (cinq.isEmpty()) Text("Aucune activité prévue", color = Couleurs.Texte2)
+                cinq.forEach { p ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { detail = p }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        p.debut?.let { dt ->
+                            val j = LocalDate.parse(dt)
+                            Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(12.dp), modifier = Modifier.width(48.dp)) {
+                                Column(Modifier.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${j.dayOfMonth}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                                    Text(MOIS_COURTS[j.monthNumber - 1], fontSize = 11.sp)
+                                }
+                            }
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(p.nom, fontWeight = FontWeight.SemiBold)
+                            Text(listOfNotNull(p.heureDebut?.let { heureFr(it) }, p.lieu).joinToString(" · ").ifEmpty { "Journée" }, fontSize = 13.sp, color = Couleurs.Texte2)
+                        }
+                        p.participation?.let { Puce("Participation ${euros(it)}", Couleurs.JauneClair, Couleurs.SurJaune) }
                     }
                 }
                 onPlanning?.let { TextButton(onClick = it) { Text("Voir le planning") } }
             }
         }
-        item {
-            CarteBlanche {
-                Text("Anniversaires ${deMois(mois)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                if (anniv.isEmpty()) Text("Aucun anniversaire ce mois-ci", color = Couleurs.Texte2)
-                anniv.forEach { Text("${it.jour} ${MOIS[mois - 1]} · ${it.prenom} ${it.nom}") }
-            }
+        if (parts.isNotEmpty()) item { Rubrique("participations", "Mes participations", "") { ListeParticipations(parts) } }
+    }
+    detail?.let { e ->
+        @OptIn(ExperimentalMaterial3Api::class)
+        ModalBottomSheet(onDismissRequest = { detail = null }) {
+            DetailEvenement(d, e, message, onChange = { version++ }, onFermer = { detail = null })
         }
     }
 }

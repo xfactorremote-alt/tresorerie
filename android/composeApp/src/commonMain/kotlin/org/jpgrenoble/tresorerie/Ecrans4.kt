@@ -591,20 +591,24 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("tous" to "Tous", "donne" to "Ont donné", "pas" to "N’ont pas donné").forEach { (k, l) -> FilterChip(selected = filtre == k, onClick = { filtre = k }, label = { Text(l) }) }
         }
-        lignes.filter { (_, v) -> filtre == "tous" || (filtre == "donne") == (v > 0) }.forEach { (m, v) ->
+        val vusCollecte = lignes.filter { (_, v) -> filtre == "tous" || (filtre == "donne") == (v > 0) }
+        if (vusCollecte.isEmpty()) Text("Personne", color = Couleurs.Texte2)
+        vusCollecte.forEach { (m, v) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Avatar(m.prenom, m.nom, 40)
                 Column(Modifier.weight(1f)) {
                     Text(m.nomComplet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(euros(v) + if (att > 0) " sur ${euros(att)}" else "", fontSize = 13.sp, color = Couleurs.Texte2)
                 }
+                // Situation toujours affichée (comme sur le site), boutons en plus pour le gestionnaire
+                if (att > 0) {
+                    if (v >= att) Puce("Réglé", Couleurs.BleuClair, Couleurs.SurBleuClair) else if (v > 0) Puce("Partiel", Couleurs.JauneClair, Couleurs.SurJaune) else Puce("À régler", Couleurs.ErreurClair, Color(0xFF410002))
+                } else if (v > 0) Puce("Donné", Couleurs.BleuClair, Couleurs.SurBleuClair)
                 if (gere && !c.cloturee) {
                     if ((att == 0.0 || v < att) && numeroWa(m.whatsapp) != null) TextButton(onClick = {
                         lienRelance(uri, m, "pour « ${c.nom} », la participation demandée est de ${if (att > 0) euros(att - v) else "votre choix"}")
                     }) { Text("Relancer") }
                     FilledTonalButton(onClick = { encaisser = PreEcriture("recette", m.id, c.id, if (att > 0) maxOf(att - v, 0.0).takeIf { it > 0 } ?: att else null) }) { Text("Encaisser") }
-                } else if (att > 0) {
-                    if (v >= att) Puce("Réglé", Couleurs.BleuClair, Couleurs.SurBleuClair) else if (v > 0) Puce("Partiel", Couleurs.JauneClair, Couleurs.SurJaune) else Puce("À régler", Couleurs.ErreurClair, Color(0xFF410002))
                 }
             }
         }
@@ -614,8 +618,9 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
         }
         FlowRowActions {
             OutlinedButton(onClick = {
-                val csv = "﻿" + (listOf("Prénom;Nom;Donné;Attendu") + lignes.map { (m, v) -> "${m.prenom};${m.nom};${montantSaisie(v)};${if (att > 0) montantSaisie(att) else ""}" } +
-                    autres.map { e -> ";${nomTiers(e, d.membres, tiers).ifBlank { e.libelle }};${montantSaisie(e.montant)};" }).joinToString("\r\n")
+                val statut = { v: Double -> if (att > 0) (if (v >= att) "Réglé" else if (v > 0) "Partiel" else "À régler") else if (v > 0) "Donné" else "" }
+                val csv = "﻿" + (listOf("Prénom;Nom;Donné;Attendu;Statut") + lignes.map { (m, v) -> "${m.prenom};${m.nom};${montantSaisie(v)};${if (att > 0) montantSaisie(att) else ""};${statut(v)}" } +
+                    autres.map { e -> ";${nomTiers(e, d.membres, tiers).ifBlank { e.libelle }};${montantSaisie(e.montant)};;Autre contribution" }).joinToString("\r\n")
                 enregistrer("participations-${sansAccentsCode(c.nom)}.csv", "text/csv", csv.encodeToByteArray())
             }) { Text("Exporter") }
             if (d.peut("gerer_activites", "gerer_cotisations")) {
@@ -703,7 +708,7 @@ object PreferencesPlanning { var vue = "calendrier"; var affichage = "mois" }
 // Un appui sur un jour ouvre le détail du jour.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EcranPlanning(d: Donnees, message: (String) -> Unit) {
+fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)? = null) {
     var vue by remember { mutableStateOf(PreferencesPlanning.vue.takeIf { it in listOf("calendrier", "avenir") } ?: "calendrier") }
     var affichage by remember { mutableStateOf(PreferencesPlanning.affichage.takeIf { it in listOf("mois", "semaine") } ?: "mois") }
     var ref by remember { mutableStateOf(aujourdhui()) }
@@ -826,7 +831,7 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit) {
                 Text(jourLong(s).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 val l = parJour[s].orEmpty()
                 if (l.isEmpty()) Text("Rien de prévu", color = Couleurs.Texte2)
-                l.forEach { e -> CarteEvenement(e) { jour = null; detail = e } }
+                l.forEach { e -> CarteEvenement(e, jourDetail = true) { jour = null; detail = e } }
                 annivDe(s).forEach { PuceAnniversaire(it) }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     if (gere) FilledTonalButton(onClick = { jour = null; nouveau = s }) { Text("Ajouter un rendez-vous") }
@@ -837,7 +842,7 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit) {
     }
     detail?.let { e ->
         ModalBottomSheet(onDismissRequest = { detail = null }) {
-            DetailEvenement(d, e, message, onChange = { version++ }, onFermer = { detail = null })
+            DetailEvenement(d, e, message, onChange = { version++ }, onFermer = { detail = null }, onBudget = onBudget)
         }
     }
     nouveau?.let { s ->
@@ -891,15 +896,21 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, par
                         val s = j.toString()
                         val e = parJour[s].orEmpty(); val a = annivDe(s)
                         val hors = j.monthNumber != ref.monthNumber
-                        Column(Modifier.weight(1f).height(62.dp).clip(RoundedCornerShape(12.dp))
+                        Column(Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(12.dp))
                             .background(Couleurs.Fond.copy(alpha = if (hors) 0.5f else 1f))
                             .clickable { onJour(s) }.padding(3.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Box(Modifier.size(22.dp).background(if (s == auj) Couleurs.Orange else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
                                 Text(j.dayOfMonth.toString(), fontSize = 12.sp, fontWeight = FontWeight.Bold,
                                     color = if (s == auj) Color.White else if (hors) Color(0xFFB0A9A6) else Couleurs.Texte)
                             }
-                            e.take(3).forEach { ev -> Box(Modifier.fillMaxWidth().height(5.dp).background(Couleurs.Bleu, RoundedCornerShape(3.dp))) }
-                            if (a.isNotEmpty()) Box(Modifier.fillMaxWidth().height(5.dp).background(Couleurs.Jaune, RoundedCornerShape(3.dp)))
+                            // Comme le site : nom des rendez-vous (3 au plus, avec l'heure), « +N », prénoms des anniversaires
+                            e.take(3).forEach { ev ->
+                                Text((ev.heureDebut?.let { it.take(5) + " " } ?: "") + ev.nom, fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    color = Color.White, modifier = Modifier.fillMaxWidth().background(Couleurs.Bleu, RoundedCornerShape(4.dp)).padding(horizontal = 2.dp))
+                            }
+                            if (e.size > 3) Text("+${e.size - 3}", fontSize = 9.sp, lineHeight = 10.sp, color = Couleurs.Texte2)
+                            if (a.isNotEmpty()) Text(a.joinToString(", ") { it.prenom }, fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = Couleurs.SurJaune, modifier = Modifier.fillMaxWidth().background(Couleurs.JauneClair, RoundedCornerShape(4.dp)).padding(horizontal = 2.dp))
                         }
                     }
                 }
@@ -911,7 +922,7 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, par
 }
 
 @Composable
-private fun CarteEvenement(e: Projet, onClick: () -> Unit) {
+private fun CarteEvenement(e: Projet, jourDetail: Boolean = false, onClick: () -> Unit) {
     val (fond, texte) = Couleurs.BleuClair to Couleurs.SurBleuClair
     Surface(onClick = onClick, color = fond, contentColor = texte, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -920,7 +931,9 @@ private fun CarteEvenement(e: Projet, onClick: () -> Unit) {
                 val l = listOfNotNull(if (e.heureDebut != null) heureFr(e.heureDebut) + (e.heureFin?.let { " – " + heureFr(it) } ?: "") else "Journée", e.lieu)
                 Text(l.joinToString(" · "), fontSize = 13.sp)
             }
-            e.participation?.let { Puce("Participation ${euros(it)}", Couleurs.JauneClair, Couleurs.SurJaune) }
+            // Comme le site : dans le détail du jour, l'activité suivie au budget est signalée ; ailleurs, la participation
+            if (jourDetail) { if (e.type == "activite") Puce("Budget suivi", Color(0xFFEFEDEC), Couleurs.Texte2) }
+            else e.participation?.let { Puce("Participation ${euros(it)}", Couleurs.JauneClair, Couleurs.SurJaune) }
         }
     }
 }
@@ -929,14 +942,16 @@ private fun CarteEvenement(e: Projet, onClick: () -> Unit) {
 private fun PuceAnniversaire(a: Anniversaire) = Puce("Anniversaire de ${a.prenom} ${a.nom}", Couleurs.JauneClair, Couleurs.SurJaune)
 
 @Composable
-fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: () -> Unit, onFermer: () -> Unit) {
+fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: () -> Unit, onFermer: () -> Unit, onBudget: (() -> Unit)? = null) {
     var collecte by remember { mutableStateOf<Collecte?>(null) }
     var maPart by remember { mutableStateOf<Participation?>(null) }
     var projets by remember { mutableStateOf<List<Projet>>(emptyList()) }
     var modifier by remember { mutableStateOf<Projet?>(null) }
     var demander by remember { mutableStateOf(false) }
     var voir by remember { mutableStateOf(false) }
+    var modifierCollecte by remember { mutableStateOf(false) }
     val finances = d.peut("consulter_finances", "gerer_cotisations", "gerer_activites")
+    val budgetSuivi = e.type == "activite" && d.peut("consulter_finances", "gerer_budget")
     LaunchedEffect(e.id) {
         try {
             if (e.collecteId != null) {
@@ -950,7 +965,7 @@ fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: 
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             Text(e.nom, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (e.type == "evenement") Puce("Événement", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("Activité", Couleurs.OrangeClair, Couleurs.SurOrangeClair)
+            if (budgetSuivi) Box(Modifier.clip(RoundedCornerShape(50)).clickable(enabled = onBudget != null) { onFermer(); onBudget?.invoke() }) { Puce("Budget suivi", Color(0xFFEFEDEC), Couleurs.Texte2) }
         }
         LigneInfo("Date", e.debut?.let { jourLong(it) + if (e.fin != null && e.fin != e.debut) " au " + jourLong(e.fin) else "" } ?: "Date à fixer")
         LigneInfo("Heure", e.heureDebut?.let { heureFr(it) + (e.heureFin?.let { f -> " – " + heureFr(f) } ?: "") })
@@ -970,6 +985,7 @@ fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: 
         }
         FlowRowActions {
             if (collecte != null && d.peut("consulter_finances", "gerer_cotisations")) TextButton(onClick = { voir = true }) { Text("Voir les participations") }
+            if (budgetSuivi && onBudget != null) TextButton(onClick = { onFermer(); onBudget() }) { Text("Voir le budget") }
             if (e.collecteId == null && d.peut("gerer_activites")) TextButton(onClick = { demander = true }) { Text("Demander une participation") }
             if (d.peut("gerer_activites")) FilledTonalButton(onClick = { modifier = projets.firstOrNull { it.id == e.id } ?: e }) { Text("Modifier") }
             Button(onClick = onFermer) { Text("Fermer") }
@@ -977,7 +993,8 @@ fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: 
     }
     modifier?.let { p -> FormulaireActivite(p, onFini = { ok -> modifier = null; if (ok) { message("Modifications enregistrées"); onChange(); onFermer() } }, message) }
     if (demander) Dialogue({ demander = false }) { FormulaireCollecte(d, null, e.id, projets.ifEmpty { listOf(e) }, message) { ok -> demander = false; if (ok) { onChange(); onFermer() } } }
-    if (voir) collecte?.let { c -> Dialogue({ voir = false }) { DetailCollecte(d, c, projets, message, onModifier = { }, onChange = onChange, onFermer = { voir = false }) } }
+    if (voir) collecte?.let { c -> Dialogue({ voir = false }) { DetailCollecte(d, c, projets, message, onModifier = { voir = false; modifierCollecte = true }, onChange = onChange, onFermer = { voir = false }) } }
+    if (modifierCollecte) collecte?.let { c -> Dialogue({ modifierCollecte = false }) { FormulaireCollecte(d, c, e.id, projets.ifEmpty { listOf(e) }, message) { ok -> modifierCollecte = false; if (ok) { onChange(); onFermer() } } } }
 }
 
 // Fenêtre plein écran simple pour empiler un formulaire au-dessus d'une feuille
@@ -991,7 +1008,7 @@ private fun Dialogue(onFermer: () -> Unit, content: @Composable () -> Unit) {
 // =====================================================================
 // Tiers : membres et autres tiers, ce que chacun a donné ou reçu
 // =====================================================================
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EcranTiers(d: Donnees, message: (String) -> Unit) {
     var tiers by remember { mutableStateOf<List<Tiers>>(emptyList()) }
@@ -1004,8 +1021,13 @@ fun EcranTiers(d: Donnees, message: (String) -> Unit) {
     var annee by remember { mutableStateOf<Int?>(an) }
     var fiche by remember { mutableStateOf<Pair<Membre?, Tiers?>?>(null) }
     var edition by remember { mutableStateOf<Pair<Boolean, Tiers?>?>(null) }
+    var cotisMembre by remember { mutableStateOf<Membre?>(null) }
+    var encaisser by remember { mutableStateOf<PreEcriture?>(null) }
+    var pas by remember { mutableStateOf(1) }
+    val enregistrerCsv = rememberEnregistrer { it?.let(message) }
     LaunchedEffect(version) {
-        try { tiers = Repo.tiers(); operations = Repo.toutesEcritures(); collectes = try { Repo.collectes() } catch (_: Exception) { emptyList() } }
+        try { tiers = Repo.tiers(); operations = Repo.toutesEcritures(); collectes = try { Repo.collectes() } catch (_: Exception) { emptyList() }
+            pas = try { (Repo.reglages()["cotisation_periode_mois"] ?: 1.0).toInt() } catch (_: Exception) { 1 } }
         catch (e: Exception) { message(traduireErreur(e)) }
     }
     val ops = (operations ?: emptyList()).filter { annee == null || it.date.startsWith(annee.toString()) }
@@ -1062,8 +1084,27 @@ fun EcranTiers(d: Donnees, message: (String) -> Unit) {
                 Text("Opérations", fontWeight = FontWeight.Bold, color = Couleurs.Texte2, modifier = Modifier.padding(top = 8.dp))
                 if (liste.isEmpty()) Text("Aucune opération", color = Couleurs.Texte2)
                 liste.forEach { e -> LigneSimple(e.libelle, dateFr(e.date) + nomRubrique(e, collectes).let { if (it.isBlank()) "" else " · $it" }, e.signe) }
-                if (t != null && d.peut("saisir_ecritures", "gerer_cotisations")) TextButton(onClick = { fiche = null; edition = false to t }, modifier = Modifier.align(Alignment.End)) { Text("Modifier") }
+                // Mêmes boutons que la fiche du site : Exporter, Modifier (tiers), Cotisation (membre)
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    Button(onClick = {
+                        val nom = sansAccentsCode(m?.nomComplet ?: t?.nom ?: "tiers").replace("_", "-")
+                        enregistrerCsv("tiers-$nom.csv", "text/csv", csv(listOf("Date", "Libellé", "Rubrique", "Catégorie", "Montant"),
+                            liste.map { listOf(dateFr(it.date), it.libelle, nomRubrique(it, collectes), d.nomCategorie(it.categorieId), it.signe) }).encodeToByteArray())
+                    }, colors = ButtonDefaults.buttonColors(containerColor = Couleurs.Bleu)) { Text("Exporter") }
+                    if (t != null && d.peut("saisir_ecritures", "gerer_cotisations")) TextButton(onClick = { fiche = null; edition = false to t }) { Text("Modifier") }
+                    if (m != null && d.peut("gerer_cotisations")) TextButton(onClick = { fiche = null; cotisMembre = m }) { Text("Cotisation") }
+                }
             }
+        }
+    }
+    cotisMembre?.let { m ->
+        ModalBottomSheet(onDismissRequest = { cotisMembre = null }) {
+            FicheCotisation(d, m, an, pas, message, onEncaisser = { pre -> cotisMembre = null; encaisser = pre }, onChange = { version++ })
+        }
+    }
+    encaisser?.let { pre ->
+        ModalBottomSheet(onDismissRequest = { encaisser = null }) {
+            FormulaireEcriture(d, pre, onFini = { ok -> encaisser = null; if (ok) { message("Encaissement enregistré"); version++ } }, message)
         }
     }
     edition?.let { (_, t) ->
@@ -1123,6 +1164,7 @@ fun ListeParticipations(parts: List<Participation>) {
                 att > 0 && p.donne > 0 -> Puce("Reste ${euros(att - p.donne)}", Couleurs.JauneClair, Couleurs.SurJaune)
                 att > 0 -> Puce("${euros(att)} attendus", Couleurs.ErreurClair, Color(0xFF410002))
                 p.donne > 0 -> Puce("Merci", Couleurs.BleuClair, Couleurs.SurBleuClair)
+                else -> Puce("Libre", Color(0xFFEFEDEC), Couleurs.Texte2)
             }
         }
     }

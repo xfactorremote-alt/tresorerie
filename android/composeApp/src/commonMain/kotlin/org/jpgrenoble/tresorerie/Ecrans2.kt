@@ -101,7 +101,7 @@ private fun Etapes(d: Demande) {
 }
 
 // ---------- Dépenses ----------
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
     var liste by remember { mutableStateOf<List<Demande>?>(null) }
@@ -117,6 +117,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
     var aPayer by remember { mutableStateOf<Demande?>(null) }
     var aJustifier by remember { mutableStateOf<Demande?>(null) }
     var aRegulariser by remember { mutableStateOf<Demande?>(null) }
+    var aAnnuler by remember { mutableStateOf<Demande?>(null) }
     var voirOperation by remember { mutableStateOf<Ecriture?>(null) }
     var ecritures by remember { mutableStateOf<List<Ecriture>>(emptyList()) }
     var projetsTous by remember { mutableStateOf<List<Projet>>(emptyList()) }
@@ -155,6 +156,24 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
         aJustifier = null
     }
 
+    // Mêmes actions sur la carte et dans le détail (comme la carte du site)
+    @Composable
+    fun ActionsDemande(x: Demande, apres: () -> Unit = {}) {
+        val annul = etats.annulation(x); val op = etats.operation(x); val regul = etats.aRegulariser(x)
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+            if (d.peut("valider_depenses") && x.statut == "soumise") {
+                TextButton(onClick = { apres(); aRefuser = x }) { Text("Refuser") }
+                Button(onClick = { apres(); aValider = x }) { Text("Valider et signer") }
+            }
+            if (op != null && d.peut("consulter_finances", "saisir_ecritures")) TextButton(onClick = { apres(); voirOperation = op }) { Text("Voir l’opération") }
+            if (regul && d.peut("saisir_ecritures") && op?.rapproche == false) Button(onClick = { apres(); aRegulariser = x }) { Text("Régulariser") }
+            if (d.peut("payer_depenses") && x.statut == "validee" && x.valideePar != d.profil.id) Button(onClick = { apres(); aPayer = x }) { Text("Payer") }
+            if (x.statut == "payee" && annul == null && (d.peut("saisir_ecritures", "payer_depenses") || x.demandeur == d.profil.id))
+                FilledTonalButton(onClick = { apres(); aJustifier = x; choixPiece() }) { Text("Joindre le justificatif") }
+            if (x.statut == "soumise" && x.demandeur == d.profil.id) TextButton(onClick = { apres(); aAnnuler = x }) { Text("Annuler la demande") }
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Titre("Demandes de dépense") }
@@ -171,7 +190,12 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
             if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             else {
                 val vus = l.filter { garde(it) }
-                if (vus.isEmpty()) item { Text("Aucune demande.", color = Couleurs.Texte2) }
+                if (vus.isEmpty()) item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Aucune demande" + (if (filtre == "toutes") "" else " " + (filtres.firstOrNull { it.first == filtre }?.second ?: "").lowercase()) + ".", color = Couleurs.Texte2)
+                        if (d.peut("demander_depenses") && filtre == "toutes") Button(onClick = { nouvelle = true }) { Text("Nouvelle demande") }
+                    }
+                }
                 items(vus, key = { it.id }) { x ->
                     val annul = etats.annulation(x); val op = etats.operation(x); val regul = etats.aRegulariser(x)
                     val (fond, couleur) = when { annul != null -> couleursStatut("annulee"); regul -> couleursStatut("refusee"); else -> couleursStatut(x.statut) }
@@ -181,10 +205,11 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                         Row(verticalAlignment = Alignment.Top) {
                             Column(Modifier.weight(1f)) {
                                 Text(x.objet, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                                if (x.regularisation) Text("Déjà payée, validation après coup", fontSize = 12.sp, color = Couleurs.Texte2)
+                                if (x.regularisation) Puce("Déjà payée", Color(0xFFEFEDEC), Couleurs.Texte2)
                                 Text(listOfNotNull(
                                     if (x.demandeur == d.profil.id) "Vous" else noms[x.demandeur] ?: "Membre du bureau",
-                                    dateFr(x.creeLe), d.categories.firstOrNull { it.id == x.categorieId }?.nom,
+                                    dateFr(x.creeLe), d.nomCategorie(x.categorieId).ifEmpty { null },
+                                    x.projetId?.let { pid -> projetsTous.firstOrNull { it.id == pid }?.nom },
                                 ).joinToString(" · "), fontSize = 13.sp, color = Couleurs.Texte2)
                             }
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -210,26 +235,14 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                                 Modifier.padding(12.dp), fontSize = 14.sp)
                         }
                         if (retard) Surface(color = Couleurs.ErreurClair, shape = RoundedCornerShape(14.dp)) {
-                            Text("Justificatif en retard, délai de $delai$NBSP" + "jours dépassé", Modifier.padding(12.dp), fontSize = 14.sp)
+                            Text("Justificatif en retard$NBSP: payé il y a ${aujourdhui().toEpochDays() - LocalDate.parse(x.payeeLe!!.take(10)).toEpochDays()}$NBSP" + "jours, délai de $delai$NBSP" + "jours.", Modifier.padding(12.dp), fontSize = 14.sp)
                         }
-                        x.motifRefus?.let { Text("Motif du refus$NBSP: $it", fontSize = 14.sp, color = Couleurs.Texte2) }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                            if (d.peut("valider_depenses") && x.statut == "soumise") {
-                                TextButton(onClick = { aRefuser = x }) { Text("Refuser") }
-                                Button(onClick = { aValider = x }) { Text("Valider et signer") }
-                            }
-                            if (op != null && d.peut("consulter_finances", "saisir_ecritures")) TextButton(onClick = { voirOperation = op }) { Text("Voir l’opération") }
-                            if (regul && d.peut("saisir_ecritures") && op?.rapproche == false) Button(onClick = { aRegulariser = x }) { Text("Régulariser") }
-                            if (d.peut("payer_depenses") && x.statut == "validee" && x.valideePar != d.profil.id) Button(onClick = { aPayer = x }) { Text("Payer") }
-                            if (x.statut == "payee" && annul == null && (d.peut("saisir_ecritures", "payer_depenses") || x.demandeur == d.profil.id))
-                                FilledTonalButton(onClick = { aJustifier = x; choixPiece() }) { Text("Joindre le justificatif") }
-                            if (x.statut == "soumise" && x.demandeur == d.profil.id)
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        try { Repo.annulerDemande(x.id); message("Demande annulée"); version++ } catch (e: Exception) { message(traduireErreur(e)) }
-                                    }
-                                }) { Text("Annuler la demande") }
-                        }
+                        if (x.statut == "refusee") x.motifRefus?.let { Text("Motif du refus$NBSP: $it", fontSize = 14.sp, color = Couleurs.Texte2) }
+                        val dates = listOfNotNull(x.valideeLe?.let { "Validée le " + dateFr(it.take(10)) }, x.payeeLe?.let { "Payée le " + dateFr(it.take(10)) })
+                        val nbPieces = pieces.count { it.demandeId == x.id } + (if (x.signature != null) 1 else 0)
+                        if (dates.isNotEmpty() || nbPieces > 0) Text((dates + listOfNotNull(if (nbPieces > 0) "$nbPieces document${if (nbPieces > 1) "s" else ""} (signature, justificatif, devis) : touchez pour voir" else null)).joinToString(" · "),
+                            fontSize = 13.sp, color = Couleurs.Texte2)
+                        ActionsDemande(x)
                     }
                 }
             }
@@ -257,18 +270,20 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                 LigneInfo("Statut", STATUTS[x.statut])
                 LigneInfo("Demandeur", if (x.demandeur == d.profil.id) "Vous" else noms[x.demandeur])
                 LigneInfo("Demandée le", dateFr(x.creeLe))
-                LigneInfo("Catégorie", d.categories.firstOrNull { it.id == x.categorieId }?.nom)
+                LigneInfo("Catégorie", d.nomCategorie(x.categorieId))
+                LigneInfo("Activité", x.projetId?.let { pid -> projetsTous.firstOrNull { it.id == pid }?.nom })
                 LigneInfo("Validée par", x.valideePar?.let { if (it == d.profil.id) "Vous" else noms[it] })
                 LigneInfo("Validée le", x.valideeLe?.let(::dateFr))
                 LigneInfo("Payée le", x.payeeLe?.let(::dateFr))
-                LigneInfo("Motif du refus", x.motifRefus)
+                if (x.statut == "refusee") LigneInfo("Motif du refus", x.motifRefus)
                 LigneInfo("Justification", x.justification)
                 LigneInfo("Pour le", x.dateSouhaitee?.let(::dateFr))
                 Spacer(Modifier.height(8.dp))
                 PiecesVue(pieces.filter { it.demandeId == x.id && it.nature != "devis" }, x.signature)
                 devisDe(x)?.let { dv -> Text("Devis", fontWeight = FontWeight.Bold); PiecesVue(listOf(dv), null) }
-                if (x.statut == "payee" && etats.annulation(x) == null && (d.peut("saisir_ecritures", "payer_depenses") || x.demandeur == d.profil.id))
-                    FilledTonalButton(onClick = { aJustifier = x; detail = null; choixPiece() }, modifier = Modifier.align(Alignment.End)) { Text("Joindre le justificatif") }
+                etats.annulation(x)?.let { annul -> Text("Opération annulée le ${dateFr(annul.date)}" + motifDe(annul.libelle).let { m -> if (m.isNotEmpty()) " ($m)" else "" } + ".", fontSize = 14.sp, color = Couleurs.SurBleuClair) }
+                if (etats.aRegulariser(x)) Text("Refusée après paiement$NBSP: à régulariser.", fontSize = 14.sp, color = Couleurs.Erreur)
+                ActionsDemande(x) { detail = null }
             }
         }
     }
@@ -303,6 +318,8 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
         var mode by remember { mutableStateOf("especes") }
         var enCours by remember { mutableStateOf(false) }
         var compte by remember(mode) { mutableStateOf(d.comptes.firstOrNull { it.type == if (mode == "especes") "caisse" else "banque" } ?: d.comptes.firstOrNull()) }
+        var date by remember { mutableStateOf(dateFr(aujourdhui().toString())) }
+        val dt = dateDepuisFr(date)
         AlertDialog(
             onDismissRequest = { aPayer = null },
             title = { Text("Payer cette dépense") },
@@ -315,19 +332,36 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                         }
                     }
                     ChoixListe("Compte", compte?.nom ?: "", d.comptes.map { it.nom }) { compte = d.comptes[it] }
+                    OutlinedTextField(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.fillMaxWidth())
                 }
             },
             confirmButton = {
-                Button(enabled = !enCours && compte != null, onClick = {
+                Button(enabled = !enCours && compte != null && dt != null, onClick = {
                     enCours = true
                     scope.launch {
-                        try { Repo.payerDemande(x.id, compte!!.id, mode, aujourdhui().toString()); message("Paiement enregistré"); version++ }
+                        try { Repo.payerDemande(x.id, compte!!.id, mode, dt.toString()); message("Paiement enregistré"); version++ }
                         catch (e: Exception) { message(traduireErreur(e)) }
                         aPayer = null
                     }
                 }) { Text("Enregistrer le paiement") }
             },
             dismissButton = { TextButton(onClick = { aPayer = null }) { Text("Annuler") } },
+        )
+    }
+    aAnnuler?.let { x ->
+        AlertDialog(
+            onDismissRequest = { aAnnuler = null },
+            title = { Text("Annuler cette demande$NBSP?") },
+            text = { Text("«$NBSP${x.objet}$NBSP», ${euros(x.montant)}") },
+            confirmButton = {
+                Button(colors = ButtonDefaults.buttonColors(containerColor = Couleurs.Erreur), onClick = {
+                    scope.launch {
+                        try { Repo.annulerDemande(x.id); message("Demande annulée"); version++ } catch (e: Exception) { message(traduireErreur(e)) }
+                        aAnnuler = null
+                    }
+                }) { Text("Annuler la demande") }
+            },
+            dismissButton = { TextButton(onClick = { aAnnuler = null }) { Text("Garder") } },
         )
     }
     aRegulariser?.let { x ->
@@ -533,10 +567,14 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
     var version by remember { mutableStateOf(0) }
     var enCours by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val fin = aujourdhui().toString()
+    // Période modifiable comme sur le site : début = lendemain du dernier rapprochement, fin = aujourd'hui
+    var debutSaisi by remember(compte) { mutableStateOf<String?>(null) }
+    var finSaisie by remember(compte) { mutableStateOf(dateFr(aujourdhui().toString())) }
+    val fin = dateDepuisFr(finSaisie)?.toString() ?: aujourdhui().toString()
     val choix = rememberChoixFichier { f, err -> if (err != null) message(err); if (f != null) releve = f }
+    val ouvrirReleve = rememberOuvrirFichier()
 
-    LaunchedEffect(compte, version) {
+    LaunchedEffect(compte, version, fin) {
         val c = compte ?: return@LaunchedEffect
         try {
             historique = Repo.rapprochements()
@@ -546,7 +584,8 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
     val dernier = historique.firstOrNull { it.compteId == compte?.id && it.statut == "termine" }
-    val debut = dernier?.fin?.let { LocalDate.parse(it).plus(DatePeriod(days = 1)).toString() } ?: "${aujourdhui().year}-01-01"
+    val debutDefaut = dernier?.fin?.let { LocalDate.parse(it).plus(DatePeriod(days = 1)).toString() } ?: "${aujourdhui().year}-01-01"
+    val debut = debutSaisi?.let { dateDepuisFr(it)?.toString() } ?: debutDefaut
     val total = pointe + (ecritures ?: emptyList()).filter { it.id in coches }.sumOf { it.signe }
     val releveValeur = solde.replace(',', '.').toDoubleOrNull()
     val ecart = releveValeur?.let { kotlin.math.round((it - total) * 100) / 100 }
@@ -563,24 +602,29 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
             item {
                 CarteBlanche {
                     ChoixListe("Compte", compte?.nom ?: "", d.comptes.map { it.nom }) { compte = d.comptes[it]; solde = ""; releve = null }
-                    Text("Période du ${dateFr(debut)} au ${dateFr(fin)}", fontSize = 13.sp, color = Couleurs.Texte2)
-                    OutlinedTextField(solde, { solde = it }, label = { Text("Solde du relevé au ${dateFr(fin)}") }, suffix = { Text("€") }, singleLine = true,
+                    OutlinedTextField(solde, { solde = it }, label = { Text("Solde du relevé à la fin (€) *") }, suffix = { Text("€") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val ds = debutSaisi ?: dateFr(debutDefaut)
+                        OutlinedTextField(ds, { debutSaisi = it }, label = { Text("Début") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(ds) == null, modifier = Modifier.weight(1f))
+                        OutlinedTextField(finSaisie, { finSaisie = it }, label = { Text("Fin") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(finSaisie) == null, modifier = Modifier.weight(1f))
+                    }
+                    Text(if (compte?.type == "caisse") "Procès-verbal de comptage *" else "Relevé de la période *", fontSize = 13.sp, color = Couleurs.Texte2)
                     OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth()) {
-                        Text(releve?.let { "Relevé joint (${it.ko}$NBSP" + "Ko)" } ?: if (compte?.type == "caisse") "Joindre le procès-verbal de comptage" else "Joindre le relevé")
+                        Text(releve?.let { it.nom ?: "Fichier joint (${it.ko}$NBSP" + "Ko)" } ?: if (compte?.type == "caisse") "Joindre le procès-verbal de comptage" else "Joindre le relevé")
                     }
                 }
             }
             item { Text("Écritures à pointer", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
             val l = ecritures
             if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            else if (l.isEmpty()) item { Text("Toutes les écritures sont rapprochées.", color = Couleurs.Texte2) }
+            else if (l.isEmpty()) item { Text("Tout est rapproché.", color = Couleurs.Texte2) }
             else items(l, key = { it.id }) { e ->
                 Row(Modifier.fillMaxWidth().clickable { if (e.id in coches) coches.remove(e.id) else coches.add(e.id) }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(e.id in coches, { if (it) coches.add(e.id) else coches.remove(e.id) })
                     Column(Modifier.weight(1f)) {
                         Text(e.libelle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(dateFr(e.date), fontSize = 13.sp, color = Couleurs.Texte2)
+                        Text(dateFr(e.date) + if (e.date < debut) " · période précédente" else "", fontSize = 13.sp, color = Couleurs.Texte2)
                     }
                     val v = e.signe
                     Text((if (v >= 0) "+ " else "− ") + euros(kotlin.math.abs(v)), color = if (v >= 0) Couleurs.Bleu else Couleurs.Orange)
@@ -588,6 +632,12 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp), modifier = Modifier.weight(1f)) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Relevé", fontSize = 13.sp, color = Couleurs.Texte2)
+                            Text(releveValeur?.let { euros(it) } ?: "–", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, maxLines = 1)
+                        }
+                    }
                     Chiffre("Pointé", total, "", Couleurs.Texte, Modifier.weight(1f))
                     Surface(color = if (ecart == 0.0) Couleurs.BleuClair else Couleurs.JauneClair, shape = RoundedCornerShape(24.dp), modifier = Modifier.weight(1f)) {
                         Column(Modifier.padding(16.dp)) {
@@ -606,12 +656,12 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
                 }, fontSize = 13.sp, color = Couleurs.Texte2)
             }
             item {
-                Button(enabled = !enCours && releve != null && ecart == 0.0, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), onClick = {
+                Button(enabled = !enCours && releve != null && ecart == 0.0 && dateDepuisFr(finSaisie) != null && debut <= fin, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), onClick = {
                     val c = compte ?: return@Button
                     enCours = true
                     scope.launch {
                         try {
-                            Repo.terminerRapprochement(c.id, debut, fin, releveValeur!!, releve!!, "releve-${c.type}-$fin.${releve!!.extension}", coches.toList())
+                            Repo.terminerRapprochement(c.id, debut, fin, releveValeur!!, releve!!, releve!!.nom ?: "releve-${c.type}-$fin.${releve!!.extension}", coches.toList())
                             message("Rapprochement terminé, période verrouillée"); solde = ""; releve = null; version++
                         } catch (e: Exception) { message(traduireErreur(e)) }
                         enCours = false
@@ -622,12 +672,22 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
         item { Text("Historique", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
         if (historique.isEmpty()) item { Text("Aucun rapprochement terminé.", color = Couleurs.Texte2) }
         items(historique, key = { it.id }) { r ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(d.comptes.firstOrNull { it.id == r.compteId }?.nom ?: "", fontWeight = FontWeight.SemiBold)
                     Text("${dateFr(r.debut)} au ${dateFr(r.fin)}", fontSize = 13.sp, color = Couleurs.Texte2)
+                    if (r.termineLe != null) Text("Terminé le ${dateFr(r.termineLe.take(10))}", fontSize = 12.sp, color = Couleurs.Texte2)
+                    else Puce("En cours", Couleurs.JauneClair, Couleurs.SurJaune)
                 }
-                Text(euros(r.soldeReleve))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(euros(r.soldeReleve))
+                    if (r.releve != null) TextButton(onClick = {
+                        scope.launch {
+                            try { Repo.telecharger("releves", r.releve)?.let { o -> ouvrirReleve(r.releve.substringAfterLast('/'), if (r.releve.endsWith(".pdf")) "application/pdf" else "image/jpeg", o) } ?: message("Fichier indisponible") }
+                            catch (e: Exception) { message(traduireErreur(e)) }
+                        }
+                    }) { Text("Voir") }
+                }
             }
         }
     }

@@ -259,7 +259,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
     }
     Scaffold(
         // Accueil : pas de barre du haut, la bannière porte déjà le logo, le nom et la roue dentée
-        topBar = { if (adherentSeul || onglet != Onglet.Accueil) BarreHaut(d, retour, sousEcran == "parametres") { if (!adherentSeul) onglet = Onglet.Plus; sousEcran = "parametres" } },
+        topBar = { if (if (adherentSeul) (vueAdherent != 0 || sousEcran != null) else onglet != Onglet.Accueil) BarreHaut(d, retour, sousEcran == "parametres") { if (!adherentSeul) onglet = Onglet.Plus; sousEcran = "parametres" } },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (adherentSeul) NavigationBar {
@@ -288,7 +288,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
         Box(Modifier.padding(marges).consumeWindowInsets(marges).fillMaxSize()) {
             if (adherentSeul) {
                 if (sousEcran == "parametres") EcranParametres(d, message, recharger)
-                else if (vueAdherent == 1) EcranPlanning(d, message) else EcranAdherent(d) { vueAdherent = 1 }
+                else if (vueAdherent == 1) EcranPlanning(d, message) else EcranAdherent(d, message, onReglages = { sousEcran = "parametres" }) { vueAdherent = 1 }
             }
             else when (onglet) {
                 Onglet.Accueil -> EcranAccueil(d, onAller = { cible ->
@@ -305,13 +305,13 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
                 Onglet.Plus -> when (sousEcran) {
                     "membres" -> EcranMembres(d, message, recharger)
                     "budget" -> EcranBudget(d, message)
-                    "activites" -> EcranPlanning(d, message)
+                    "activites" -> EcranPlanning(d, message, onBudget = if (d.peut("consulter_finances", "gerer_budget")) ({ sousEcran = "budget" }) else null)
                     "tiers" -> EcranTiers(d, message)
                     "rapprochement" -> EcranRapprochement(d, message)
                     "materiel" -> EcranMateriel(d, message)
                     "rapports" -> EcranRapports(d, message)
                     "parametres" -> EcranParametres(d, message, recharger)
-                    "moi" -> EcranAdherent(d)
+                    "moi" -> EcranAdherent(d, message)
                     else -> EcranPlus(d) { sousEcran = it }
                 }
             }
