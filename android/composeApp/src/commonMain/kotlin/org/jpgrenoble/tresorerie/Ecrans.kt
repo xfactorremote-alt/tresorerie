@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PictureAsPdf
@@ -81,14 +82,20 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
             if (d.peut("consulter_finances", "gerer_budget")) alertes = Repo.budget(aujourdhui().year).filter { it.alerte }
         } catch (e: Exception) { erreur = traduireErreur(e) }
     }
+    // Paiement neutralisé par contre-passation : plus de justificatif attendu ; refus après paiement : à régulariser
+    val etats = remember(demandes, operations) { EtatsDemandes(demandes, operations) }
+    val retardsActifs = retards.filter { it.id !in etats.annulees }
+    val aRegul = demandes.filter { etats.aRegulariser(it) }
     val aValider = demandes.filter { it.statut == "soumise" }
     val aPayer = demandes.filter { it.statut == "validee" && it.valideePar != d.profil.id }
-    val aJustifier = demandes.filter { it.statut == "payee" && (d.peut("saisir_ecritures", "payer_depenses") || it.demandeur == d.profil.id) }
+    val aJustifier = demandes.filter { it.statut == "payee" && it.id !in etats.annulees && (d.peut("saisir_ecritures", "payer_depenses") || it.demandeur == d.profil.id) }
     fun s(n: Int) = if (n > 1) "s" else ""
     // (titre, détail, destination, alerte)
     val taches = buildList {
-        if (retards.isNotEmpty()) add(listOf("${retards.size} justificatif${s(retards.size)} en retard",
-            retards.joinToString(", ") { "${it.objet} (${euros(it.montant)}, ${it.jours}$NBSP" + "jours)" }, "depenses", "alerte"))
+        if (d.peut("saisir_ecritures") && aRegul.isNotEmpty()) add(listOf("${aRegul.size} dépense${s(aRegul.size)} refusée${s(aRegul.size)} après paiement",
+            "À régulariser$NBSP: ${euros(aRegul.sumOf { it.montant })}", "depenses", "alerte"))
+        if (retardsActifs.isNotEmpty()) add(listOf("${retardsActifs.size} justificatif${s(retardsActifs.size)} en retard",
+            retardsActifs.joinToString(", ") { "${it.objet} (${euros(it.montant)}, ${it.jours}$NBSP" + "jours)" }, "depenses", "alerte"))
         if (d.peut("valider_depenses") && aValider.isNotEmpty()) add(listOf("${aValider.size} demande${s(aValider.size)} à valider", euros(aValider.sumOf { it.montant }), "depenses", ""))
         if (d.peut("payer_depenses") && aPayer.isNotEmpty()) add(listOf("${aPayer.size} demande${s(aPayer.size)} à payer", euros(aPayer.sumOf { it.montant }), "depenses", ""))
         if (aJustifier.isNotEmpty()) add(listOf("${aJustifier.size} justificatif${s(aJustifier.size)} à joindre", euros(aJustifier.sumOf { it.montant }), "depenses", ""))
@@ -99,16 +106,18 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     val serie = remember(operations, comptesTous) { serieMensuelle(operations, comptesTous, debut12, jour) }
     val ytd = operations.filter { it.date >= "$an-01-01" && it.date <= jour }
     val n1 = operations.filter { it.date >= "${an - 1}-01-01" && it.date <= "${an - 1}${jour.drop(4)}" }
-    fun flux(l: List<Ecriture>, sens: String) = l.filter { it.sens == sens }.sumOf { it.montant }
+    fun flux(l: List<Ecriture>, sens: String) = l.filter { it.sens == sens && it.estFlux }.sumOf { it.montant }
     val rec = flux(ytd, "recette"); val dep = flux(ytd, "depense"); val resultat = rec - dep
     val total = soldes?.sumOf { it.solde } ?: 0.0
     val reserve = reserveEnMois(total, serie)
     val exigible = cotis.sumOf { it.exigible ?: 0.0 }; val encaisse = cotis.sumOf { it.paye }
     fun signe(v: Double) = (if (v >= 0) "+$NBSP" else "−$NBSP") + euros0(kotlin.math.abs(v))
     fun variation(a: Double, b: Double) = if (b > 0) kotlin.math.round(100 * (a - b) / b).toInt().let { (if (it > 0) "+" else if (it < 0) "−" else "") + "${kotlin.math.abs(it)}$NBSP% sur un an" } else "Pas de comparaison"
-    fun repartition(sens: String) = ytd.filter { it.sens == sens }.groupBy { it.categorieId }
-        .map { (id, l) -> Element(d.categories.firstOrNull { it.id == id }?.nom ?: "", l.sumOf { it.montant }) }.sortedByDescending { it.valeur }
-    val reserveTxt = reserve?.let { "${(kotlin.math.round(it * 10) / 10).toString().replace('.', ',').removeSuffix(",0")}$NBSP" + "mois" } ?: "–"
+    fun repartition(sens: String) = ytd.filter { it.sens == sens && it.estFlux }.groupBy { it.categorieId }
+        .map { (id, l) -> Element(d.nomCategorie(id), l.sumOf { it.montant }) }.sortedByDescending { it.valeur }
+    val reserveTxt = reserve?.let { "${(kotlin.math.round(it * 10) / 10).toString().replace('.', ',').removeSuffix(",0")}$NBSP" + "mois" } ?: "Non définie"
+    // Opérations saisies puis toutes annulées : rien à représenter sur 12 mois
+    val sansMouvementNet = operations.isNotEmpty() && serie.all { kotlin.math.abs(it.rec) < 0.005 && kotlin.math.abs(it.dep) < 0.005 }
     val ecart12 = serie.firstOrNull()?.let { serie.last().solde - (it.solde - it.rec + it.dep) } ?: 0.0
     // Bien démarrer : étapes de mise en route, cochées automatiquement
     val etapesDemarrage = if (d.peut("administrer")) listOf(
@@ -178,7 +187,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
             }
         }
         if (taches.isNotEmpty()) item {
-            Rubrique("traiter", "À traiter", "${taches.size} action${s(taches.size)}", alerte = retards.isNotEmpty()) {
+            Rubrique("traiter", "À traiter", "${taches.size} action${s(taches.size)}", alerte = retardsActifs.isNotEmpty() || aRegul.isNotEmpty()) {
                 taches.forEach { (titre, detail, cible, nature) ->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { onAller(cible) }.padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically) {
@@ -204,7 +213,12 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
                     }
                 }
             }
-            item {
+            if (sansMouvementNet) item {
+                Rubrique("evolution", "Évolution sur 12 mois", "Aucun mouvement net") {
+                    Text("Aucune opération nette sur les 12 derniers mois$NBSP: les opérations saisies ont été annulées par contre-passation. Elles restent visibles dans Opérations.", color = Couleurs.Texte2)
+                }
+            }
+            if (!sansMouvementNet) item {
                 Rubrique("evolution", "Évolution sur 12 mois", "Trésorerie ${signe(ecart12)}") {
                     Text("Recettes et dépenses par mois", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     GraphColonnes(serie)
@@ -212,7 +226,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
                     GraphSolde(serie)
                 }
             }
-            item {
+            if (!sansMouvementNet) item {
                 val depCat = repartition("depense")
                 Rubrique("repartition", "Répartition $an", depCat.firstOrNull()?.let { "Premier poste de dépense$NBSP: ${it.nom}" } ?: "") {
                     Text("Origine des recettes", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -360,13 +374,14 @@ private fun bornes(periode: String, perso: Pair<LocalDate, LocalDate>?): Pair<St
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String? = null) {
     var liste by remember { mutableStateOf<List<Ecriture>?>(null) }
     var pieces by remember { mutableStateOf<List<Piece>>(emptyList()) }
     var demandes by remember { mutableStateOf<List<Demande>>(emptyList()) }
     var projets by remember { mutableStateOf<List<Projet>>(emptyList()) }
+    var profils by remember { mutableStateOf<List<ProfilCourt>>(emptyList()) }
     var version by remember { mutableStateOf(0) }
     var sens by remember { mutableStateOf("tout") }
     var periode by remember { mutableStateOf("annee") }
@@ -374,9 +389,10 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
     var compte by remember(compteInitial) { mutableStateOf(compteInitial?.ifBlank { null }) }
     var categorie by remember { mutableStateOf<String?>(null) }
     var sansPiece by remember { mutableStateOf(false) }
-    var recherche by remember { mutableStateOf<String?>(null) }
+    var recherche by remember { mutableStateOf("") }
     var saisie by remember { mutableStateOf(false) }
-    var choixPeriode by remember { mutableStateOf(false) }
+    var virement by remember { mutableStateOf(false) }
+    var filtres by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<Ecriture?>(null) }
     var tiers by remember { mutableStateOf<List<Tiers>>(emptyList()) }
     var collectes by remember { mutableStateOf<List<Collecte>>(emptyList()) }
@@ -384,8 +400,9 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
     LaunchedEffect(version) {
         try { tiers = Repo.tiers() } catch (_: Exception) { }
         try { collectes = Repo.collectes() } catch (_: Exception) { }
+        try { profils = Repo.profils() } catch (_: Exception) { }
         try {
-            liste = Repo.toutesEcritures().sortedWith(compareByDescending<Ecriture> { it.date }.thenByDescending { it.id })
+            liste = Repo.toutesEcritures().sortedWith(compareByDescending<Ecriture> { it.date }.thenByDescending { it.creeLe ?: it.id })
             pieces = Repo.pieces()
             demandes = try { Repo.demandes() } catch (_: Exception) { emptyList() }
             projets = try { Repo.projets() } catch (_: Exception) { emptyList() }
@@ -394,64 +411,56 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
     val (debut, fin) = bornes(periode, perso)
     val tous = liste ?: emptyList()
     val contrepassees = tous.mapNotNull { it.contrepasseDe }.toSet()
-    fun aPiece(e: Ecriture) = pieces.any { it.transactionId == e.id || (e.demandeId != null && it.demandeId == e.demandeId) }
-    val q = recherche?.trim()?.lowercase().orEmpty()
+    fun aPiece(e: Ecriture) = pieces.any { it.nature != "devis" && (it.transactionId == e.id || (e.demandeId != null && it.demandeId == e.demandeId)) }
+    val q = recherche.trim().lowercase()
     // Filtres hors sens : servent aux totaux (recettes et dépenses restent visibles)
     val base = tous.filter { e ->
         e.date in debut..fin && (compte == null || e.compteId == compte) && (categorie == null || e.categorieId == categorie) &&
             (rubrique == null || (if (rubrique == "cotisation") e.estCotisation else e.collecteId == rubrique)) &&
-            (!sansPiece || (e.sens == "depense" && e.montant > 0 && !aPiece(e) && e.contrepasseDe == null && e.id !in contrepassees)) &&
+            (!sansPiece || (e.sens == "depense" && e.estFlux && e.montant > 0 && !aPiece(e) && e.contrepasseDe == null && e.id !in contrepassees)) &&
             (q.isEmpty() || e.libelle.lowercase().contains(q) || nomTiers(e, d.membres, tiers).lowercase().contains(q) || nomRubrique(e, collectes).lowercase().contains(q) || montantSaisie(e.montant).contains(q))
     }
     val vues = base.filter { sens == "tout" || it.sens == sens }
-    val recettes = base.filter { it.sens == "recette" }.sumOf { it.montant }
-    val depenses = base.filter { it.sens == "depense" }.sumOf { it.montant }
+    // Un virement interne n'est ni une recette ni une dépense
+    val recettes = base.filter { it.sens == "recette" && it.estFlux }.sumOf { it.montant }
+    val depenses = base.filter { it.sens == "depense" && it.estFlux }.sumOf { it.montant }
     val finSolde = minOf(fin, aujourdhui().toString())
     val comptesVus = d.comptes.filter { compte == null || it.id == compte }
     val solde = comptesVus.sumOf { it.soldeInitial } + tous.filter { e -> comptesVus.any { it.id == e.compteId } && e.date <= finSolde }.sumOf { it.signe }
-    val categoriesVues = d.categories.filter { sens == "tout" || it.sens == sens }
+    // Filtres actifs en pastilles : un appui retire le filtre
+    val pastilles = buildList<Pair<String, String>> {
+        if (sens != "tout") add("sens" to if (sens == "recette") "Recettes" else "Dépenses")
+        if (periode != "annee") add("periode" to (perso?.takeIf { periode == "perso" }?.let { "Du ${dateFr(it.first.toString())} au ${dateFr(it.second.toString())}" } ?: PERIODES.first { it.first == periode }.second))
+        compte?.let { c -> add("compte" to (d.comptes.firstOrNull { it.id == c }?.nom ?: "Compte")) }
+        categorie?.let { c -> add("categorie" to d.nomCategorie(c)) }
+        rubrique?.let { r -> add("rubrique" to (if (r == "cotisation") "Cotisations" else collectes.firstOrNull { it.id == r }?.nom ?: "Rubrique")) }
+        if (sansPiece) add("piece" to "Sans pièce")
+    }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 104.dp)) {
+            item { Titre("Opérations") }
             item {
-                Titre("Opérations") {
-                    IconButton(onClick = { recherche = if (recherche == null) "" else null }) {
-                        Icon(if (recherche == null) Icons.Outlined.Search else Icons.Outlined.Close, contentDescription = "Rechercher")
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(recherche, { recherche = it }, placeholder = { Text("Rechercher…") }, singleLine = true,
+                        leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                        trailingIcon = { if (recherche.isNotEmpty()) IconButton(onClick = { recherche = "" }) { Icon(Icons.Outlined.Close, "Effacer la recherche") } },
+                        modifier = Modifier.weight(1f))
+                    OutlinedButton(onClick = { filtres = true }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+                        Icon(Icons.Outlined.FilterList, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text(if (pastilles.isEmpty()) "Filtres" else "Filtres (${pastilles.size})")
                     }
                 }
             }
-            recherche?.let { r ->
-                item {
-                    OutlinedTextField(r, { recherche = it }, placeholder = { Text("Libellé, tiers ou montant") }, singleLine = true,
-                        leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                }
-            }
-            item {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf("tout" to "Tout", "recette" to "Recettes", "depense" to "Dépenses").forEachIndexed { i, (k, v) ->
-                        SegmentedButton(selected = sens == k, onClick = {
-                            sens = k
-                            val sc = d.categories.firstOrNull { it.id == categorie }?.sens
-                            if (sc != null && k != "tout" && sc != k) categorie = null
-                        }, shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(v) }
+            if (pastilles.isNotEmpty()) item {
+                FlowRow(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    pastilles.forEach { (cle, libelle) ->
+                        InputChip(selected = false, onClick = {
+                            when (cle) { "sens" -> { sens = "tout"; categorie = null }; "periode" -> periode = "annee"; "compte" -> compte = null
+                                "categorie" -> categorie = null; "rubrique" -> rubrique = null; "piece" -> sansPiece = false }
+                        }, label = { Text(libelle, maxLines = 1) }, trailingIcon = { Icon(Icons.Outlined.Close, "Retirer le filtre $libelle", Modifier.size(16.dp)) })
                     }
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val p = perso
-                    PuceMenu(
-                        if (periode == "perso" && p != null) "${dateFr(p.first.toString())} – ${dateFr(p.second.toString())}"
-                        else PERIODES.first { it.first == periode }.second,
-                        true, PERIODES.map { it.second },
-                    ) { i -> if (PERIODES[i].first == "perso") choixPeriode = true else periode = PERIODES[i].first }
-                    PuceMenu(d.comptes.firstOrNull { it.id == compte }?.nom ?: "Tous les comptes", compte != null,
-                        listOf("Tous les comptes") + d.comptes.map { it.nom }) { i -> compte = if (i == 0) null else d.comptes[i - 1].id }
-                    PuceMenu(d.categories.firstOrNull { it.id == categorie }?.nom ?: "Toutes catégories", categorie != null,
-                        listOf("Toutes catégories") + categoriesVues.map { it.nom }) { i -> categorie = if (i == 0) null else categoriesVues[i - 1].id }
-                    val rubs = listOf(null to "Toutes rubriques", "cotisation" to "Cotisations") + collectes.map { it.id to it.nom }
-                    PuceMenu(rubs.firstOrNull { it.first == rubrique }?.second ?: "Toutes rubriques", rubrique != null, rubs.map { it.second }) { rubrique = rubs[it].first }
-                    FilterChip(selected = sansPiece, onClick = { sansPiece = !sansPiece }, label = { Text("Sans pièce") })
+                    TextButton(onClick = { sens = "tout"; periode = "annee"; compte = null; categorie = null; rubrique = null; sansPiece = false }) { Text("Tout effacer") }
                 }
             }
             item {
@@ -468,12 +477,12 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
             }
             val l = liste
             if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            else if (vues.isEmpty()) item { Text("Aucune opération", color = Couleurs.Texte2, modifier = Modifier.padding(vertical = 16.dp)) }
+            else if (vues.isEmpty()) item { Text(if (pastilles.isEmpty() && q.isEmpty()) "Aucune opération" else "Aucune opération pour ces filtres", color = Couleurs.Texte2, modifier = Modifier.padding(vertical = 16.dp)) }
             else {
                 item { Text("${vues.size} opération${if (vues.size > 1) "s" else ""}", fontSize = 13.sp, color = Couleurs.Texte2) }
                 items(vues, key = { it.id }) { e ->
                     LigneOperation(d, e, aPiece(e), e.id in contrepassees, nomTiers(e, d.membres, tiers), nomRubrique(e, collectes),
-                        demandes.firstOrNull { it.id == e.demandeId }?.statut) { detail = e }
+                        demandes.firstOrNull { it.id == e.demandeId }) { detail = e }
                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 }
             }
@@ -487,31 +496,88 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
     }
     if (saisie) {
         ModalBottomSheet(onDismissRequest = { saisie = false }) {
-            FormulaireEcriture(d, PreEcriture(), onFini = { ok -> saisie = false; if (ok) { message("Opération enregistrée"); version++ } }, message)
+            FormulaireEcriture(d, PreEcriture(), onFini = { ok -> saisie = false; if (ok) { message("Opération enregistrée"); version++ } }, message,
+                onVirement = if (d.comptes.size > 1) ({ saisie = false; virement = true }) else null)
         }
     }
-    if (choixPeriode) {
-        var du by remember { mutableStateOf(perso?.first?.let { dateFr(it.toString()) } ?: "01/01/${aujourdhui().year}") }
-        var au by remember { mutableStateOf(perso?.second?.let { dateFr(it.toString()) } ?: dateFr(aujourdhui().toString())) }
-        val dDu = dateDepuisFr(du); val dAu = dateDepuisFr(au)
-        DialogueSimple("Période", "Appliquer", dDu != null && dAu != null && dAu >= dDu, { choixPeriode = false }, {
-            perso = dDu!! to dAu!!; periode = "perso"; choixPeriode = false
-        }) {
-            OutlinedTextField(du, { du = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDu == null)
-            OutlinedTextField(au, { au = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
-                isError = dAu == null || (dDu != null && dAu < dDu))
+    if (virement) {
+        ModalBottomSheet(onDismissRequest = { virement = false }) {
+            FormulaireVirement(d, message) { ok -> virement = false; if (ok) { message("Virement enregistré"); version++ } }
+        }
+    }
+    if (filtres) {
+        ModalBottomSheet(onDismissRequest = { filtres = false }) {
+            FeuilleFiltres(d, collectes, sens, periode, perso, compte, categorie, rubrique, sansPiece) { s2, p2, perso2, c2, cat2, r2, sp2 ->
+                sens = s2; periode = p2; perso = perso2; compte = c2; categorie = cat2; rubrique = r2; sansPiece = sp2; filtres = false
+            }
         }
     }
     detail?.let { e ->
         ModalBottomSheet(onDismissRequest = { detail = null }) {
-            DetailOperation(d, e, tous, pieces, demandes, projets, nomTiers(e, d.membres, tiers), nomRubrique(e, collectes), message) { change -> detail = null; if (change) version++ }
+            DetailOperation(d, e, tous, pieces, demandes, projets, profils, nomTiers(e, d.membres, tiers), nomRubrique(e, collectes), message,
+                onVoir = { detail = it }) { change -> detail = null; if (change) version++ }
+        }
+    }
+}
+
+// Tous les filtres des opérations dans une seule feuille, appliqués d'un coup
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeuilleFiltres(d: Donnees, collectes: List<Collecte>, sens0: String, periode0: String, perso0: Pair<LocalDate, LocalDate>?, compte0: String?,
+                           categorie0: String?, rubrique0: String?, sansPiece0: Boolean,
+                           onAppliquer: (String, String, Pair<LocalDate, LocalDate>?, String?, String?, String?, Boolean) -> Unit) {
+    var sens by remember { mutableStateOf(sens0) }
+    var periode by remember { mutableStateOf(periode0) }
+    var du by remember { mutableStateOf(perso0?.first?.let { dateFr(it.toString()) } ?: "01/${aujourdhui().monthNumber.toString().padStart(2, '0')}/${aujourdhui().year}") }
+    var au by remember { mutableStateOf(perso0?.second?.let { dateFr(it.toString()) } ?: dateFr(aujourdhui().toString())) }
+    var compte by remember { mutableStateOf(compte0) }
+    var categorie by remember { mutableStateOf(categorie0) }
+    var rubrique by remember { mutableStateOf(rubrique0) }
+    var sansPiece by remember { mutableStateOf(sansPiece0) }
+    val categoriesVues = d.categories.filter { sens == "tout" || it.sens == sens }
+    val dDu = dateDepuisFr(du); val dAu = dateDepuisFr(au)
+    val persoValide = periode != "perso" || (dDu != null && dAu != null && dAu >= dDu)
+    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Filtrer les opérations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            listOf("tout" to "Tout", "recette" to "Recettes", "depense" to "Dépenses").forEachIndexed { i, (k, v) ->
+                SegmentedButton(selected = sens == k, onClick = {
+                    sens = k
+                    val sc = d.categories.firstOrNull { it.id == categorie }?.sens
+                    if (sc != null && k != "tout" && sc != k) categorie = null
+                }, shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(v) }
+            }
+        }
+        ChoixListe("Période", PERIODES.first { it.first == periode }.second, PERIODES.map { it.second }) { periode = PERIODES[it].first }
+        if (periode == "perso") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(du, { du = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDu == null, modifier = Modifier.weight(1f))
+            OutlinedTextField(au, { au = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
+                isError = dAu == null || (dDu != null && dAu < dDu), modifier = Modifier.weight(1f))
+        }
+        ChoixListe("Compte", d.comptes.firstOrNull { it.id == compte }?.nom ?: "Tous les comptes", listOf("Tous les comptes") + d.comptes.map { it.nom }) {
+            compte = if (it == 0) null else d.comptes[it - 1].id
+        }
+        ChoixListe("Catégorie", categoriesVues.firstOrNull { it.id == categorie }?.nom ?: "Toutes les catégories", listOf("Toutes les catégories") + categoriesVues.map { it.nom }) {
+            categorie = if (it == 0) null else categoriesVues[it - 1].id
+        }
+        val rubs = listOf(null to "Toutes les rubriques", "cotisation" to "Cotisations") + collectes.map { it.id to it.nom }
+        ChoixListe("Rubrique", rubs.firstOrNull { it.first == rubrique }?.second ?: "Toutes les rubriques", rubs.map { it.second }) { rubrique = rubs[it].first }
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { sansPiece = !sansPiece }, verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(sansPiece, { sansPiece = it }); Text("Seulement les dépenses sans pièce justificative")
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+            TextButton(onClick = { onAppliquer("tout", "annee", null, null, null, null, false) }) { Text("Tout effacer") }
+            Button(enabled = persoValide, onClick = {
+                onAppliquer(sens, periode, if (periode == "perso") dDu!! to dAu!! else perso0, compte, categorie, rubrique, sansPiece)
+            }) { Text("Afficher") }
         }
     }
 }
 
 @Composable
-private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepassee: Boolean, tiers: String, rubrique: String, statutDemande: String?, onClick: () -> Unit) {
-    val cat = d.categories.firstOrNull { it.id == e.categorieId }?.nom ?: ""
+private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepassee: Boolean, tiers: String, rubrique: String, demande: Demande?, onClick: () -> Unit) {
+    val cat = d.nomCategorie(e.categorieId)
     val compte = d.comptes.firstOrNull { it.id == e.compteId }?.nom ?: ""
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -519,8 +585,15 @@ private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepasse
                 color = if (contrepassee || e.contrepasseDe != null) Couleurs.Texte2 else Color.Unspecified)
             Text(listOf(dateFr(e.date), tiers, rubrique.ifBlank { cat }, compte).filter { it.isNotBlank() }.joinToString(" · "), fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (statutDemande == "soumise") Pastille("À valider", Couleurs.JauneClair, Couleurs.SurJaune)
-        else if (statutDemande == "refusee" && !contrepassee) Pastille("Refusée", Couleurs.ErreurClair, Color(0xFF410002))
+        when {
+            demande?.statut == "soumise" -> Pastille("À valider", Couleurs.JauneClair, Couleurs.SurJaune)
+            demande?.statut == "refusee" && !contrepassee -> Pastille(if (demande.regularisation) "Refusée · à régulariser" else "Refusée", Couleurs.ErreurClair, Color(0xFF410002))
+            e.rapproche -> Pastille("Rapprochée", Couleurs.BleuClair, Couleurs.SurBleuClair)
+            e.contrepasseDe != null -> Pastille("Correction", Color(0xFFEFEDEC), Couleurs.Texte2)
+            contrepassee -> Pastille("Annulée", Color(0xFFEFEDEC), Couleurs.Texte2)
+            e.virement != null -> Pastille("Virement interne", Color(0xFFEFEDEC), Couleurs.Texte)
+            e.sens == "depense" && e.estFlux && e.montant > 0 && !aPiece -> Pastille("Sans pièce", Couleurs.ErreurClair, Color(0xFF410002))
+        }
         if (aPiece) Icon(Icons.Outlined.AttachFile, contentDescription = "Pièce jointe", tint = Couleurs.Texte2, modifier = Modifier.padding(start = 6.dp).size(18.dp))
         Spacer(Modifier.width(8.dp))
         val v = e.signe
@@ -565,15 +638,23 @@ internal fun LigneInfo(titre: String, valeur: String?) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pieces: List<Piece>, demandes: List<Demande>, projets: List<Projet>,
-                            tiers: String, rubrique: String, message: (String) -> Unit, onFini: (Boolean) -> Unit) {
+internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pieces: List<Piece>, demandes: List<Demande>, projets: List<Projet>,
+                             profils: List<ProfilCourt>, tiers: String, rubrique: String, message: (String) -> Unit,
+                             onVoir: (Ecriture) -> Unit = {}, onFini: (Boolean) -> Unit) {
     val scope = rememberCoroutineScope()
     var confirmer by remember { mutableStateOf(false) }
+    var annulerVir by remember { mutableStateOf(false) }
+    var motif by remember { mutableStateOf("") }
     var enCours by remember { mutableStateOf(false) }
     val siennes = pieces.filter { it.transactionId == e.id || (e.demandeId != null && it.demandeId == e.demandeId) }.distinctBy { it.id }
     val demande = demandes.firstOrNull { it.id == e.demandeId }
     val correction = toutes.firstOrNull { it.contrepasseDe == e.id }
     val origine = toutes.firstOrNull { it.id == e.contrepasseDe }
+    val jambes = if (e.virement != null) toutes.filter { it.virement == e.virement && it.contrepasseDe == null } else emptyList()
+    val virementAnnule = e.virement != null && toutes.any { it.virement == e.virement && it.contrepasseDe != null }
+    val compte = d.comptes.firstOrNull { it.id == e.compteId }
+    val alerteMode = if (e.virement != null) "" else incoherenceMode(compte, e.mode)
+    fun auteur(id: String?) = when (id) { null -> ""; d.profil.id -> "vous"; else -> profils.firstOrNull { it.id == id }?.nom ?: "une personne du bureau" }
     val choix = rememberChoixFichier { f, err ->
         if (err != null) message(err)
         if (f != null) scope.launch {
@@ -589,50 +670,139 @@ private fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pie
             color = if (v >= 0) Couleurs.Bleu else Couleurs.Orange)
         Spacer(Modifier.height(4.dp))
         LigneInfo("Date", dateFr(e.date))
-        LigneInfo("Compte", d.comptes.firstOrNull { it.id == e.compteId }?.nom)
-        LigneInfo("Catégorie", d.categories.firstOrNull { it.id == e.categorieId }?.nom)
-        LigneInfo("Mode", MODES[e.mode] ?: e.mode)
+        LigneInfo("Compte", compte?.nom)
+        LigneInfo("Catégorie", d.nomCategorie(e.categorieId))
+        LigneInfo("Mode", (MODES[e.mode] ?: e.mode) + if (alerteMode.isNotEmpty()) " · à vérifier" else "")
         LigneInfo("Activité", projets.firstOrNull { it.id == e.projetId }?.nom)
         LigneInfo("Tiers", tiers)
         LigneInfo("Rubrique", rubrique)
+        if (e.virement != null) LigneInfo("Virement interne", "${d.comptes.firstOrNull { it.id == jambes.firstOrNull { j -> j.sens == "depense" }?.compteId }?.nom ?: "?"} → " +
+            "${d.comptes.firstOrNull { it.id == jambes.firstOrNull { j -> j.sens == "recette" }?.compteId }?.nom ?: "?"}, ni recette ni dépense")
         LigneInfo("Validation", demande?.let { x -> when (x.statut) {
             "soumise" -> "À valider par le président"
             "refusee" -> "Refusée" + (x.motifRefus?.let { " : $it" } ?: "")
             "annulee" -> "Demande annulée"
             else -> "Validée" + (x.valideeLe?.let { " le " + dateFr(it.take(10)) } ?: "") + if (x.regularisation) " (après paiement)" else ""
         } })
-        LigneInfo("Rapprochée", if (e.rapproche || e.rapprochementId != null) "Oui" else "Non")
-        LigneInfo("Corrige", origine?.let { "${it.libelle} du ${dateFr(it.date)}" })
-        LigneInfo("Corrigée par", correction?.let { "Contre-passation du ${dateFr(it.date)}" })
+        LigneInfo("État", when { e.rapproche -> "Rapprochée, verrouillée"; e.contrepasseDe != null -> "Correction d’une autre écriture"; correction != null -> "Annulée par contre-passation"; else -> "Active" })
+        LigneInfo("Référence", refOperation(e.id))
+        if (alerteMode.isNotEmpty()) Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(12.dp)) {
+            Text(alerteMode, Modifier.padding(12.dp), fontSize = 14.sp)
+        }
+        // Historique : qui a fait quoi, et le lien vers l'écriture liée
+        Text("Historique", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        Column(Modifier.padding(start = 4.dp).border(width = 0.dp, color = Color.Transparent), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            EvenementHistorique("${dateFr((e.creeLe ?: e.date).take(10))}${e.creeLe?.let { " " + it.drop(11).take(5) } ?: ""}",
+                (if (e.contrepasseDe != null) "Correction saisie" else "Saisie") + (e.creePar?.let { " par ${auteur(it)}" } ?: ""))
+            origine?.let { o -> EvenementHistorique(dateFr(o.date), "Corrige « ${o.libelle} » (${refOperation(o.id)})" + motifDe(e.libelle).let { m -> if (m.isNotEmpty()) ", motif : $m" else "" }) { onVoir(o) } }
+            demande?.let { x -> EvenementHistorique(dateFr(x.creeLe.take(10)), "Demande de validation" + (x.valideeLe?.let { ", validée le ${dateFr(it.take(10))}" } ?: if (x.statut == "refusee") ", refusée" else "")) }
+            correction?.let { c -> EvenementHistorique(dateFr(c.date), "Annulée (${c.libelle.substringBefore(SEP_MOTIF).substringBefore(NBSP + ":").lowercase()})" +
+                (c.creePar?.let { ", saisie par ${auteur(it)}" } ?: "") + motifDe(c.libelle).let { m -> if (m.isNotEmpty()) ", motif : $m" else "" } + " (${refOperation(c.id)})") { onVoir(c) } }
+            if (e.rapproche) EvenementHistorique(e.dateRapprochement?.let { dateFr(it) } ?: "", "Rapprochée avec le relevé, verrouillée")
+        }
         Spacer(Modifier.height(8.dp))
         PiecesVue(siennes, demande?.signature)
         Spacer(Modifier.height(8.dp))
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (d.peut("saisir_ecritures") && e.contrepasseDe == null && correction == null)
-                TextButton(onClick = { confirmer = true }) { Text("Contre-passer", color = Couleurs.Erreur) }
-            if (d.peut("saisir_ecritures") && demande == null && e.sens == "depense" && e.montant > 0 && e.contrepasseDe == null && correction == null && !e.rapproche)
+            if (d.peut("saisir_ecritures") && e.virement == null && e.contrepasseDe == null && correction == null && !e.rapproche)
+                TextButton(onClick = { motif = ""; confirmer = true }) { Text("Contre-passer", color = Couleurs.Erreur) }
+            if (d.peut("saisir_ecritures") && e.virement != null && !virementAnnule && e.contrepasseDe == null && jambes.none { it.rapproche })
+                TextButton(onClick = { motif = ""; annulerVir = true }) { Text("Annuler le virement", color = Couleurs.Erreur) }
+            if (d.peut("saisir_ecritures") && demande == null && e.virement == null && e.sens == "depense" && e.montant > 0 && e.contrepasseDe == null && correction == null && !e.rapproche)
                 FilledTonalButton(onClick = {
                     scope.launch { try { Repo.demanderValidation(e.id); message("Dépense envoyée au président pour validation"); onFini(true) } catch (x: Exception) { message(traduireErreur(x)) } }
                 }) { Text("Faire valider") }
-            if (d.peut("saisir_ecritures", "payer_depenses"))
+            if (d.peut("saisir_ecritures", "payer_depenses") && correction == null && e.contrepasseDe == null)
                 FilledTonalButton(onClick = choix) { Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Joindre une pièce") }
         }
     }
-    if (confirmer) AlertDialog(
-        onDismissRequest = { confirmer = false },
-        title = { Text("Contre-passer cette opération$NBSP?") },
-        text = { Text("${e.libelle}, ${euros(e.montant)}. Une opération de ${euros(-e.montant)} est créée à la date du jour.") },
+    if (confirmer || annulerVir) AlertDialog(
+        onDismissRequest = { confirmer = false; annulerVir = false },
+        title = { Text(if (annulerVir) "Annuler ce virement$NBSP?" else "Contre-passer cette opération$NBSP?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (annulerVir) "Les deux écritures de « ${e.libelle} » (${euros(e.montant)}) sont contre-passées à la date du jour. Elles restent dans l’historique."
+                     else "${e.libelle}, ${euros(e.montant)}. Une opération de ${euros(-e.montant)} est créée à la date du jour ; l’originale reste dans l’historique, reliée à sa correction.")
+                OutlinedTextField(motif, { motif = it.take(if (annulerVir) 60 else 100) }, label = { Text("Motif (obligatoire)") },
+                    placeholder = { Text("Erreur de montant, doublon…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+        },
         confirmButton = {
-            Button(enabled = !enCours, colors = ButtonDefaults.buttonColors(containerColor = Couleurs.Erreur), onClick = {
+            Button(enabled = !enCours && motif.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Couleurs.Erreur), onClick = {
                 enCours = true
                 scope.launch {
-                    try { Repo.contrePasser(e, d.profil.id); message("Opération contre-passée"); confirmer = false; onFini(true) }
+                    try {
+                        if (annulerVir) { Repo.annulerVirement(e.virement!!, motif.trim()); message("Virement annulé") }
+                        else { Repo.contrePasser(e, d.profil.id, motif.trim()); message("Opération contre-passée") }
+                        confirmer = false; annulerVir = false; onFini(true)
+                    } catch (x: Exception) { enCours = false; message(traduireErreur(x)) }
+                }
+            }) { Text(if (annulerVir) "Annuler le virement" else "Contre-passer") }
+        },
+        dismissButton = { TextButton(onClick = { confirmer = false; annulerVir = false }) { Text("Garder") } },
+    )
+}
+
+@Composable
+private fun EvenementHistorique(quand: String, quoi: String, onVoir: (() -> Unit)? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(Couleurs.Texte2, CircleShape))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            if (quand.isNotBlank()) Text(quand, fontSize = 12.sp, color = Couleurs.Texte2)
+            Text(quoi, fontSize = 14.sp)
+        }
+        if (onVoir != null) TextButton(onClick = onVoir) { Text("Voir") }
+    }
+}
+
+// Virement interne : dépôt d'espèces à la banque, retrait pour la caisse, virement entre deux comptes.
+// Deux écritures liées : les soldes bougent, les recettes et dépenses non.
+@Composable
+fun FormulaireVirement(d: Donnees, message: (String) -> Unit, onFini: (Boolean) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var source by remember { mutableStateOf((d.comptes.firstOrNull { it.type == "caisse" } ?: d.comptes.first()).id) }
+    var dest by remember { mutableStateOf((d.comptes.firstOrNull { it.type == "banque" } ?: d.comptes.last()).id) }
+    var montant by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(dateFr(aujourdhui().toString())) }
+    var libelle by remember { mutableStateOf("") }
+    var bordereau by remember { mutableStateOf<Fichier?>(null) }
+    var enCours by remember { mutableStateOf(false) }
+    val s = d.comptes.first { it.id == source }; val dd = d.comptes.first { it.id == dest }
+    val nature = when { s.type == "caisse" && dd.type == "banque" -> "Dépôt d’espèces à la banque"; s.type == "banque" && dd.type == "caisse" -> "Retrait d’espèces pour la caisse"; else -> "Virement entre comptes" }
+    val m = lireMontant(montant); val dt = dateDepuisFr(date)
+    val choix = rememberChoixFichier { f, err -> if (err != null) message(err); if (f != null) bordereau = f }
+    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Virement interne", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Pour un dépôt d’espèces à la banque, un retrait pour la caisse ou un virement entre deux comptes de l’association. Ce n’est ni une recette ni une dépense$NBSP: seuls les soldes changent.",
+            color = Couleurs.Texte2, fontSize = 14.sp)
+        ChoixListe("De", s.nom, d.comptes.map { it.nom }) { source = d.comptes[it].id }
+        ChoixListe("Vers", dd.nom, d.comptes.map { it.nom }) { dest = d.comptes[it].id }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(montant, { montant = it }, label = { Text("Montant (€)") }, singleLine = true, isError = montant.isNotEmpty() && (m == null || m <= 0),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+            OutlinedTextField(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.weight(1f))
+        }
+        OutlinedTextField(libelle, { libelle = it.take(120) }, label = { Text("Libellé") }, placeholder = { Text(nature) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.AttachFile, null); Spacer(Modifier.width(8.dp)); Text(bordereau?.let { "Bordereau joint (${it.ko}$NBSP" + "Ko)" } ?: "Joindre le bordereau ou le ticket")
+        }
+        Surface(color = Color(0xFFEFEDEC), shape = RoundedCornerShape(12.dp)) {
+            Text(if (source == dest) "Choisissez deux comptes différents." else "$nature$NBSP: −${euros(m ?: 0.0)} sur « ${s.nom} », +${euros(m ?: 0.0)} sur « ${dd.nom} ».",
+                Modifier.padding(12.dp), fontSize = 14.sp, color = if (source == dest) Couleurs.Erreur else Couleurs.Texte)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+            TextButton(onClick = { onFini(false) }) { Text("Annuler") }
+            Button(enabled = !enCours && source != dest && m != null && m > 0 && dt != null, onClick = {
+                enCours = true
+                scope.launch {
+                    try { Repo.virementInterne(dt.toString(), source, dest, m!!, libelle.trim().ifBlank { null }, bordereau, d.profil.id); onFini(true) }
                     catch (x: Exception) { enCours = false; message(traduireErreur(x)) }
                 }
-            }) { Text("Contre-passer") }
-        },
-        dismissButton = { TextButton(onClick = { confirmer = false }) { Text("Annuler") } },
-    )
+            }) { Text("Enregistrer le virement") }
+        }
+    }
 }
 
 val MODES = mapOf("especes" to "Espèces", "virement" to "Virement", "autre" to "Chèque ou carte")

@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 
 private val JOURS_MOIS = listOf(31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 private fun nombre(s: String) = s.replace(',', '.').replace(" ", "").replace(NBSP.toString(), "").toDoubleOrNull()
@@ -537,6 +538,11 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
                     Box(Modifier.width(140.dp)) { ChoixListe("Année", annee.toString(), (aujourdhui().year + 1 downTo aujourdhui().year - 2).map { it.toString() }) { annee = aujourdhui().year + 1 - it } }
                 }
             }
+            if (!d.peut("gerer_budget")) item {
+                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("Consultation$NBSP: le budget est construit par le trésorier. Vous voyez le prévu et le réalisé de chaque poste.", Modifier.padding(12.dp), fontSize = 14.sp)
+                }
+            }
             val l = suivi
             if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             else if (l.isEmpty()) item {
@@ -661,8 +667,8 @@ fun EcranActivites(d: Donnees, message: (String) -> Unit) {
                     }
                 }
                 items(vus, key = { it.id }) { p ->
-                    val dep = ecritures.filter { it.projetId == p.id && it.sens == "depense" }.sumOf { it.montant }
-                    val rec = ecritures.filter { it.projetId == p.id && it.sens == "recette" }.sumOf { it.montant }
+                    val dep = ecritures.filter { it.projetId == p.id && it.sens == "depense" && it.estFlux }.sumOf { it.montant }
+                    val rec = ecritures.filter { it.projetId == p.id && it.sens == "recette" && it.estFlux }.sumOf { it.montant }
                     val prevu = budgets.filter { it.projetId == p.id && it.sens == "depense" }.sumOf { it.prevu }
                     CarteBlanche {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1111,83 +1117,102 @@ fun analyserCsvMembres(texte: String, existants: List<Membre>): Pair<List<Nouvea
 // =====================================================================
 // Rapports : synthèse annuelle et rapport périodique (impression ou PDF), exports Excel
 // =====================================================================
+// Un seul formulaire pour tout exporter : le document, la période, le format
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EcranRapports(d: Donnees, message: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val imprimer = rememberImpression()
     val enregistrer = rememberEnregistrer { it?.let(message) }
     val an = aujourdhui().year
-    var exercice by remember { mutableStateOf(an) }
-    var debut by remember { mutableStateOf("01/${aujourdhui().monthNumber.toString().padStart(2, '0')}/$an") }
-    var fin by remember { mutableStateOf(dateFr(aujourdhui().toString())) }
+    // (clé, libellé, formats, période : "libre" = exercice, mois, trimestre ou dates ; "annee" ; "" = sans période)
+    val docs = buildList {
+        add(Quadruple("rapport", "Rapport financier (assemblée générale ou période)", listOf("pdf"), "libre"))
+        add(Quadruple("journal", "Journal des opérations", listOf("pdf", "excel"), "libre"))
+        add(Quadruple("cotisations", "État des cotisations", listOf("pdf", "excel"), "annee"))
+        add(Quadruple("participations", "Participations aux activités", listOf("excel"), ""))
+        add(Quadruple("budget", "Budget prévu et réalisé", listOf("pdf", "excel"), "annee"))
+        add(Quadruple("demandes", "Registre des demandes de dépense", listOf("pdf"), "annee"))
+        if (d.peut("voir_membres", "gerer_membres")) add(Quadruple("membres", "Liste des membres", listOf("pdf", "excel"), ""))
+        add(Quadruple("pieces", "Pièces justificatives (fichier ZIP)", listOf("zip"), "annee"))
+        if (d.peut("administrer")) add(Quadruple("sauvegarde", "Sauvegarde complète des données", listOf("json"), ""))
+    }
+    var doc by remember { mutableStateOf(docs.first()) }
+    var type by remember { mutableStateOf("annee") }
+    var annee by remember { mutableStateOf(an) }
+    var mois by remember { mutableStateOf(aujourdhui().monthNumber) }
+    var trimestre by remember { mutableStateOf((aujourdhui().monthNumber - 1) / 3) }
+    var du by remember { mutableStateOf("01/${aujourdhui().monthNumber.toString().padStart(2, '0')}/$an") }
+    var au by remember { mutableStateOf(dateFr(aujourdhui().toString())) }
+    var format by remember { mutableStateOf("pdf") }
     var enCours by remember { mutableStateOf(false) }
-    fun lancer(bloc: suspend () -> Unit) { enCours = true; scope.launch { try { bloc() } catch (e: Exception) { message(traduireErreur(e)) }; enCours = false } }
+    var etat by remember { mutableStateOf<String?>(null) }
+    if (format !in doc.c) format = doc.c.first()
+    val libre = doc.d == "libre"
+    fun fin(a: Int, m: Int) = LocalDate(a, m, 1).plus(DatePeriod(months = 1)).minus(DatePeriod(days = 1))
+    // Période choisie : début, fin, intitulé
+    val periode: Triple<String, String, String>? = when {
+        !libre || type == "annee" -> Triple("$annee-01-01", "$annee-12-31", "exercice $annee")
+        type == "mois" -> Triple(LocalDate(annee, mois, 1).toString(), fin(annee, mois).toString(), "${MOIS[mois - 1]} $annee")
+        type == "trimestre" -> Triple(LocalDate(annee, trimestre * 3 + 1, 1).toString(), fin(annee, trimestre * 3 + 3).toString(), "${if (trimestre == 0) "1er" else "${trimestre + 1}e"} trimestre $annee")
+        else -> { val a = dateDepuisFr(du); val b = dateDepuisFr(au); if (a != null && b != null && b >= a) Triple(a.toString(), b.toString(), "période du $du au $au") else null }
+    }
+    val noms = mapOf("pdf" to "PDF", "excel" to "Excel", "zip" to "ZIP", "json" to "fichier de sauvegarde")
+    fun longue(iso: String) = LocalDate.parse(iso).let { "${if (it.dayOfMonth == 1) "1er" else it.dayOfMonth} ${MOIS[it.monthNumber - 1]} ${it.year}" }
+    val rappel = doc.b + ", " + noms[format] + when { doc.d == "annee" -> " : exercice $annee"; doc.d.isNotEmpty() && periode != null -> " : du ${longue(periode.first)} au ${longue(periode.second)}"; else -> "" }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Titre("Rapports") }
+        item { Titre("Rapports et exports") }
         item {
             CarteBlanche {
-                Text("Rapport d’assemblée générale", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                ChoixListe("Exercice", exercice.toString(), listOf(an, an - 1, an - 2).map { it.toString() }) { exercice = an - it }
-                Button(enabled = !enCours, onClick = {
-                    lancer { imprimer("Rapport AG $exercice", rapportHtml(d, "$exercice-01-01", "$exercice-12-31", "Rapport financier de l’exercice $exercice")) }
-                }) { Text("Imprimer ou PDF") }
-            }
-        }
-        item {
-            val dDebut = dateDepuisFr(debut); val dFin = dateDepuisFr(fin)
-            CarteBlanche {
-                Text("Rapport périodique", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                OutlinedTextField(debut, { debut = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDebut == null, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(fin, { fin = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
-                    isError = dFin == null || (dDebut != null && dFin < dDebut), modifier = Modifier.fillMaxWidth())
-                Button(enabled = !enCours && dDebut != null && dFin != null && dFin >= dDebut, onClick = {
-                    lancer { imprimer("Rapport", rapportHtml(d, dDebut.toString(), dFin.toString(), "Rapport de trésorerie du $debut au $fin")) }
-                }) { Text("Imprimer ou PDF") }
-            }
-        }
-        item {
-            CarteBlanche {
-                Text("Documents PDF", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                ChoixListe("Exercice", exercice.toString(), listOf(an, an - 1, an - 2).map { it.toString() }) { exercice = an - it }
-                buildList {
-                    add("journal" to "Journal des opérations"); add("cotisations" to "État des cotisations"); add("budget" to "Budget prévu et réalisé")
-                    add("demandes" to "Registre des demandes"); if (d.peut("voir_membres", "gerer_membres")) add("membres" to "Liste des membres")
-                }.forEach { (k, l) ->
-                    OutlinedButton(enabled = !enCours, modifier = Modifier.fillMaxWidth(), onClick = {
-                        lancer { val (titre, html) = documentHtml(d, k, exercice); imprimer(titre, html) }
-                    }) { Text(l) }
+                ChoixListe("Document", doc.b, docs.map { it.b }) { doc = docs[it] }
+                if (libre) ChoixListe("Période", mapOf("annee" to "Exercice complet", "mois" to "Un mois", "trimestre" to "Un trimestre", "libre" to "Du… au…")[type]!!,
+                    listOf("Exercice complet", "Un mois", "Un trimestre", "Du… au…")) { type = listOf("annee", "mois", "trimestre", "libre")[it] }
+                if (doc.d.isNotEmpty() && !(libre && type == "libre"))
+                    ChoixListe("Année", annee.toString(), listOf(an, an - 1, an - 2).map { it.toString() }) { annee = an - it }
+                if (libre && type == "mois") ChoixListe("Mois", MOIS[mois - 1].replaceFirstChar { it.uppercase() }, MOIS.map { m -> m.replaceFirstChar { it.uppercase() } }) { mois = it + 1 }
+                if (libre && type == "trimestre") ChoixListe("Trimestre", listOf("1er trimestre", "2e trimestre", "3e trimestre", "4e trimestre")[trimestre],
+                    listOf("1er trimestre (janv. à mars)", "2e trimestre (avr. à juin)", "3e trimestre (juil. à sept.)", "4e trimestre (oct. à déc.)")) { trimestre = it }
+                if (libre && type == "libre") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(du, { du = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(du) == null, modifier = Modifier.weight(1f))
+                    OutlinedTextField(au, { au = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = periode == null, modifier = Modifier.weight(1f))
                 }
-            }
-        }
-        item {
-            var etat by remember { mutableStateOf<String?>(null) }
-            CarteBlanche {
-                Text("Pièces justificatives", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Toutes les factures et pièces de l’exercice $exercice dans un fichier ZIP, classées par mois, avec leur inventaire.", color = Couleurs.Texte2, fontSize = 14.sp)
-                Button(enabled = !enCours, onClick = {
-                    lancer {
-                        val (zip, n) = archivePieces(d, exercice) { etat = it }
-                        etat = null
-                        enregistrer("${d.organisation.nom.lowercase().replace(Regex("[^a-z0-9]+"), "-")}-pieces-$exercice.zip", "application/zip", zip)
-                        message("$n pièce${if (n > 1) "s" else ""} archivée${if (n > 1) "s" else ""}")
+                if (doc.c.size > 1) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    doc.c.forEachIndexed { i, f -> SegmentedButton(selected = format == f, onClick = { format = f }, shape = SegmentedButtonDefaults.itemShape(i, doc.c.size)) { Text(noms[f]!!) } }
+                }
+                Text(rappel, fontSize = 13.sp, color = Couleurs.Texte2)
+                Button(enabled = !enCours && periode != null, modifier = Modifier.align(Alignment.End), onClick = {
+                    val (deb, fi, intitule) = periode!!
+                    enCours = true
+                    scope.launch {
+                        try {
+                            when (doc.a) {
+                                "rapport" -> imprimer("Rapport", rapportHtml(d, deb, fi, if (type == "annee") "Rapport financier de l’exercice $annee" else "Rapport de trésorerie, $intitule"))
+                                "journal" -> if (format == "excel") enregistrer("ecritures-$deb-au-$fi.csv", "text/csv", exportCsv(d, "ecritures", annee, deb, fi).encodeToByteArray())
+                                             else { val (t, html) = documentHtml(d, "journal", annee, deb, fi, intitule); imprimer(t, html) }
+                                "pieces" -> {
+                                    val (zip, n) = archivePieces(d, annee) { etat = it }
+                                    etat = null
+                                    enregistrer("${d.organisation.nom.lowercase().replace(Regex("[^a-z0-9]+"), "-")}-pieces-$annee.zip", "application/zip", zip)
+                                    message("$n pièce${if (n > 1) "s" else ""} archivée${if (n > 1) "s" else ""}")
+                                }
+                                "sauvegarde" -> enregistrer("sauvegarde-tresorerie-${aujourdhui()}.json", "application/json", Repo.sauvegardeJson().encodeToByteArray())
+                                else -> if (format == "excel") enregistrer("${doc.a}-$annee.csv", "text/csv", exportCsv(d, doc.a, annee).encodeToByteArray())
+                                        else { val (t, html) = documentHtml(d, doc.a, annee); imprimer(t, html) }
+                            }
+                        } catch (e: Exception) { message(traduireErreur(e)) }
+                        enCours = false
                     }
-                }) { Text(etat ?: "Télécharger les pièces") }
+                }) { Text(etat ?: "Exporter en ${noms[format]}") }
             }
         }
         item {
-            CarteBlanche {
-                Text("Exports Excel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                listOf("ecritures" to "Écritures $an", "membres" to "Membres", "cotisations" to "Cotisations $an", "participations" to "Participations", "budget" to "Budget $an").forEach { (k, l) ->
-                    OutlinedButton(enabled = !enCours, modifier = Modifier.fillMaxWidth(), onClick = {
-                        lancer { enregistrer("$k-$an.csv", "text/csv", exportCsv(d, k, an).encodeToByteArray()) }
-                    }) { Text(l) }
-                }
-            }
+            Text("PDF$NBSP: mis en page pour imprimer, signer ou transmettre. Excel$NBSP: tableau modifiable (CSV).", fontSize = 13.sp, color = Couleurs.Texte2)
         }
-        if (d.peut("administrer")) item { BlocSauvegarde(message) }
     }
 }
+
+private data class Quadruple(val a: String, val b: String, val c: List<String>, val d: String)
 
 // CSV lisible par Excel en français : BOM, séparateur « ; », virgule décimale
 private fun csv(entetes: List<String>, lignes: List<List<Any?>>): String {
@@ -1198,12 +1223,12 @@ private fun csv(entetes: List<String>, lignes: List<List<Any?>>): String {
     return "﻿" + (listOf(entetes) + lignes).joinToString("\r\n") { l -> l.joinToString(";") { cel(it) } }
 }
 
-private suspend fun exportCsv(d: Donnees, type: String, an: Int): String {
-    val cat = { id: String -> d.categories.firstOrNull { it.id == id }?.nom ?: "" }
+private suspend fun exportCsv(d: Donnees, type: String, an: Int, du: String = "$an-01-01", au: String = "$an-12-31"): String {
+    val cat = { id: String -> d.nomCategorie(id) }
     return when (type) {
         "ecritures" -> csv(listOf("Date", "Sens", "Libellé", "Catégorie", "Compte", "Mode", "Montant", "Rapprochée"),
-            Repo.toutesEcritures().filter { it.date.startsWith("$an") }.map {
-                listOf(dateFr(it.date), if (it.sens == "recette") "Recette" else "Dépense", it.libelle, cat(it.categorieId),
+            Repo.toutesEcritures().filter { it.date in du..au }.sortedBy { it.date }.map {
+                listOf(dateFr(it.date), if (it.virement != null) (if (it.sens == "recette") "Virement interne (entrée)" else "Virement interne (sortie)") else if (it.sens == "recette") "Recette" else "Dépense", it.libelle, cat(it.categorieId),
                     d.comptes.firstOrNull { c -> c.id == it.compteId }?.nom, it.mode, it.signe, if (it.rapproche) "Oui" else "Non")
             })
         "membres" -> csv(listOf("Prénom", "Nom", "Jour", "Mois", "Profession", "WhatsApp", "E-mail", "Accord anniversaire", "Actif"),
@@ -1248,8 +1273,8 @@ private suspend fun rapportHtml(d: Donnees, debut: String, finDemandee: String, 
     val rapps = Repo.rapprochements().filter { it.fin in debut..fin }
     val comptes = try { Repo.tousLesComptes() } catch (_: Exception) { Repo.comptes() }
     val pieces = try { Repo.pieces() } catch (_: Exception) { emptyList() }
-    val nomCat = { id: String -> d.categories.firstOrNull { it.id == id }?.nom ?: "" }
-    fun somme(l: List<Ecriture>, sens: String) = l.filter { it.sens == sens }.sumOf { it.montant }
+    val nomCat = { id: String -> d.nomCategorie(id) }
+    fun somme(l: List<Ecriture>, sens: String) = l.filter { it.sens == sens && it.estFlux }.sumOf { it.montant }
     val totR = somme(dans, "recette"); val totD = somme(dans, "depense")
     val precR = somme(prec, "recette"); val precD = somme(prec, "depense")
     val depart = comptes.sumOf { it.soldeInitial }
@@ -1258,7 +1283,7 @@ private suspend fun rapportHtml(d: Donnees, debut: String, finDemandee: String, 
     val serie = serieMensuelle(txs, comptes, debut, fin)
     val serie12 = serieMensuelle(txs, comptes, LocalDate(dFin.year, dFin.monthNumber, 1).minus(DatePeriod(months = 11)).toString(), fin)
     val reserve = reserveEnMois(soldeFin, serie12)
-    fun parCat(sens: String) = dans.filter { it.sens == sens }.groupBy { it.categorieId }.map { (id, l) -> Element(nomCat(id), l.sumOf { it.montant }) }
+    fun parCat(sens: String) = dans.filter { it.sens == sens && it.estFlux }.groupBy { it.categorieId }.map { (id, l) -> Element(nomCat(id), l.sumOf { it.montant }) }
     val rec = parCat("recette"); val dep = parCat("depense")
     fun pct(a: Double, b: Double) = if (b > 0) kotlin.math.round(100 * (a - b) / b).toInt() else null
     fun variation(a: Double, b: Double, hausseBonne: Boolean): String {
@@ -1270,9 +1295,10 @@ private suspend fun rapportHtml(d: Donnees, debut: String, finDemandee: String, 
     val enRetard = cotis.filter { it.retard > 0.005 }
     val parts = dans.filter { it.collecteId != null }
     val partsCol = collectes.mapNotNull { c -> parts.filter { it.collecteId == c.id }.takeIf { it.isNotEmpty() }?.let { l -> Triple(c, l.sumOf { it.montant }, l.map { it.membreId ?: it.tiersId ?: it.id }.toSet().size) } }
-    val sansJustif = demandes.filter { it.statut == "payee" }
+    val etatsDem = EtatsDemandes(demandes, tout)
+    val sansJustif = demandes.filter { it.statut == "payee" && it.id !in etatsDem.annulees }
     val contrepassees = txs.mapNotNull { it.contrepasseDe }.toSet()
-    val depSansPiece = dans.filter { e -> e.sens == "depense" && e.montant > 0 && e.contrepasseDe == null && e.id !in contrepassees &&
+    val depSansPiece = dans.filter { e -> e.sens == "depense" && e.estFlux && e.montant > 0 && e.contrepasseDe == null && e.id !in contrepassees &&
         pieces.none { it.transactionId == e.id || (e.demandeId != null && it.demandeId == e.demandeId) } }
     val depasses = budget.filter { it.sens == "depense" && it.prevu > 0 && it.realise > it.prevu }
     val premierDep = dep.maxByOrNull { it.valeur }; val premiereRec = rec.maxByOrNull { it.valeur }

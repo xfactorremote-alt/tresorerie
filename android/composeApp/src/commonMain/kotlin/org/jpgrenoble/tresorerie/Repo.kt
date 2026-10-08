@@ -137,9 +137,17 @@ object Repo {
         if (demo) Demo.profilsActuels().map { ProfilCourt(it.id, it.nom) }
         else client.from("profiles").select().decodeList()
 
-    suspend fun creerDemande(d: NouvelleDemande) {
-        if (demo) { Demo.creerDemande(d, profilDemo.value); return }
-        client.from("expense_requests").insert(d)
+    // Renvoie vrai si le devis éventuel a bien été joint (la demande part quoi qu'il arrive)
+    suspend fun creerDemande(d: NouvelleDemande, devis: Fichier? = null): Boolean {
+        if (demo) { Demo.creerDemande(d, profilDemo.value, devis); return true }
+        val id = client.from("expense_requests").insert(d) { select() }.decodeSingle<Demande>().id
+        if (devis == null) return true
+        return try {
+            val chemin = nomFichier(devis.extension)
+            deposer("justificatifs", chemin, devis)
+            client.from("attachments").insert(NouveauDevis(id, chemin, devis.mime, devis.ko, d.demandeur))
+            true
+        } catch (_: Exception) { false }
     }
 
     suspend fun validerDemande(d: Demande, signaturePng: ByteArray, monId: String) {
@@ -460,10 +468,29 @@ object Repo {
         client.from("attachments").insert(NouvellePiece(transactionId, chemin, f.mime, f.ko, monId))
     }
 
-    // Correction : écriture de même catégorie et même compte, montant négatif
-    suspend fun contrePasser(e: Ecriture, monId: String) = ajouter(NouvelleEcriture(
-        aujourdhui().toString(), e.compteId, e.sens, -e.montant, e.categorieId, "Contre-passation$NBSP: ${e.libelle}".take(120),
-        e.mode, monId, e.projetId, e.id, e.membreId, e.tiersId, e.estCotisation, e.collecteId))
+    // Correction : écriture de même catégorie, montant négatif, motif gardé dans le libellé.
+    // Pour un remboursement reçu : date, compte et mode où l'argent est revenu.
+    suspend fun contrePasser(e: Ecriture, monId: String, motif: String = "", prefixe: String = "Contre-passation",
+                             date: String = aujourdhui().toString(), compteId: String = e.compteId, mode: String = e.mode) = ajouter(NouvelleEcriture(
+        date, compteId, e.sens, -e.montant, e.categorieId, libelleCorrection(prefixe, e.libelle, motif),
+        mode, monId, e.projetId, e.id, e.membreId, e.tiersId, e.estCotisation, e.collecteId))
+
+    // Virement interne : deux écritures liées (sortie et entrée), ni recette ni dépense
+    suspend fun virementInterne(date: String, source: String, dest: String, montant: Double, libelle: String?, bordereau: Fichier?, monId: String) {
+        if (demo) { Demo.virementInterne(date, source, dest, montant, libelle, profilDemo.value); return }
+        val v = client.postgrest.rpc("virement_interne", buildJsonObject {
+            put("p_date", date); put("p_source", source); put("p_dest", dest); put("p_montant", montant); put("p_libelle", libelle)
+        }).decodeAs<String>()
+        if (bordereau != null) {
+            val sortie = client.from("transactions").select { filter { eq("virement", v); eq("sens", "depense") } }.decodeList<Ecriture>().firstOrNull()
+            if (sortie != null) joindrePiece(sortie.id, bordereau, monId)
+        }
+    }
+
+    suspend fun annulerVirement(virement: String, motif: String) {
+        if (demo) { Demo.annulerVirement(virement, motif, profilDemo.value); return }
+        client.postgrest.rpc("annuler_virement", buildJsonObject { put("p_virement", virement); put("p_motif", motif) })
+    }
 
     // ---------- Cotisations par période ----------
     suspend fun periodes(annee: Int): List<PeriodeCotisation> =

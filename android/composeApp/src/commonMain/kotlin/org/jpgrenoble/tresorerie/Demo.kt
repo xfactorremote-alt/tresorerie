@@ -20,7 +20,7 @@ object Demo {
 
     var organisation = Organisation("JP Grenoble")
     val fichiers = mutableMapOf<String, ByteArray>()
-    val reglages = mutableMapOf("cotisation_montant" to 20.0, "cotisation_periode_mois" to 1.0, "delai_justificatif_jours" to 7.0, "seuil_alerte_budget_pct" to 90.0)
+    val reglages = mutableMapOf("cotisation_montant" to 20.0, "cotisation_periode_mois" to 1.0, "delai_justificatif_jours" to 7.0, "seuil_alerte_budget_pct" to 90.0, "seuil_justification" to 100.0)
 
     // Profils modifiables (rôle, accès) ; les comptes de test pointent vers ces profils
     private val profils = comptesTest.map { it.profil }.toMutableList()
@@ -150,6 +150,7 @@ object Demo {
         Categorie("c6", "Fonctionnement", "depense"), Categorie("c7", "Activités / événements", "depense"),
         Categorie("c8", "Aides et solidarité", "depense"), Categorie("c9", "Matériel", "depense"),
         Categorie("c10", "Autres dépenses", "depense"),
+        Categorie("ci-r", "Virement interne", "recette", interne = true), Categorie("ci-d", "Virement interne", "depense", interne = true),
     )
 
     val comptes = mutableListOf(Compte("acc-caisse", "Caisse (espèces)", "caisse", 412.50), Compte("acc-banque", "Banque", "banque", 2860.00))
@@ -285,8 +286,39 @@ object Demo {
         if (n.contrepasseDe != null && lignes.any { it.e.contrepasseDe == n.contrepasseDe }) throw IllegalStateException("Écriture déjà contre-passée")
         lignes += Ligne(Ecriture("e${compteur++}", n.date, n.compteId, n.sens, n.montant, n.categorieId, n.libelle, n.mode,
             projetId = n.projetId, contrepasseDe = n.contrepasseDe, membreId = n.membreId, tiersId = n.tiersId,
-            estCotisation = n.estCotisation, collecteId = n.collecteId))
+            estCotisation = n.estCotisation, collecteId = n.collecteId, creePar = profil?.id, creeLe = maintenant()))
         return lignes.last().e.id
+    }
+
+    private fun maintenant() = kotlinx.datetime.Clock.System.now().toString()
+
+    // Virement interne : même contrôle que la fonction virement_interne de la base
+    fun virementInterne(date: String, source: String, dest: String, montant: Double, libelle: String?, profil: Profil?) {
+        exiger(profil, "saisir_ecritures")
+        if (source == dest) throw IllegalStateException("Choisissez deux comptes différents")
+        if (montant <= 0) throw IllegalStateException("Le montant doit être positif")
+        val s = comptes.first { it.id == source }; val d = comptes.first { it.id == dest }
+        val lib = libelle?.trim()?.ifBlank { null } ?: when {
+            s.type == "caisse" && d.type == "banque" -> "Dépôt d’espèces à la banque"
+            s.type == "banque" && d.type == "caisse" -> "Retrait d’espèces pour la caisse"
+            else -> "Virement entre comptes"
+        }
+        val v = "v${compteur++}"; val mode = if (s.type == "caisse" || d.type == "caisse") "especes" else "virement"
+        lignes += Ligne(Ecriture("e${compteur++}", date, source, "depense", montant, "ci-d", lib.take(120), mode, virement = v, creePar = profil?.id, creeLe = maintenant()))
+        lignes += Ligne(Ecriture("e${compteur++}", date, dest, "recette", montant, "ci-r", lib.take(120), mode, virement = v, creePar = profil?.id, creeLe = maintenant()))
+    }
+
+    fun annulerVirement(virement: String, motif: String, profil: Profil?) {
+        exiger(profil, "saisir_ecritures")
+        if (motif.isBlank()) throw IllegalStateException("Motif obligatoire")
+        val jambes = lignes.map { it.e }.filter { it.virement == virement && it.contrepasseDe == null }
+        if (jambes.isEmpty()) throw IllegalStateException("Virement introuvable")
+        if (jambes.any { it.rapproche }) throw IllegalStateException("Virement rapproché : période verrouillée, annulation impossible")
+        if (lignes.any { it.e.virement == virement && it.e.contrepasseDe != null }) throw IllegalStateException("Ce virement est déjà annulé")
+        jambes.forEach { j ->
+            lignes += Ligne(j.copy(id = "e${compteur++}", date = aujourdhui().toString(), montant = -j.montant, contrepasseDe = j.id, rapproche = false,
+                rapprochementId = null, libelle = "Contre-passation$NBSP: ${j.libelle}".take(100) + SEP_MOTIF + motif.trim().take(60), creePar = profil?.id, creeLe = maintenant()))
+        }
     }
 
     // Dépense saisie directement : demande de validation a posteriori, rattachée à l'opération
@@ -451,9 +483,16 @@ object Demo {
         return demandesListe.filter { tout || it.demandeur == profil?.id }.sortedByDescending { it.creeLe }
     }
 
-    fun creerDemande(n: NouvelleDemande, profil: Profil?) {
+    fun creerDemande(n: NouvelleDemande, profil: Profil?, devis: Fichier? = null) {
         exiger(profil, "demander_depenses")
-        demandesListe += Demande("r${compteur++}", n.demandeur, n.objet, n.montant, n.categorieId, n.projetId, "soumise", creeLe = aujourdhui().toString() + "T23:59")
+        val id = "r${compteur++}"
+        demandesListe += Demande(id, n.demandeur, n.objet, n.montant, n.categorieId, n.projetId, "soumise", creeLe = aujourdhui().toString() + "T23:59",
+            justification = n.justification, dateSouhaitee = n.dateSouhaitee)
+        if (devis != null) {
+            val chemin = "devis-$id.${devis.extension}"
+            fichiers["justificatifs/$chemin"] = devis.octets
+            pieces += Piece("pj${compteur++}", null, id, chemin, devis.mime, nature = "devis")
+        }
     }
 
     fun changerStatut(id: String, statut: String, profil: Profil?, signature: String? = null, motif: String? = null) {
@@ -467,7 +506,7 @@ object Demo {
             "annulee" -> if (d.demandeur != profil?.id || d.statut != "soumise") throw IllegalStateException("Seul le demandeur annule sa demande")
         }
         val final = if (statut == "validee" && d.regularisation)
-            (if (pieces.any { p -> lignes.any { it.e.demandeId == d.id && it.e.id == p.transactionId } }) "justifiee" else "payee") else statut
+            (if (pieces.any { p -> p.nature == "justificatif" && lignes.any { it.e.demandeId == d.id && it.e.id == p.transactionId } }) "justifiee" else "payee") else statut
         demandesListe[i] = d.copy(statut = final, signature = signature ?: d.signature, motifRefus = motif,
             valideeLe = if (statut == "validee") aujourdhui().toString() else d.valideeLe,
             valideePar = if (statut == "validee") profil?.id else d.valideePar)

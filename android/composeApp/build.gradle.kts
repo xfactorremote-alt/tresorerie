@@ -34,6 +34,11 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
         }
+        // Tests des règles métier (sans téléphone) : ./gradlew :composeApp:testDebugUnitTest
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.core)
+        }
     }
 }
 
@@ -44,8 +49,8 @@ android {
         applicationId = "org.jpgrenoble.tresorerie"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.10.0"
+        versionCode = 12
+        versionName = "0.12.0"
     }
     buildTypes {
         getByName("release") { isMinifyEnabled = false }

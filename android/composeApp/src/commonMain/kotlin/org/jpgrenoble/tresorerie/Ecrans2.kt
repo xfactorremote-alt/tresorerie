@@ -116,22 +116,35 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
     var aRefuser by remember { mutableStateOf<Demande?>(null) }
     var aPayer by remember { mutableStateOf<Demande?>(null) }
     var aJustifier by remember { mutableStateOf<Demande?>(null) }
+    var aRegulariser by remember { mutableStateOf<Demande?>(null) }
+    var voirOperation by remember { mutableStateOf<Ecriture?>(null) }
+    var ecritures by remember { mutableStateOf<List<Ecriture>>(emptyList()) }
+    var projetsTous by remember { mutableStateOf<List<Projet>>(emptyList()) }
+    var profilsCourts by remember { mutableStateOf<List<ProfilCourt>>(emptyList()) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(version) {
         try {
             liste = Repo.demandes()
+            ecritures = try { Repo.toutesEcritures() } catch (_: Exception) { emptyList() }
+            projetsTous = try { Repo.projets() } catch (_: Exception) { emptyList() }
+            profilsCourts = try { Repo.profils() } catch (_: Exception) { emptyList() }
             noms = try { Repo.profils().associate { it.id to it.nom } } catch (_: Exception) { mapOf(d.profil.id to d.profil.nom) }
             pieces = try { Repo.pieces() } catch (_: Exception) { emptyList() }
             delai = try { (Repo.reglages()["delai_justificatif_jours"] ?: 7.0).toInt() } catch (_: Exception) { 7 }
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
+    // État de chaque demande déduit de son opération et de l'éventuelle contre-passation
+    val etats = remember(liste, ecritures) { EtatsDemandes(liste ?: emptyList(), ecritures) }
     val filtres = listOf(
-        "a_valider" to "À valider", "a_payer" to "À payer", "a_justifier" to "Justificatif attendu", "terminees" to "Terminées", "toutes" to "Toutes",
-    )
+        "a_valider" to "À valider", "a_payer" to "À payer", "a_justifier" to "Justificatif attendu", "a_regulariser" to "À régulariser", "terminees" to "Terminées", "toutes" to "Toutes",
+    ).filter { (k, _) -> k != "a_regulariser" || liste.orEmpty().any { etats.aRegulariser(it) } }
     fun garde(x: Demande, f: String = filtre) = when (f) {
-        "a_valider" -> x.statut == "soumise"; "a_payer" -> x.statut == "validee"; "a_justifier" -> x.statut == "payee"
-        "terminees" -> x.statut in listOf("justifiee", "refusee", "annulee"); else -> true
+        "a_valider" -> x.statut == "soumise"; "a_payer" -> x.statut == "validee"; "a_justifier" -> x.statut == "payee" && etats.annulation(x) == null
+        "a_regulariser" -> etats.aRegulariser(x)
+        "terminees" -> !etats.aRegulariser(x) && (x.statut in listOf("justifiee", "refusee", "annulee") || etats.annulation(x) != null); else -> true
     }
+    if (filtre == "a_regulariser" && filtres.none { it.first == "a_regulariser" }) filtre = "toutes"
+    val devisDe = { x: Demande -> pieces.firstOrNull { it.nature == "devis" && it.demandeId == x.id } }
     val choixPiece = rememberChoixFichier { f, err ->
         val dem = aJustifier
         if (err != null) message(err)
@@ -160,8 +173,9 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                 val vus = l.filter { garde(it) }
                 if (vus.isEmpty()) item { Text("Aucune demande.", color = Couleurs.Texte2) }
                 items(vus, key = { it.id }) { x ->
-                    val (fond, couleur) = couleursStatut(x.statut)
-                    val retard = x.statut == "payee" && x.payeeLe != null &&
+                    val annul = etats.annulation(x); val op = etats.operation(x); val regul = etats.aRegulariser(x)
+                    val (fond, couleur) = when { annul != null -> couleursStatut("annulee"); regul -> couleursStatut("refusee"); else -> couleursStatut(x.statut) }
+                    val retard = x.statut == "payee" && annul == null && x.payeeLe != null &&
                         aujourdhui().toEpochDays() - LocalDate.parse(x.payeeLe.take(10)).toEpochDays() > delai
                     CarteBlanche(onClick = { detail = x }) {
                         Row(verticalAlignment = Alignment.Top) {
@@ -175,10 +189,26 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                             }
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(euros(x.montant), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                                Puce(STATUTS[x.statut] ?: x.statut, fond, couleur)
+                                Puce(when { annul != null -> "Opération annulée"; regul -> "Refusée · à régulariser"; else -> STATUTS[x.statut] ?: x.statut }, fond, couleur)
+                            }
+                        }
+                        if (!x.justification.isNullOrBlank() || x.dateSouhaitee != null) Surface(color = Color(0xFFEFEDEC), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) {
+                                x.justification?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 14.sp) }
+                                x.dateSouhaitee?.let { Text("Souhaitée pour le ${dateFr(it)}", fontSize = 13.sp, color = Couleurs.Texte2) }
                             }
                         }
                         Etapes(x)
+                        if (annul != null && op != null) Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(14.dp)) {
+                            Text("Paiement du ${dateFr(op.date)} neutralisé par contre-passation le ${dateFr(annul.date)}" + motifDe(annul.libelle).let { m -> if (m.isNotEmpty()) " ($m)" else "" } +
+                                ". Le montant n’entre plus dans les comptes" + (if (x.statut == "payee") "$NBSP; aucun justificatif n’est plus demandé." else "."), Modifier.padding(12.dp), fontSize = 14.sp)
+                        }
+                        if (regul && op != null) Surface(color = Couleurs.ErreurClair, shape = RoundedCornerShape(14.dp)) {
+                            Text("Dépense déjà payée, puis refusée par le président$NBSP: l’argent est sorti " +
+                                (if (d.comptes.firstOrNull { it.id == op.compteId }?.type == "caisse") "de la caisse. " else "du compte bancaire. ") +
+                                (if (d.peut("saisir_ecritures")) "Régularisez-la$NBSP: erreur de saisie, ou remboursement reçu." else "Le trésorier doit la régulariser."),
+                                Modifier.padding(12.dp), fontSize = 14.sp)
+                        }
                         if (retard) Surface(color = Couleurs.ErreurClair, shape = RoundedCornerShape(14.dp)) {
                             Text("Justificatif en retard, délai de $delai$NBSP" + "jours dépassé", Modifier.padding(12.dp), fontSize = 14.sp)
                         }
@@ -188,8 +218,10 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                                 TextButton(onClick = { aRefuser = x }) { Text("Refuser") }
                                 Button(onClick = { aValider = x }) { Text("Valider et signer") }
                             }
+                            if (op != null && d.peut("consulter_finances", "saisir_ecritures")) TextButton(onClick = { voirOperation = op }) { Text("Voir l’opération") }
+                            if (regul && d.peut("saisir_ecritures") && op?.rapproche == false) Button(onClick = { aRegulariser = x }) { Text("Régulariser") }
                             if (d.peut("payer_depenses") && x.statut == "validee" && x.valideePar != d.profil.id) Button(onClick = { aPayer = x }) { Text("Payer") }
-                            if (x.statut == "payee" && (d.peut("saisir_ecritures", "payer_depenses") || x.demandeur == d.profil.id))
+                            if (x.statut == "payee" && annul == null && (d.peut("saisir_ecritures", "payer_depenses") || x.demandeur == d.profil.id))
                                 FilledTonalButton(onClick = { aJustifier = x; choixPiece() }) { Text("Joindre le justificatif") }
                             if (x.statut == "soumise" && x.demandeur == d.profil.id)
                                 TextButton(onClick = {
@@ -230,16 +262,19 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                 LigneInfo("Validée le", x.valideeLe?.let(::dateFr))
                 LigneInfo("Payée le", x.payeeLe?.let(::dateFr))
                 LigneInfo("Motif du refus", x.motifRefus)
+                LigneInfo("Justification", x.justification)
+                LigneInfo("Pour le", x.dateSouhaitee?.let(::dateFr))
                 Spacer(Modifier.height(8.dp))
-                PiecesVue(pieces.filter { it.demandeId == x.id }, x.signature)
-                if (x.statut == "payee" && (d.peut("saisir_ecritures", "payer_depenses") || x.demandeur == d.profil.id))
+                PiecesVue(pieces.filter { it.demandeId == x.id && it.nature != "devis" }, x.signature)
+                devisDe(x)?.let { dv -> Text("Devis", fontWeight = FontWeight.Bold); PiecesVue(listOf(dv), null) }
+                if (x.statut == "payee" && etats.annulation(x) == null && (d.peut("saisir_ecritures", "payer_depenses") || x.demandeur == d.profil.id))
                     FilledTonalButton(onClick = { aJustifier = x; detail = null; choixPiece() }, modifier = Modifier.align(Alignment.End)) { Text("Joindre le justificatif") }
             }
         }
     }
     aValider?.let { x ->
         ModalBottomSheet(onDismissRequest = { aValider = null }) {
-            Signature(x, d, onFini = { ok -> aValider = null; if (ok) { message("Dépense validée"); version++ } }, message)
+            Signature(x, d, devisDe(x), onFini = { ok -> aValider = null; if (ok) { message("Dépense validée"); version++ } }, message)
         }
     }
     aRefuser?.let { x ->
@@ -295,6 +330,63 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
             dismissButton = { TextButton(onClick = { aPayer = null }) { Text("Annuler") } },
         )
     }
+    aRegulariser?.let { x ->
+        val op = etats.operation(x)
+        if (op != null) ModalBottomSheet(onDismissRequest = { aRegulariser = null }) {
+            FeuilleRegulariser(d, x, op, message) { ok -> aRegulariser = null; if (ok) version++ }
+        }
+    }
+    voirOperation?.let { e ->
+        ModalBottomSheet(onDismissRequest = { voirOperation = null }) {
+            DetailOperation(d, e, ecritures, pieces, liste.orEmpty(), projetsTous, profilsCourts, "", "", message, onVoir = { voirOperation = it }) { change ->
+                voirOperation = null; if (change) version++
+            }
+        }
+    }
+}
+
+// Dépense payée puis refusée : soit la dépense n'a jamais eu lieu (erreur de saisie), soit la personne
+// a rendu l'argent (remboursement reçu, à la date et sur le compte où il est arrivé).
+// Tant qu'aucun des deux n'est enregistré, la demande reste « à régulariser ».
+@Composable
+private fun FeuilleRegulariser(d: Donnees, x: Demande, op: Ecriture, message: (String) -> Unit, onFini: (Boolean) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var rembourse by remember { mutableStateOf(false) }
+    var date by remember { mutableStateOf(dateFr(aujourdhui().toString())) }
+    var compte by remember { mutableStateOf(d.comptes.firstOrNull { it.id == op.compteId } ?: d.comptes.firstOrNull()) }
+    var mode by remember { mutableStateOf(op.mode) }
+    var enCours by remember { mutableStateOf(false) }
+    val dt = dateDepuisFr(date)
+    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Régulariser la dépense refusée", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("${op.libelle}, ${euros(op.montant)}, payée le ${dateFr(op.date)}", fontWeight = FontWeight.SemiBold)
+        x.motifRefus?.let { Text("Motif du refus$NBSP: $it", color = Couleurs.Texte2, fontSize = 14.sp) }
+        listOf(false to "Erreur de saisie : la dépense n’a pas eu lieu, aucun argent n’est sorti", true to "Remboursement reçu : la personne a rendu l’argent").forEach { (v, l) ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { rembourse = v }, verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(rembourse == v, { rembourse = v }); Text(l, fontSize = 15.sp)
+            }
+        }
+        if (rembourse) {
+            OutlinedTextField(date, { date = it }, label = { Text("Date du remboursement") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.fillMaxWidth())
+            ChoixListe("Arrivé sur", compte?.nom ?: "", d.comptes.map { it.nom }) { compte = d.comptes[it] }
+            ChoixListe("Mode", MODES[mode] ?: mode, MODES.values.toList()) { mode = MODES.keys.toList()[it] }
+        }
+        Text("Si l’argent n’a pas encore été rendu, ne faites rien$NBSP: la demande reste dans « À régulariser ».", color = Couleurs.Texte2, fontSize = 13.sp)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+            TextButton(onClick = { onFini(false) }) { Text("Annuler") }
+            Button(enabled = !enCours && (!rembourse || (dt != null && compte != null)), onClick = {
+                enCours = true
+                scope.launch {
+                    try {
+                        if (rembourse) Repo.contrePasser(op, d.profil.id, "dépense refusée", "Remboursement reçu", dt.toString(), compte!!.id, mode)
+                        else Repo.contrePasser(op, d.profil.id, "dépense refusée", "Erreur de saisie")
+                        message(if (rembourse) "Remboursement enregistré" else "Dépense annulée"); onFini(true)
+                    } catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
+                }
+            }) { Text("Enregistrer") }
+        }
+    }
 }
 
 @Composable
@@ -305,23 +397,49 @@ private fun FormulaireDemande(d: Donnees, onFini: (Boolean) -> Unit, message: (S
     var categorie by remember { mutableStateOf(categories.firstOrNull()) }
     var projets by remember { mutableStateOf<List<Projet>>(emptyList()) }
     var projet by remember { mutableStateOf<Projet?>(null) }
+    var justification by remember { mutableStateOf("") }
+    var pourLe by remember { mutableStateOf("") }
+    var devis by remember { mutableStateOf<Fichier?>(null) }
+    var seuil by remember { mutableStateOf(100.0) }
+    var delai by remember { mutableStateOf(7) }
     var enCours by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { try { projets = Repo.projets() } catch (_: Exception) { } }
+    val choixDevis = rememberChoixFichier { f, err -> if (err != null) message(err); if (f != null) devis = f }
+    LaunchedEffect(Unit) {
+        try { projets = Repo.projets() } catch (_: Exception) { }
+        try { Repo.reglages().let { r -> seuil = r["seuil_justification"] ?: 100.0; delai = (r["delai_justificatif_jours"] ?: 7.0).toInt() } } catch (_: Exception) { }
+    }
     val valeur = montant.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 }
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // Au-delà du seuil réglé dans Paramètres, la justification devient obligatoire
+    val justifRequise = valeur != null && valeur >= seuil
+    val dateSouhaitee = if (pourLe.isBlank()) null else dateDepuisFr(pourLe)
+    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Nouvelle demande", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         OutlinedTextField(objet, { objet = it.take(120) }, label = { Text("Objet") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(montant, { montant = it }, label = { Text("Montant") }, suffix = { Text("€") }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
         ChoixListe("Catégorie", categorie?.nom ?: "", categories.map { it.nom }) { categorie = categories[it] }
         ChoixListe("Activité", projet?.nom ?: "Aucune", listOf("Aucune") + projets.map { it.nom }) { projet = if (it == 0) null else projets[it - 1] }
+        OutlinedTextField(justification, { justification = it.take(500) }, label = { Text(if (justifRequise) "Pourquoi cette dépense (obligatoire)" else "Pourquoi cette dépense") },
+            placeholder = { Text("À quoi elle sert, pourquoi ce fournisseur") }, minLines = 2, isError = justifRequise && justification.isBlank(), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(pourLe, { pourLe = it }, label = { Text("Pour le (facultatif)") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
+            isError = pourLe.isNotBlank() && dateSouhaitee == null, modifier = Modifier.fillMaxWidth())
+        OutlinedButton(onClick = choixDevis, modifier = Modifier.fillMaxWidth()) {
+            Text(devis?.let { "Devis joint (${it.ko}$NBSP" + "Ko)" } ?: "Joindre un devis (facultatif)")
+        }
+        Text("La demande part au président, qui la valide en signant. Le trésorier paie ensuite, puis le justificatif est à déposer dans les $delai$NBSP" + "jours.",
+            fontSize = 13.sp, color = Couleurs.Texte2)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.align(Alignment.End)) {
             TextButton(onClick = { onFini(false) }) { Text("Annuler") }
-            Button(enabled = !enCours && objet.isNotBlank() && valeur != null && categorie != null, onClick = {
+            Button(enabled = !enCours && objet.isNotBlank() && valeur != null && categorie != null && (!justifRequise || justification.isNotBlank()) && (pourLe.isBlank() || dateSouhaitee != null), onClick = {
                 enCours = true
                 scope.launch {
-                    try { Repo.creerDemande(NouvelleDemande(d.profil.id, objet.trim(), valeur!!, categorie!!.id, projet?.id)); onFini(true) }
+                    try {
+                        val devisOk = Repo.creerDemande(NouvelleDemande(d.profil.id, objet.trim(), valeur!!, categorie!!.id, projet?.id,
+                            justification = justification.trim().ifBlank { null }, dateSouhaitee = dateSouhaitee?.toString()), devis)
+                        if (!devisOk) message("Demande envoyée, mais le devis n’a pas pu être joint")
+                        onFini(true)
+                    }
                     catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
                 }
             }) { Text("Envoyer") }
@@ -344,7 +462,7 @@ fun ChoixListe(titre: String, valeur: String, options: List<String>, onChoix: (I
 
 // Signature au doigt du président
 @Composable
-private fun Signature(x: Demande, d: Donnees, onFini: (Boolean) -> Unit, message: (String) -> Unit) {
+private fun Signature(x: Demande, d: Donnees, devis: Piece?, onFini: (Boolean) -> Unit, message: (String) -> Unit) {
     val traits = remember { mutableStateListOf<List<Offset>>() }
     var courant by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var taille by remember { mutableStateOf(IntSize.Zero) }
@@ -354,6 +472,9 @@ private fun Signature(x: Demande, d: Donnees, onFini: (Boolean) -> Unit, message
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Valider cette dépense$NBSP?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text("${x.objet}, ${euros(x.montant)}", fontWeight = FontWeight.SemiBold)
+        x.dateSouhaitee?.let { Text("Pour le ${dateFr(it)}", fontSize = 13.sp, color = Couleurs.Texte2) }
+        x.justification?.takeIf { it.isNotBlank() }?.let { Surface(color = Color(0xFFEFEDEC), shape = RoundedCornerShape(12.dp)) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
+        devis?.let { PiecesVue(listOf(it), null) }
         Text("Signature", fontSize = 13.sp, color = Couleurs.Texte2)
         Canvas(
             Modifier.fillMaxWidth().height(200.dp)
@@ -456,6 +577,12 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Titre("Rapprochement") }
+        if (!d.peut("rapprocher")) item {
+            Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Text("Consultation$NBSP: le rapprochement est fait par le trésorier. Il compare chaque mois les opérations enregistrées au relevé de la banque et au comptage de la caisse$NBSP; une période rapprochée est verrouillée." +
+                    if (historique.isEmpty()) " Aucun rapprochement n’a encore été terminé." else "", Modifier.padding(12.dp), fontSize = 14.sp)
+            }
+        }
         if (d.peut("rapprocher")) {
             item {
                 CarteBlanche {

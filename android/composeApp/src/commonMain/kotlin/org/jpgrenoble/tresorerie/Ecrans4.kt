@@ -21,6 +21,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
@@ -126,8 +128,10 @@ fun ChampTiers(valeur: String, onChange: (String) -> Unit, suggestions: List<Pai
 // Une case par période, colorée selon l'état
 @Composable
 fun GrillePeriodes(cases: List<Pair<String, String?>>, pas: Int, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        cases.forEach { (p, st) ->
+    // Douze mois : deux lignes de six pour que les noms restent lisibles
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) { cases.chunked(if (cases.size == 12) 6 else cases.size.coerceAtLeast(1)).forEach { rangee ->
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        rangee.forEach { (p, st) ->
             val (fond, texte) = when (st) {
                 "regle" -> Couleurs.Bleu to Color.White
                 "partiel" -> Couleurs.Jaune to Couleurs.SurJaune
@@ -135,13 +139,16 @@ fun GrillePeriodes(cases: List<Pair<String, String?>>, pas: Int, modifier: Modif
                 null -> Color.Transparent to Couleurs.Texte2
                 else -> Color(0xFFEFEDEC) to Couleurs.Texte2
             }
-            Box(Modifier.weight(1f).height(20.dp).clip(RoundedCornerShape(5.dp)).background(fond)
+            val etat = when (st) { "regle" -> "réglé"; "partiel" -> "partiel"; "impaye" -> "impayé"; "a_venir" -> "à venir"; "dispense" -> "dispensé"; null -> "non dû"; else -> st }
+            Box(Modifier.weight(1f).height(22.dp).clip(RoundedCornerShape(5.dp)).background(fond)
+                .semantics { contentDescription = "${nomPeriode(p, pas)} : $etat" }
                 .then(if (st == "impaye") Modifier.border(1.dp, Couleurs.Erreur, RoundedCornerShape(5.dp)) else if (st == null) Modifier.border(1.dp, Color(0xFFD9D3D0), RoundedCornerShape(5.dp)) else Modifier),
                 contentAlignment = Alignment.Center) {
-                if (pas == 1) Text(MOIS[p.substring(5, 7).toInt() - 1].take(1).uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = texte)
+                if (pas == 1) Text(MOIS_COURTS[p.substring(5, 7).toInt() - 1], fontSize = 10.sp, fontWeight = FontWeight.Bold, color = texte, maxLines = 1)
             }
         }
     }
+    } }
 }
 
 @Composable
@@ -168,7 +175,7 @@ data class PreEcriture(val sens: String = "depense", val membreId: String? = nul
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Boolean) -> Unit, message: (String) -> Unit) {
+fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Boolean) -> Unit, message: (String) -> Unit, onVirement: (() -> Unit)? = null) {
     val limite = !d.peut("saisir_ecritures")     // droit « cotisations » seul : encaissement rattaché à une rubrique
     var sens by remember { mutableStateOf(if (limite || pre.rubrique != null) "recette" else pre.sens) }
     var montant by remember { mutableStateOf(pre.montant?.takeIf { it > 0 }?.let { montantSaisie(it) } ?: "") }
@@ -190,6 +197,9 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
     var piece by remember { mutableStateOf<Fichier?>(null) }
     var faireValider by remember { mutableStateOf(true) }
     var enCours by remember { mutableStateOf(false) }
+    // Combinaison compte / mode inhabituelle : signalée, puis confirmée par un second appui
+    val alerteMode = incoherenceMode(compte, mode)
+    var modeConfirme by remember(compte, mode) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val choix = rememberChoixFichier { f, err -> if (err != null) message(err); if (f != null) piece = f }
     LaunchedEffect(Unit) {
@@ -238,8 +248,9 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (pre.rubrique != null || limite) "Encaissement" else "Nouvelle opération", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         if (!limite) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("depense" to "Dépense", "recette" to "Recette").forEachIndexed { i, (k, v) ->
-                SegmentedButton(selected = sens == k, onClick = { sens = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(v) }
+            val choix = listOf("depense" to "Dépense", "recette" to "Recette") + if (onVirement != null && pre.rubrique == null) listOf("virement" to "Virement") else emptyList()
+            choix.forEachIndexed { i, (k, v) ->
+                SegmentedButton(selected = sens == k, onClick = { if (k == "virement") onVirement?.invoke() else sens = k }, shape = SegmentedButtonDefaults.itemShape(i, choix.size)) { Text(v) }
             }
         }
         OutlinedTextField(montant, { montant = it }, label = { Text("Montant") }, singleLine = true, suffix = { Text("€") },
@@ -257,6 +268,9 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
         ChoixListe("Catégorie", categorie?.nom ?: "", categories.map { it.nom }) { i -> categorie = categories[i] }
         ChoixListe("Mode", MODES[mode] ?: mode, MODES.values.toList()) { mode = MODES.keys.toList()[it] }
         ChoixListe("Compte", compte?.nom ?: "", d.comptes.map { it.nom }) { compte = d.comptes[it] }
+        if (alerteMode.isNotEmpty()) Surface(color = Couleurs.JauneClair, contentColor = Couleurs.SurJaune, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Text(alerteMode, Modifier.padding(12.dp), fontSize = 14.sp)
+        }
         ChoixListe("Activité", projet?.nom ?: "Aucune", listOf("Aucune") + projets.map { it.nom }) { i -> projet = if (i == 0) null else projets[i - 1] }
         if (sens == "depense") OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
@@ -272,6 +286,7 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
                 onClick = {
                     val rub = if (sens == "recette") rubrique else ""
                     if (rub == "cotisation" && trouve.membreId == null) { message("Une cotisation se rattache à un membre : choisissez-le dans la liste"); return@Button }
+                    if (alerteMode.isNotEmpty() && !modeConfirme) { modeConfirme = true; message("Compte et mode inhabituels : vérifiez, puis enregistrez à nouveau pour confirmer"); return@Button }
                     enCours = true
                     scope.launch {
                         try {

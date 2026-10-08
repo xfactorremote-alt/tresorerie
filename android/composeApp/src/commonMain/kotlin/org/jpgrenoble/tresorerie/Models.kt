@@ -23,7 +23,7 @@ data class Solde(val id: String, val nom: String, val type: String, val solde: D
 data class Compte(val id: String, val nom: String, val type: String, @SerialName("solde_initial") val soldeInitial: Double = 0.0, val actif: Boolean = true)
 
 @Serializable
-data class Categorie(val id: String, val nom: String, val sens: String)
+data class Categorie(val id: String, val nom: String, val sens: String, val interne: Boolean = false)
 
 @Serializable
 data class Membre(
@@ -59,7 +59,15 @@ data class Ecriture(
     @SerialName("tiers_id") val tiersId: String? = null,
     @SerialName("est_cotisation") val estCotisation: Boolean = false,
     @SerialName("collecte_id") val collecteId: String? = null,
-) { val signe get() = if (sens == "recette") montant else -montant }
+    val virement: String? = null,                                    // virement interne : identifiant commun aux deux écritures
+    @SerialName("created_by") val creePar: String? = null,
+    @SerialName("created_at") val creeLe: String? = null,
+    @SerialName("date_rapprochement") val dateRapprochement: String? = null,
+) {
+    val signe get() = if (sens == "recette") montant else -montant
+    // Un virement interne change les soldes, jamais les recettes ni les dépenses
+    val estFlux get() = virement == null
+}
 
 @Serializable
 data class NouvelleEcriture(
@@ -186,6 +194,8 @@ data class Demande(
     @SerialName("validee_par") val valideePar: String? = null,
     val regularisation: Boolean = false,
     @SerialName("signature_hash") val empreinte: String? = null,
+    val justification: String? = null,
+    @SerialName("date_souhaitee") val dateSouhaitee: String? = null,
 )
 
 @Serializable
@@ -196,6 +206,8 @@ data class NouvelleDemande(
     @SerialName("category_id") val categorieId: String,
     @SerialName("project_id") val projetId: String? = null,
     val statut: String = "soumise",
+    val justification: String? = null,
+    @SerialName("date_souhaitee") val dateSouhaitee: String? = null,
 )
 
 @Serializable
@@ -326,6 +338,17 @@ data class Piece(
     @SerialName("request_id") val demandeId: String? = null,
     @SerialName("storage_path") val chemin: String,
     val mime: String? = null,
+    val nature: String = "justificatif",                             // « devis » : ne remplace jamais le justificatif
+)
+
+@Serializable
+data class NouveauDevis(
+    @SerialName("request_id") val demandeId: String,
+    @SerialName("storage_path") val chemin: String,
+    val mime: String,
+    @SerialName("taille_ko") val ko: Int,
+    @SerialName("depose_par") val deposePar: String,
+    val nature: String = "devis",
 )
 
 @Serializable

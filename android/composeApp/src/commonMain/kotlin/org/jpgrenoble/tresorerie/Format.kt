@@ -7,6 +7,7 @@ import kotlinx.datetime.todayIn
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
+val MOIS_COURTS = listOf("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.")
 val MOIS = listOf("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre")
 private const val ESPACE_FINE = ' '
 

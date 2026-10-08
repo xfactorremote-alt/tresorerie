@@ -41,7 +41,6 @@ object CouleursGraph {
     // Code couleur unique : recettes en bleu, dépenses en orange, trésorerie en encre neutre
     val Tresorerie = Color(0xFF4A4543); const val TRESORERIE = "#4A4543"
 }
-private val MOIS_COURTS = listOf("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.")
 
 data class Mois(val cle: String, val rec: Double, val dep: Double, val solde: Double) { val libelle get() = MOIS_COURTS[cle.substring(5, 7).toInt() - 1] }
 data class Element(val nom: String, val valeur: Double)
@@ -61,8 +60,9 @@ fun serieMensuelle(txs: List<Ecriture>, comptes: List<Compte>, debut: String, fi
     var solde = comptes.sumOf { it.soldeInitial } + txs.filter { it.date < mois.first() + "-01" }.sumOf { it.signe }
     return mois.map { m ->
         val l = txs.filter { it.date.startsWith(m) }
-        val rec = l.filter { it.sens == "recette" }.sumOf { it.montant }; val dep = l.filter { it.sens == "depense" }.sumOf { it.montant }
-        solde += rec - dep
+        // Un virement interne change les soldes, jamais les recettes ni les dépenses
+        val rec = l.filter { it.sens == "recette" && it.estFlux }.sumOf { it.montant }; val dep = l.filter { it.sens == "depense" && it.estFlux }.sumOf { it.montant }
+        solde += l.sumOf { it.signe }
         Mois(m, rec, dep, solde)
     }
 }
@@ -77,7 +77,8 @@ private fun graduations(min0: Double, max0: Double, n: Int = 4): List<Double> {
     val min = min0; val max = if (max0 == min0) min0 + 1 else max0
     val brut = (max - min) / n
     val p = 10.0.pow(floor(log10(brut)))
-    val pas = listOf(1.0, 2.0, 2.5, 5.0, 10.0).map { it * p }.first { it >= brut }
+    // Montants en euros : jamais de pas inférieur à 1 €, sinon les graduations arrondies se répètent (0, 0, 1, 1)
+    val pas = maxOf(1.0, listOf(1.0, 2.0, 2.5, 5.0, 10.0).map { it * p }.first { it >= brut })
     val bas = floor(min / pas) * pas; val haut = ceil(max / pas) * pas
     return generateSequence(bas) { it + pas }.takeWhile { it <= haut + pas / 2 }.map { round(it * 100) / 100 }.toList()
 }

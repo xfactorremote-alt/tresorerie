@@ -37,11 +37,14 @@ class Donnees(
     val profil: Profil,
     val organisation: Organisation,
     val comptes: List<Compte>,
-    val categories: List<Categorie>,
+    // Toutes les catégories, y compris « Virement interne » ; jamais proposées à la saisie
+    val categoriesToutes: List<Categorie>,
     val membres: List<Membre>,
     val droits: Set<String>,
     val roles: List<Role>,
 ) {
+    val categories: List<Categorie> = categoriesToutes.filter { !it.interne }
+    fun nomCategorie(id: String?) = categoriesToutes.firstOrNull { it.id == id }?.nom ?: ""
     fun peut(vararg codes: String) = codes.any { it in droits }
     fun nomRole(code: String) = roles.firstOrNull { it.code == code }?.nom ?: code
 }

@@ -61,23 +61,24 @@ private fun table(colonnes: List<Pair<String, String>>, lignes: List<List<String
 private const val SIGNATURES = "<div class=\"sig\"><div>Le trésorier</div><div>Le président</div></div>"
 
 /** Types : journal, cotisations, budget, demandes, membres. */
-suspend fun documentHtml(d: Donnees, type: String, an: Int): Pair<String, String> = when (type) {
+suspend fun documentHtml(d: Donnees, type: String, an: Int, du: String? = null, au: String? = null, intitule: String? = null): Pair<String, String> = when (type) {
     "journal" -> {
         val toutes = Repo.toutesEcritures().sortedBy { it.date }
         val comptes = try { Repo.tousLesComptes() } catch (_: Exception) { d.comptes }
         val avecPiece = Repo.pieces().mapNotNull { it.transactionId }.toSet()
         val ms = d.membres; val ts = try { Repo.tiers() } catch (_: Exception) { emptyList() }
-        val debut = "$an-01-01"; val fin = "$an-12-31"
+        val debut = du ?: "$an-01-01"; val fin = au ?: "$an-12-31"
         val soldeDebut = comptes.sumOf { it.soldeInitial } + toutes.filter { it.date < debut }.sumOf { it.signe }
         val lignes = toutes.filter { it.date in debut..fin }
-        val rec = lignes.filter { it.sens == "recette" }.sumOf { it.montant }; val dep = lignes.filter { it.sens == "depense" }.sumOf { it.montant }
-        val titre = "Journal des opérations $an"
-        titre to page(d, titre, "Du 01/01/$an au 31/12/$an",
+        // Les virements internes figurent au journal mais pas dans les totaux de recettes et de dépenses
+        val rec = lignes.filter { it.sens == "recette" && it.estFlux }.sumOf { it.montant }; val dep = lignes.filter { it.sens == "depense" && it.estFlux }.sumOf { it.montant }
+        val titre = "Journal des opérations, " + (intitule ?: "exercice $an")
+        titre to page(d, titre, "Du ${dateFr(debut)} au ${dateFr(fin)}",
             synthese(Triple("Solde au début", euros(soldeDebut), null), Triple("Recettes", euros(rec), "#1B77B0"), Triple("Dépenses", euros(dep), "#C23E10"), Triple("Solde à la fin", euros(soldeDebut + rec - dep), null)) +
             table(listOf("N°" to "nw", "Date" to "nw", "Libellé" to "", "Tiers" to "", "Catégorie" to "", "Compte" to "", "Pièce" to "", "Recette" to "d", "Dépense" to "d"),
                 lignes.mapIndexed { i, t ->
-                    listOf("${i + 1}", dateFr(t.date), e(t.libelle), e(nomTiers(t, ms, ts)), e(d.categories.firstOrNull { it.id == t.categorieId }?.nom),
-                        e(comptes.firstOrNull { it.id == t.compteId }?.nom), if (t.sens == "depense" && t.montant > 0) (if (t.id in avecPiece) "Oui" else "<b>Non</b>") else "",
+                    listOf("${i + 1}", dateFr(t.date), e(t.libelle) + if (t.virement != null) " <span class=\"muted\">(virement interne, hors totaux)</span>" else "", e(nomTiers(t, ms, ts)), e(d.nomCategorie(t.categorieId)),
+                        e(comptes.firstOrNull { it.id == t.compteId }?.nom), if (t.sens == "depense" && t.estFlux && t.montant > 0) (if (t.id in avecPiece) "Oui" else "<b>Non</b>") else "",
                         if (t.sens == "recette") euros(t.montant) else "", if (t.sens == "depense") euros(t.montant) else "")
                 }, listOf("", "", "<b>${lignes.size} opérations</b>", "", "", "", "", "<b>${euros(rec)}</b>", "<b>${euros(dep)}</b>")) + SIGNATURES)
     }
@@ -152,7 +153,7 @@ suspend fun archivePieces(d: Donnees, an: Int, progression: (String) -> Unit): P
         val cat = d.categories.firstOrNull { it.id == t.categorieId }?.nom ?: ""
         val mois = "${t.date.substring(5, 7)}-${MOIS[t.date.substring(5, 7).toInt() - 1]}"
         if (p.isEmpty()) {
-            if (t.sens == "depense" && t.montant > 0 && t.contrepasseDe == null && t.id !in annulees) inventaire += listOf(dateFr(t.date), t.libelle, nomTiers(t, ms, ts), cat, montant(t.montant), "MANQUANTE")
+            if (t.sens == "depense" && t.estFlux && t.montant > 0 && t.contrepasseDe == null && t.id !in annulees) inventaire += listOf(dateFr(t.date), t.libelle, nomTiers(t, ms, ts), cat, montant(t.montant), "MANQUANTE")
             return@forEach
         }
         p.forEachIndexed { i, a ->
