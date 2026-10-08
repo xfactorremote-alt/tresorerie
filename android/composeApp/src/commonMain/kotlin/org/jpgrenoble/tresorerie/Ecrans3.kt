@@ -1420,7 +1420,7 @@ fun EcranPlus(d: Donnees, onChoix: (String) -> Unit) {
         if (d.peut("rapprocher", "consulter_finances")) add(Triple("rapprochement", "Rapprochement", Icons.Outlined.AccountBalance))
         if (d.peut("consulter_finances")) add(Triple("rapports", "Rapports et exports", Icons.Outlined.Description))
         if (d.profil.memberId != null) add(Triple("moi", "Ma cotisation", Icons.Outlined.Person))
-        add(Triple("parametres", "Paramètres", Icons.Outlined.Settings))
+        // Paramètres : roue dentée en haut de chaque écran (et sur la bannière de l'accueil), pas de doublon ici
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(entrees, key = { it.first }) { (k, l, icone) ->
