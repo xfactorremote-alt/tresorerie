@@ -21,8 +21,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
@@ -802,7 +804,7 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, cho
                            annivDe: (String) -> List<Anniversaire>, onJour: (String) -> Unit) {
     val jours = generateSequence(debut) { it.plus(DatePeriod(days = 1)) }.takeWhile { it <= fin }.toList()
     val auj = aujourdhui().toString()
-    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp)) { Box {
         Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row { JOURS_COURTS.forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 11.sp, color = Couleurs.Texte2, fontWeight = FontWeight.Bold) } }
             jours.chunked(7).forEach { semaine ->
@@ -825,7 +827,10 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, cho
                 }
             }
         }
-    }
+        // Logo de l'association en filigrane : très discret, laisse passer les appuis sur les jours
+        LogoAsso(Modifier.align(Alignment.Center).fillMaxWidth(0.6f).aspectRatio(1f).graphicsLayer { alpha = 0.08f }.clip(CircleShape)
+            .clearAndSetSemantics { })
+    } }
 }
 
 @Composable

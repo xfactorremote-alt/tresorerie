@@ -3425,6 +3425,9 @@ async function pdfBudget(an) {
 }
 
 // =====================================================================
+// Logo de l'association en filigrane derrière le calendrier (décoratif, ignoré par les lecteurs d'écran)
+const filigrane = () => `<img class="filigrane" src="${esc(S.logoUrl)}" alt="" aria-hidden="true" onerror="this.remove()">`;
+
 // Planning : calendrier (affichage mois ou semaine) et liste des rendez-vous à venir
 // =====================================================================
 const preferencePlanning = (cle, def) => { try { return localStorage.getItem(cle) || def; } catch { return def; } };
@@ -3467,7 +3470,7 @@ async function pageActivites() {
   } else if (P.affichage === 'mois') {
     const cases = [];
     for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) cases.push(isoLocal(d));
-    corps = `<div class="cal"><div class="cal-tete">${JOURS_COURTS.map((j) => `<span>${j}</span>`).join('')}</div>
+    corps = `<div class="cal">${filigrane()}<div class="cal-tete">${JOURS_COURTS.map((j) => `<span>${j}</span>`).join('')}</div>
       <div class="cal-grille">${cases.map((s) => {
         const e = parJour[s] || [], a = annivDe(s), horsMois = dateDe(s).getMonth() !== ref.getMonth();
         return `<div class="cal-jour ${horsMois ? 'hors' : ''} ${s === auj ? 'auj' : ''}" data-jour="${s}" tabindex="0" role="button" aria-label="${jourLong(s)}${e.length ? ', ' + e.length + ' rendez-vous' : ''}">
@@ -3478,7 +3481,7 @@ async function pageActivites() {
   } else {
     const jours = [];
     for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) jours.push(isoLocal(d));
-    corps = `<section class="carte"><ul class="liste agenda">${jours.map((s) => `<li class="agenda-jour ${s === auj ? 'auj' : ''}">
+    corps = `<section class="carte cal-semaine">${filigrane()}<ul class="liste agenda">${jours.map((s) => `<li class="agenda-jour ${s === auj ? 'auj' : ''}">
       <button class="agenda-date" data-jour="${s}"><b>${Number(s.slice(8))}</b><span>${JOURS_COURTS[(dateDe(s).getDay() + 6) % 7]}</span></button>
       <div class="corps">${(parJour[s] || []).map(ligneEvt).join('')}
         ${annivDe(s).map((a) => `<span class="anniv">Anniversaire de ${esc(a.prenom)} ${esc(a.nom)}</span>`).join('')}

@@ -732,3 +732,11 @@ p.anniv,.agenda .anniv{font-size:13px;padding:4px 8px;align-self:flex-start;bord
 [hidden]{display:none!important}
 .puce-bleu{background:var(--surface-2);border:1px dashed var(--bord-fort);color:var(--texte)}
 .justification{margin:0;padding:8px 12px;border-left:3px solid var(--bord);background:var(--surface-2);border-radius:var(--r-petit);white-space:pre-line}
+
+/* Calendrier : logo de l'association en filigrane, au centre, très discret ; ne gêne ni la lecture ni les clics */
+.cal,.cal-semaine{position:relative;isolation:isolate}
+.filigrane{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(55%,340px);aspect-ratio:1;object-fit:contain;
+  opacity:.08;mix-blend-mode:multiply;pointer-events:none;user-select:none;z-index:1;border-radius:50%}
+@media (max-width:600px){.filigrane{width:70%;opacity:.07}}
+@media print{.filigrane{opacity:.06}}
+@media (forced-colors:active){.filigrane{display:none}}
