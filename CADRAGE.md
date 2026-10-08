@@ -87,4 +87,7 @@ Restent à faire : sauvegarde automatique vers Google Drive (aujourd'hui manuell
 - **Lot F** : mois en toutes lettres abrégées dans les cotisations (deux lignes de six sur téléphone), contributeurs comptés sur le net, graduations sans répétition, réserve « Non définie », accueil « Aucune opération nette », période du rapport rappelée en toutes lettres.
 - **Base** : `supabase/correctifs-audit-2026-10.sql` à exécuter une fois (deux vues remplacées, aucune donnée modifiée).
 
-Restent à faire : mêmes corrections dans l'application Android ; parcours de virement interne caisse/banque (hors recettes et dépenses) ; justification et devis dans le formulaire de demande (colonnes à ajouter) ; recette technique sur données fictives (grille page 17 de l'audit).
+- **Filtres et exports** : Opérations n'a plus qu'une recherche et un bouton « Filtres » (filtres actifs en pastilles retirables) ; Rapports n'a plus qu'un formulaire (document, période : exercice, mois, trimestre ou dates libres, format PDF ou Excel).
+- **Virement interne** (8 octobre) : dépôt d'espèces à la banque, retrait pour la caisse, virement entre comptes. Deux écritures liées (catégorie interne « Virement interne »), comptées dans les soldes et le rapprochement, jamais dans les recettes, dépenses, résultat, budget ni rapports. Annulation des deux écritures d'un coup avec motif (`annuler_virement`).
+- **Demandes enrichies** (8 octobre) : justification (obligatoire à partir de 100 €, réglable dans Paramètres), date souhaitée, devis facultatif. Un devis ne clôture jamais une demande : seule une pièce « justificatif » le fait (règle de la base).
+- **Base** : `supabase/correctifs-2026-10-08-virements-demandes.sql`, appliqué en production le 8 octobre.

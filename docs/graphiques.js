@@ -179,9 +179,10 @@ export function serieMensuelle(txs, comptes, debut, fin) {
   let solde = depart + avant;
   return mois.map((m) => {
     const l = txs.filter((t) => t.date_op.startsWith(m));
-    const rec = l.filter((t) => t.sens === 'recette').reduce((s, t) => s + Number(t.montant), 0);
-    const dep = l.filter((t) => t.sens === 'depense').reduce((s, t) => s + Number(t.montant), 0);
-    solde += rec - dep;
+    // Un virement interne (caisse <-> banque) change les soldes, jamais les recettes ni les dépenses
+    const rec = l.filter((t) => t.sens === 'recette' && !t.virement).reduce((s, t) => s + Number(t.montant), 0);
+    const dep = l.filter((t) => t.sens === 'depense' && !t.virement).reduce((s, t) => s + Number(t.montant), 0);
+    solde += l.reduce((s, t) => s + signe(t), 0);
     return { mois: m, rec, dep, solde };
   });
 }

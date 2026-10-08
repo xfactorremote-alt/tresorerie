@@ -183,7 +183,8 @@ async function chargerReferentiels() {
   ]);
   S.settings = Object.fromEntries(settings.map((x) => [x.cle, x.valeur]));
   S.textes = Object.fromEntries(settings.map((x) => [x.cle, x.texte]));
-  Object.assign(S, { categories, roles, permissions, projets });
+  // Catégories internes (virements) : jamais proposées à la saisie ni au budget
+  Object.assign(S, { categoriesToutes: categories, categories: categories.filter((c) => !c.interne), roles, permissions, projets });
   S.comptes = peut('consulter_finances', 'saisir_ecritures', 'payer_depenses', 'gerer_cotisations', 'rapprocher')
     ? await q(sb.from('accounts').select('*').eq('actif', true).order('nom')) : [];
   S.membres = peut('voir_membres', 'gerer_membres', 'gerer_cotisations') ? await q(sb.from('members').select('*').order('nom')) : [];
@@ -475,14 +476,14 @@ async function pageTableau() {
   // Chiffres de l'année en cours, comparés à la même période l'an dernier ; série sur 12 mois
   const auj = new Date(), jour = aujourdhui(), an = auj.getFullYear();
   const serie = serieMensuelle(toutes, S.comptes, isoLocal(new Date(an, auj.getMonth() - 11, 1, 12)), jour);
-  const flux = (l, sens) => l.filter((t) => t.sens === sens).reduce((t2, t) => t2 + Number(t.montant), 0);
+  const flux = (l, sens) => l.filter((t) => t.sens === sens && estFlux(t)).reduce((t2, t) => t2 + Number(t.montant), 0);
   const ytd = toutes.filter((t) => t.date_op >= `${an}-01-01` && t.date_op <= jour);
   const ytdN1 = toutes.filter((t) => t.date_op >= `${an - 1}-01-01` && t.date_op <= `${an - 1}${jour.slice(4)}`);
   const rec = flux(ytd, 'recette'), dep = flux(ytd, 'depense'), resultat = rec - dep;
   const reserve = reserveEnMois(total, serie);
   const exigible = cotis.reduce((t, c) => t + Number(c.exigible || 0), 0);
   const encaisse = cotis.reduce((t, c) => t + Number(c.montant_paye), 0);
-  const parCat = (sens) => { const o = {}; ytd.filter((t) => t.sens === sens).forEach((t) => { o[t.category_id] = (o[t.category_id] || 0) + Number(t.montant); }); return Object.entries(o).map(([id, v]) => ({ nom: cat(id), valeur: v })).sort((x, y) => y.valeur - x.valeur); };
+  const parCat = (sens) => { const o = {}; ytd.filter((t) => t.sens === sens && estFlux(t)).forEach((t) => { o[t.category_id] = (o[t.category_id] || 0) + Number(t.montant); }); return Object.entries(o).map(([id, v]) => ({ nom: cat(id), valeur: v })).sort((x, y) => y.valeur - x.valeur); };
   const recCat = parCat('recette'), depCat = parCat('depense');
   const variation = (a, b) => (b > 0 ? Math.round(100 * (a - b) / b) : null);
   const txtVar = (v) => (v == null ? 'Pas de comparaison' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}&nbsp;% sur un an`);
@@ -610,18 +611,18 @@ async function pageEcritures() {
   const pieces = {};
   piecesListe.forEach((a) => { if (a.transaction_id) pieces[a.transaction_id] = a; });
   const contrepassees = new Set(toutes.filter((t) => t.contrepasse_de).map((t) => t.contrepasse_de));
-  const cat = (id) => S.categories.find((c) => c.id === id)?.nom || '';
+  const cat = nomCategorie;
   const cpt = (id) => S.comptes.find((c) => c.id === id)?.nom || '';
   const texte = sansAccents(f.texte);
   const base = toutes.filter((t) => (!f.du || t.date_op >= f.du) && (!f.au || t.date_op <= f.au)
     && (!f.compte || t.account_id === f.compte) && (!f.categorie || t.category_id === f.categorie)
     && (!f.rubrique || (f.rubrique === 'cotisation' ? t.est_cotisation : t.collecte_id === f.rubrique))
     && (!texte || sansAccents(`${t.libelle} ${nomTiers(t)} ${cat(t.category_id)} ${nomRubrique(t)}`).includes(texte))
-    && (!f.sansPiece || (t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id) && !pieces[t.id])));
+    && (!f.sansPiece || (t.sens === 'depense' && estFlux(t) && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id) && !pieces[t.id])));
   // Totaux sur tous les sens : recettes et dépenses restent visibles quel que soit le filtre
   const lignes = base.filter((t) => !f.sens || t.sens === f.sens);
-  const rec = base.filter((t) => t.sens === 'recette').reduce((s, t) => s + Number(t.montant), 0);
-  const dep = base.filter((t) => t.sens === 'depense').reduce((s, t) => s + Number(t.montant), 0);
+  const rec = base.filter((t) => t.sens === 'recette' && estFlux(t)).reduce((s, t) => s + Number(t.montant), 0);
+  const dep = base.filter((t) => t.sens === 'depense' && estFlux(t)).reduce((s, t) => s + Number(t.montant), 0);
   // Solde à la fin de la période : solde de départ + toutes les écritures jusqu'à cette date
   const comptesVus = f.compte ? S.comptes.filter((c) => c.id === f.compte) : S.comptes;
   const soldeFin = comptesVus.reduce((s, c) => s + Number(c.solde_initial || 0), 0)
@@ -639,9 +640,10 @@ async function pageEcritures() {
   const puceEtat = (t) => statutDemande[t.request_id] === 'soumise' ? '<span class="puce puce-partiel">À valider</span>'
     : statutDemande[t.request_id] === 'refusee' && !contrepassees.has(t.id) ? `<span class="puce puce-ko">${regularisation.has(t.request_id) ? 'Refusée · à régulariser' : 'Refusée'}</span>`
     : t.rapproche ? '<span class="puce puce-ok">Rapprochée</span>' : t.contrepasse_de ? '<span class="puce puce-neutre">Correction</span>'
+    : contrepassees.has(t.id) ? '<span class="puce puce-neutre">Annulée</span>' : t.virement ? '<span class="puce puce-bleu" title="Ni recette ni dépense">Virement interne</span>'
     : contrepassees.has(t.id) ? '<span class="puce puce-neutre">Annulée</span>' : '';
   const iconePiece = (t) => pieces[t.id] ? `<span class="trombone" role="img" aria-label="Pièce jointe">${icone('trombone', 16)}</span>`
-    : t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id) ? '<span class="puce puce-ko">Sans pièce</span>' : '';
+    : t.sens === 'depense' && estFlux(t) && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id) ? '<span class="puce puce-ko">Sans pièce</span>' : '';
 
   rendre(`<div class="page">
     <div class="page-titre"><h1>Opérations</h1><button class="btn-bleu btn-petit" id="b-export">Exporter</button></div>
@@ -679,7 +681,7 @@ async function pageEcritures() {
   ['#b-nouvelle', '#b-nouvelle-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleEcriture()));
   const exportCsv = () => telechargerCsv(`operations-${f.du || 'debut'}-${f.au || aujourdhui()}.csv`,
     ['Date', 'Sens', 'Libellé', 'Tiers', 'Rubrique', 'Catégorie', 'Activité', 'Compte', 'Mode', 'Montant', 'Pièce', 'Rapprochée'],
-    lignes.map((t) => [dateFr(t.date_op), t.sens === 'recette' ? 'Recette' : 'Dépense', t.libelle, nomTiers(t), nomRubrique(t), cat(t.category_id), nomProjet(t.project_id), cpt(t.account_id), MODES[t.mode], signe(t), pieces[t.id] ? 'Oui' : 'Non', t.rapproche ? 'Oui' : 'Non']));
+    lignes.map((t) => [dateFr(t.date_op), t.virement ? (t.sens === 'recette' ? 'Virement interne (entrée)' : 'Virement interne (sortie)') : t.sens === 'recette' ? 'Recette' : 'Dépense', t.libelle, nomTiers(t), nomRubrique(t), cat(t.category_id), nomProjet(t.project_id), cpt(t.account_id), MODES[t.mode], signe(t), pieces[t.id] ? 'Oui' : 'Non', t.rapproche ? 'Oui' : 'Non']));
   $('#b-export').addEventListener('click', () => choisirFormat('Exporter les opérations affichées',
     () => pdfJournal({ du: f.du, au: f.au, compte: f.compte, sens: f.sens, categorie: f.categorie }), exportCsv));
   document.querySelectorAll('[data-detail]').forEach((li) => {
@@ -763,7 +765,10 @@ async function detailEcriture(t, pieces, contrepassees, recharger, toutes = []) 
   const peutCorriger = peut('saisir_ecritures') && !t.rapproche && !t.contrepasse_de && !contrepassees.has(t.id);
   const correction = toutes.find((x) => x.contrepasse_de === t.id);
   const origine = t.contrepasse_de ? toutes.find((x) => x.id === t.contrepasse_de) : null;
-  const alerteMode = incoherenceMode(t.account_id, t.mode);
+  const alerteMode = t.virement ? '' : incoherenceMode(t.account_id, t.mode);
+  const jambes = t.virement ? toutes.filter((x) => x.virement === t.virement && !x.contrepasse_de) : [];
+  const sortie = jambes.find((x) => x.sens === 'depense'), entree = jambes.find((x) => x.sens === 'recette');
+  const virementAnnule = t.virement && toutes.some((x) => x.virement === t.virement && x.contrepasse_de);
   const evt = (quand, quoi, bouton = '') => `<li><span class="muted">${quand}</span><span>${quoi}${bouton}</span></li>`;
   const historique = `<h3>Historique</h3><ol class="historique">
       ${evt(`${dateFr(String(t.created_at || '').slice(0, 10))} ${heureDe(t.created_at)}`, `${t.contrepasse_de ? 'Correction saisie' : 'Saisie'}${t.created_by ? ' par ' + esc(auteurDe(t.created_by)) : ''}`)}
@@ -782,6 +787,7 @@ async function detailEcriture(t, pieces, contrepassees, recharger, toutes = []) 
       ${ligne('Tiers', esc(nomTiers(t)))}
       ${ligne('Rubrique', esc(nomRubrique(t)))}
       ${ligne('Validation', demande ? etatValidation(demande) : '')}
+      ${t.virement ? ligne('Virement interne', `${esc(S.comptes.find((c) => c.id === sortie?.account_id)?.nom || '?')} → ${esc(S.comptes.find((c) => c.id === entree?.account_id)?.nom || '?')}, ni recette ni dépense`) : ''}
       ${ligne('État', t.rapproche ? 'Rapprochée, verrouillée' : t.contrepasse_de ? 'Correction d’une autre écriture' : contrepassees.has(t.id) ? 'Annulée par contre-passation' : 'Active')}
       ${ligne('Référence', refOperation(t))}
     </div>
@@ -791,13 +797,15 @@ async function detailEcriture(t, pieces, contrepassees, recharger, toutes = []) 
     <div class="actions">
       ${demande?.signature_path ? `<button class="btn-texte" data-voir="${esc(demande.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
       ${!piece && !correction && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">Joindre une pièce</button>` : ''}
-      ${!demande && peutCorriger && t.sens === 'depense' && t.montant > 0 ? '<button class="btn-tonal" id="b-faire-valider">Faire valider par le président</button>' : ''}
+      ${!demande && !t.virement && peutCorriger && t.sens === 'depense' && t.montant > 0 ? '<button class="btn-tonal" id="b-faire-valider">Faire valider par le président</button>' : ''}
       ${t.sens === 'depense' && t.montant > 0 && /mat[ée]riel|instrument|[ée]quipement/i.test(nomCategorie(t.category_id)) && peut('gerer_materiel') ? '<button class="btn-texte" id="b-inventaire">Inscrire à l’inventaire</button>' : ''}
-      ${peutCorriger ? `<button class="btn-texte" id="b-contre">Contre-passer</button>` : ''}
+      ${peutCorriger && !t.virement ? `<button class="btn-texte" id="b-contre">Contre-passer</button>` : ''}
+      ${t.virement && !virementAnnule && !t.contrepasse_de && peut('saisir_ecritures') && !jambes.some((x) => x.rapproche) ? `<button class="btn-texte" id="b-annuler-virement">Annuler le virement</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button>
     </div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-contre', root)?.addEventListener('click', () => contrePasser(t));
+    $('#b-annuler-virement', root)?.addEventListener('click', () => annulerVirement(t));
     root.querySelectorAll('[data-voir-op]').forEach((b) => b.addEventListener('click', () => {
       const autre = toutes.find((x) => x.id === b.dataset.voirOp);
       if (autre) detailEcriture(autre, pieces, contrepassees, recharger, toutes);
@@ -833,6 +841,7 @@ function feuilleEcriture(pre = {}) {
     ${limite ? '' : `<div class="groupe" role="group" aria-label="Type">
       <button type="button" data-sens="depense" aria-pressed="${sens === 'depense'}">Dépense</button>
       <button type="button" data-sens="recette" aria-pressed="${sens === 'recette'}">Recette</button>
+      ${S.comptes.length > 1 ? '<button type="button" id="b-vers-virement" aria-pressed="false">Virement interne</button>' : ''}
     </div>`}
     <div class="champs champs-2">
       <label class="champ"><span class="obligatoire">Montant (€)</span><input name="montant" type="number" inputmode="decimal" step="0.01" min="0.01" required></label>
@@ -888,6 +897,7 @@ function feuilleEcriture(pre = {}) {
       } else if (!libelleSaisi && /^Cotisation|^Participation/.test(f.libelle.value)) f.libelle.value = '';
     };
     f.libelle.addEventListener('input', () => { libelleSaisi = f.libelle.value !== ''; });
+    $('#b-vers-virement', root)?.addEventListener('click', () => feuilleVirement({ montant: f.montant.value, date: f.date.value, apres: pre.apres }));
     root.querySelectorAll('[data-sens]').forEach((b) => b.addEventListener('click', () => {
       sens = b.dataset.sens;
       root.querySelectorAll('[data-sens]').forEach((x) => x.setAttribute('aria-pressed', x === b));
@@ -960,6 +970,64 @@ function contrePasser(t) {
       e.preventDefault();
       const btn = f.querySelector('button:not([type])'); btn.disabled = true;
       try { await inscrireContrePassation(t, { motif: f.motif.value }); fermerFeuille(); toast('Opération contre-passée'); router(); }
+      catch (err) { btn.disabled = false; erreur(err); }
+    });
+  });
+}
+
+// Virement interne : dépôt d'espèces à la banque, retrait pour la caisse, virement entre deux comptes.
+// Deux écritures liées (sortie et entrée) : les soldes bougent, les recettes et dépenses non.
+function feuilleVirement(pre = {}) {
+  const caisse = S.comptes.find((c) => c.type === 'caisse'), banque = S.comptes.find((c) => c.type === 'banque');
+  const opts = (choisi) => S.comptes.map((c) => `<option value="${c.id}" ${c.id === choisi ? 'selected' : ''}>${esc(c.nom)}</option>`).join('');
+  ouvrirFeuille(`<form id="f-vir" class="champs"><h2>Virement interne</h2>
+    <p class="muted">Pour un dépôt d’espèces à la banque, un retrait pour la caisse ou un virement entre deux comptes de l’association. Ce n’est ni une recette ni une dépense&nbsp;: seuls les soldes changent.</p>
+    <div class="champs champs-2">
+      <label class="champ"><span class="obligatoire">De</span><select name="source">${opts((caisse || S.comptes[0])?.id)}</select></label>
+      <label class="champ"><span class="obligatoire">Vers</span><select name="dest">${opts((banque || S.comptes[1])?.id)}</select></label>
+      <label class="champ"><span class="obligatoire">Montant (€)</span><input name="montant" type="number" inputmode="decimal" step="0.01" min="0.01" required value="${esc(pre.montant || '')}"></label>
+      <label class="champ"><span class="obligatoire">Date</span><input name="date" type="date" required value="${esc(pre.date || aujourdhui())}" max="${aujourdhui()}"></label>
+    </div>
+    <label class="champ">Libellé<input name="libelle" maxlength="120" placeholder="Rempli selon les comptes choisis"></label>
+    <label class="champ">Bordereau ou ticket<input type="file" name="piece" accept="image/*,application/pdf"></label>
+    <p class="info" id="i-vir"></p>
+    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer le virement</button></div>
+  </form>`, (root) => {
+    const f = $('#f-vir', root);
+    const maj = () => {
+      const s2 = S.comptes.find((c) => c.id === f.source.value), d2 = S.comptes.find((c) => c.id === f.dest.value);
+      const nature = s2?.type === 'caisse' && d2?.type === 'banque' ? 'Dépôt d’espèces à la banque' : s2?.type === 'banque' && d2?.type === 'caisse' ? 'Retrait d’espèces pour la caisse' : 'Virement entre comptes';
+      f.libelle.placeholder = nature;
+      $('#i-vir', root).textContent = f.source.value === f.dest.value ? 'Choisissez deux comptes différents.' : `${nature} : −${eur(f.montant.value || 0)} sur « ${s2?.nom || ''} », +${eur(f.montant.value || 0)} sur « ${d2?.nom || ''} ».`;
+    };
+    ['change', 'input'].forEach((ev) => [f.source, f.dest, f.montant].forEach((x) => x.addEventListener(ev, maj))); maj();
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (f.source.value === f.dest.value) return toast('Choisissez deux comptes différents');
+      const btn = f.querySelector('button:not([type])'); btn.disabled = true;
+      try {
+        const v = await q(sb.rpc('virement_interne', { p_date: f.date.value, p_source: f.source.value, p_dest: f.dest.value, p_montant: Number(f.montant.value), p_libelle: f.libelle.value.trim() || null }));
+        if (f.piece.files[0]) {
+          const [sortie] = await q(sb.from('transactions').select('id').eq('virement', v).eq('sens', 'depense'));
+          if (sortie) await deposerPiece(f.piece.files[0], { transaction_id: sortie.id });
+        }
+        fermerFeuille(); toast('Virement enregistré'); (pre.apres || (() => router()))();
+      } catch (err) { btn.disabled = false; erreur(err); }
+    });
+  });
+}
+function annulerVirement(t) {
+  ouvrirFeuille(`<form id="f-av" class="champs"><h2>Annuler ce virement&#8239;?</h2>
+    <p>Les deux écritures de «&nbsp;${esc(t.libelle)}&nbsp;» (${eur(t.montant)}) sont contre-passées à la date du jour. Elles restent dans l’historique.</p>
+    <label class="champ"><span class="obligatoire">Motif</span><input name="motif" maxlength="60" required placeholder="Erreur de montant, doublon…"></label>
+    <div class="actions"><button type="button" class="btn-texte" id="b-non">Garder</button><button class="btn-danger">Annuler le virement</button></div></form>`, (root) => {
+    const f = $('#f-av', root);
+    $('#b-non', root).addEventListener('click', fermerFeuille);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = f.querySelector('button:not([type])'); btn.disabled = true;
+      try { await q(sb.rpc('annuler_virement', { p_virement: t.virement, p_motif: f.motif.value.trim() })); fermerFeuille(); toast('Virement annulé'); router(); }
       catch (err) { btn.disabled = false; erreur(err); }
     });
   });
@@ -1809,6 +1877,7 @@ async function paramFinances(zone) {
       <div class="champs champs-2"><label class="champ">Cotisation (€ par période)<input name="cotisation_montant" type="number" step="0.01" min="0" value="${esc(S.settings.cotisation_montant)}"></label>
       <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       <label class="champ">Délai du justificatif (jours après paiement)<input name="delai_justificatif_jours" type="number" min="1" max="90" value="${esc(S.settings.delai_justificatif_jours)}"></label>
+      <label class="champ">Justification obligatoire à partir de (€)<input name="seuil_justification" type="number" min="0" step="1" value="${esc(S.settings.seuil_justification ?? 100)}"></label>
       <label class="champ">Alerte budget (%)<input name="seuil_alerte_budget_pct" type="number" min="1" max="200" value="${esc(S.settings.seuil_alerte_budget_pct ?? 90)}"></label>
       <label class="champ">Comment régler (affiché aux membres)<textarea name="infos_paiement" rows="3" maxlength="400" placeholder="Virement : IBAN FR76…&#10;Espèces : auprès du trésorier après le culte">${esc(S.textes?.infos_paiement || '')}</textarea></label>
       <button class="btn-primaire" style="align-self:flex-end">Enregistrer</button></form>
@@ -1827,7 +1896,7 @@ async function paramFinances(zone) {
   fm.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      for (const cle of ['cotisation_montant', 'cotisation_periode_mois', 'delai_justificatif_jours', 'seuil_alerte_budget_pct']) {
+      for (const cle of ['cotisation_montant', 'cotisation_periode_mois', 'delai_justificatif_jours', 'seuil_alerte_budget_pct', 'seuil_justification']) {
         await q(sb.from('settings').update({ valeur: Number(fm[cle].value) }).eq('cle', cle));
         S.settings[cle] = Number(fm[cle].value);
       }
@@ -2015,7 +2084,9 @@ const STATUTS = {
 };
 const optionsProjets = (choisi = '') => (S.projets || []).map((p) => `<option value="${p.id}" ${p.id === choisi ? 'selected' : ''}>${esc(p.nom)}</option>`).join('');
 const nomProjet = (id) => (S.projets || []).find((p) => p.id === id)?.nom || '';
-const nomCategorie = (id) => S.categories.find((c) => c.id === id)?.nom || '';
+const nomCategorie = (id) => (S.categoriesToutes || S.categories).find((c) => c.id === id)?.nom || '';
+// Virement interne : déplace l'argent entre deux comptes, sans recette ni dépense
+const estFlux = (t) => !t.virement;
 const joursDepuis = (d) => Math.floor((Date.now() - new Date(d).getTime()) / 864e5);
 
 // ---------- Tiers, rubriques, cotisations par période ----------
@@ -2180,7 +2251,9 @@ async function pageDepenses() {
   // Déjà payée puis refusée par le président : l'argent est sorti, le trésorier doit régulariser
   const aRegulariser = (d) => d.regularisation && d.statut === 'refusee' && opDe[d.id] && !annulation(d);
   const nomDe = (id) => id === S.profil.id ? 'Vous' : profils.find((p) => p.id === id)?.nom || 'Membre du bureau';
-  const pieceDe = (d) => pieces.find((a) => a.request_id === d.id || (operationDe[d.id] && a.transaction_id === operationDe[d.id]));
+  const estDevis = (a) => a.nature === 'devis';
+  const pieceDe = (d) => pieces.find((a) => !estDevis(a) && (a.request_id === d.id || (operationDe[d.id] && a.transaction_id === operationDe[d.id])));
+  const devisDe = (d) => pieces.find((a) => estDevis(a) && a.request_id === d.id);
   const delai = Number(S.settings.delai_justificatif_jours ?? 7);
   const FILTRES = {
     a_valider: ['À valider', (d) => d.statut === 'soumise'],
@@ -2212,6 +2285,7 @@ async function pageDepenses() {
           ${d.regularisation ? '<span class="puce puce-neutre" title="Saisie directement dans les opérations, validation après paiement">Déjà payée</span> ' : ''}<span class="muted">${esc(nomDe(d.demandeur))} · ${dateFr(String(d.created_at).slice(0, 10))} · ${esc(nomCategorie(d.category_id))}${d.project_id ? ' · ' + esc(nomProjet(d.project_id)) : ''}</span></div>
         <div style="text-align:right"><b class="num" style="font-size:22px">${eur(d.montant)}</b><br><span class="puce ${puce[0]}">${puce[1]}</span></div>
       </div>
+      ${d.justification || d.date_souhaitee ? `<p class="justification">${d.justification ? esc(d.justification) : ''}${d.date_souhaitee ? `${d.justification ? '<br>' : ''}<span class="muted">Souhaitée pour le ${dateFr(d.date_souhaitee)}</span>` : ''}</p>` : ''}
       ${etapes(d)}
       ${retard ? `<div class="alerte">Justificatif en retard&nbsp;: payé il y a ${joursDepuis(d.payee_le)}&nbsp;jours, délai de ${delai}&nbsp;jours.</div>` : ''}
       ${d.statut === 'refusee' && d.motif_refus ? `<p class="muted">Motif du refus&nbsp;: ${esc(d.motif_refus)}</p>` : ''}
@@ -2220,6 +2294,7 @@ async function pageDepenses() {
       <div class="filtres">
         ${d.signature_path ? `<button class="btn-texte btn-petit" data-voir="${esc(d.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
         ${piece ? `<button class="btn-texte btn-petit" data-voir="${esc(piece.storage_path)}">Justificatif</button>` : ''}
+        ${devisDe(d) ? `<button class="btn-texte btn-petit" data-voir="${esc(devisDe(d).storage_path)}">Devis</button>` : ''}
         ${d.validee_le ? `<span class="muted">Validée le ${dateFr(String(d.validee_le).slice(0, 10))}</span>` : ''}
         ${d.payee_le ? `<span class="muted">Payée le ${dateFr(String(d.payee_le).slice(0, 10))}</span>` : ''}
         ${op && peut('consulter_finances', 'saisir_ecritures') ? `<button class="btn-texte btn-petit" data-voir-op="${op.id}">Voir l’opération</button>` : ''}
@@ -2241,7 +2316,7 @@ async function pageDepenses() {
   const trouver = (id) => demandes.find((d) => d.id === id);
   document.querySelectorAll('[data-filtre]').forEach((b) => b.addEventListener('click', () => { S.filtreDepenses = b.dataset.filtre; recharger(); }));
   ['#b-demande', '#b-demande-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleDemande(recharger)));
-  document.querySelectorAll('[data-valider]').forEach((b) => b.addEventListener('click', () => feuilleValider(trouver(b.dataset.valider), nomDe, recharger)));
+  document.querySelectorAll('[data-valider]').forEach((b) => b.addEventListener('click', () => { const d = trouver(b.dataset.valider); feuilleValider(d, nomDe, recharger, devisDe(d)); }));
   document.querySelectorAll('[data-refuser]').forEach((b) => b.addEventListener('click', () => feuilleRefuser(trouver(b.dataset.refuser), recharger)));
   document.querySelectorAll('[data-payer]').forEach((b) => b.addEventListener('click', () => feuillePayer(trouver(b.dataset.payer), recharger)));
   document.querySelectorAll('[data-justifier]').forEach((b) => b.addEventListener('click', () => feuilleJustifier(trouver(b.dataset.justifier), recharger)));
@@ -2269,32 +2344,47 @@ function feuilleDemande(apres) {
       <label class="champ"><span class="obligatoire">Catégorie</span><select name="categorie" required>${S.categories.filter((c) => c.sens === 'depense').map((c) => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}</select></label>
     </div>
     <label class="champ">Activité<select name="projet"><option value="">Aucune</option>${optionsProjets()}</select></label>
+    <label class="champ">Pourquoi cette dépense<textarea name="justification" rows="2" maxlength="500" placeholder="À quoi elle sert, pourquoi ce fournisseur, ce qui se passe si on ne la fait pas"></textarea></label>
+    <div class="champs champs-2">
+      <label class="champ">Pour le<input type="date" name="date_souhaitee" min="${aujourdhui()}"></label>
+      <label class="champ">Devis (facultatif)<input type="file" name="devis" accept="image/*,application/pdf"></label>
+    </div>
+    <p class="muted" id="i-dem">La demande part au président, qui la valide en signant. Le trésorier paie ensuite, puis le justificatif est à déposer dans les ${S.settings.delai_justificatif_jours ?? 7}&nbsp;jours.</p>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Envoyer</button></div>
   </form>`, (root) => {
     const f = $('#f-dem', root);
+    // Au-delà du seuil de validation, la justification devient obligatoire
+    const seuil = Number(S.settings.seuil_justification ?? 100);
+    f.montant.addEventListener('input', () => { f.justification.required = Number(f.montant.value) >= seuil; f.justification.closest('.champ').classList.toggle('obligatoire', f.justification.required); });
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = f.querySelector('button:not([type])'); btn.disabled = true;
       try {
-        await q(sb.from('expense_requests').insert({
+        const [d] = await q(sb.from('expense_requests').insert({
           demandeur: S.profil.id, objet: f.objet.value.trim(), montant: Number(f.montant.value),
           category_id: f.categorie.value, project_id: f.projet.value || null, statut: 'soumise',
-        }));
-        fermerFeuille(); toast('Demande envoyée au président'); S.filtreDepenses = 'toutes'; apres();
+          justification: f.justification.value.trim() || null, date_souhaitee: f.date_souhaitee.value || null,
+        }).select());
+        let devisOk = true;
+        if (f.devis.files[0]) { try { await deposerPiece(f.devis.files[0], { request_id: d.id, nature: 'devis' }); } catch (err) { devisOk = false; console.warn(err); } }
+        fermerFeuille(); toast(devisOk ? 'Demande envoyée au président' : 'Demande envoyée, mais le devis n’a pas pu être joint'); S.filtreDepenses = 'toutes'; apres();
       } catch (err) { btn.disabled = false; erreur(err); }
     });
   });
 }
 
-function feuilleValider(d, nomDe, apres) {
+function feuilleValider(d, nomDe, apres, devis = null) {
   ouvrirFeuille(`<h2>Valider cette dépense&#8239;?</h2>
-    <p><b>${esc(d.objet)}</b>, ${eur(d.montant)}<br><span class="muted">Demandée par ${esc(nomDe(d.demandeur))} · ${esc(nomCategorie(d.category_id))}</span></p>
+    <p><b>${esc(d.objet)}</b>, ${eur(d.montant)}<br><span class="muted">Demandée par ${esc(nomDe(d.demandeur))} · ${esc(nomCategorie(d.category_id))}${d.date_souhaitee ? ` · pour le ${dateFr(d.date_souhaitee)}` : ''}</span></p>
+    ${d.justification ? `<p class="justification">${esc(d.justification)}</p>` : ''}
+    ${devis ? `<p><button type="button" class="btn-tonal btn-petit" data-voir="${esc(devis.storage_path)}">Voir le devis</button></p>` : ''}
     <label class="champ obligatoire" for="sig">Signature</label>
     <canvas id="sig" style="width:100%;height:180px;border:1px dashed var(--bord-fort);border-radius:4px;background:#FFF;touch-action:none"></canvas>
     <div class="actions" style="justify-content:space-between"><button class="btn-texte" id="b-effacer">Effacer</button>
       <span><button class="btn-texte" id="b-annuler">Annuler</button> <button class="btn-primaire" id="b-signer">Signer et valider</button></span></div>`, (root) => {
     const zone = zoneSignature($('#sig', root));
+    root.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier('justificatifs', b.dataset.voir)));
     $('#b-effacer', root).addEventListener('click', zone.effacer);
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
     $('#b-signer', root).addEventListener('click', async (e) => {
@@ -2684,7 +2774,7 @@ async function exporter(type, an, du = `${an}-01-01`, au = `${an}-12-31`) {
   if (type === 'ecritures') {
     const l = await q(sb.from('transactions').select('*').gte('date_op', du).lte('date_op', au).order('date_op'));
     return telechargerCsv(du === `${an}-01-01` && au === `${an}-12-31` ? `ecritures-${an}.csv` : `ecritures-${du}-au-${au}.csv`, ['Date', 'Sens', 'Libellé', 'Tiers', 'Rubrique', 'Catégorie', 'Activité', 'Compte', 'Mode', 'Montant', 'Rapprochée'],
-      l.map((t) => [dateFr(t.date_op), t.sens === 'recette' ? 'Recette' : 'Dépense', t.libelle, nomTiers(t), nomRubrique(t), nomCategorie(t.category_id), nomProjet(t.project_id),
+      l.map((t) => [dateFr(t.date_op), t.virement ? (t.sens === 'recette' ? 'Virement interne (entrée)' : 'Virement interne (sortie)') : t.sens === 'recette' ? 'Recette' : 'Dépense', t.libelle, nomTiers(t), nomRubrique(t), nomCategorie(t.category_id), nomProjet(t.project_id),
         S.comptes.find((c) => c.id === t.account_id)?.nom, MODES[t.mode], signe(t), t.rapproche ? 'Oui' : 'Non']));
   }
   if (type === 'cotisations') {
@@ -2705,8 +2795,8 @@ async function exporter(type, an, du = `${an}-01-01`, au = `${an}-12-31`) {
       l.map((s) => [s.categorie, s.sens === 'recette' ? 'Ressource' : 'Emploi', nomProjet(s.project_id), Number(s.montant_prevu), Number(s.realise), Number(s.ecart), Number(s.taux_pct || 0)]));
   }
   const l = await q(sb.from('expense_requests').select('*').order('created_at'));
-  telechargerCsv('demandes-de-depense.csv', ['Date', 'Objet', 'Catégorie', 'Activité', 'Montant', 'Statut', 'Validée le', 'Payée le', 'Empreinte signature'],
-    l.map((d) => [dateFr(String(d.created_at).slice(0, 10)), d.objet, nomCategorie(d.category_id), nomProjet(d.project_id), Number(d.montant), STATUTS[d.statut][1],
+  telechargerCsv('demandes-de-depense.csv', ['Date', 'Objet', 'Justification', 'Pour le', 'Catégorie', 'Activité', 'Montant', 'Statut', 'Validée le', 'Payée le', 'Empreinte signature'],
+    l.map((d) => [dateFr(String(d.created_at).slice(0, 10)), d.objet, d.justification || '', d.date_souhaitee ? dateFr(d.date_souhaitee) : '', nomCategorie(d.category_id), nomProjet(d.project_id), Number(d.montant), STATUTS[d.statut][1],
       d.validee_le ? dateFr(String(d.validee_le).slice(0, 10)) : '', d.payee_le ? dateFr(String(d.payee_le).slice(0, 10)) : '', d.signature_hash || '']));
 }
 
@@ -2745,7 +2835,7 @@ async function imprimerRapport(debut, fin, titre) {
     const comptes = comptesTous.filter((c) => c.actif || txs.some((t) => t.account_id === c.id));
     const dans = txs.filter((t) => t.date_op >= debut);
     const prec = txs.filter((t) => t.date_op >= debutPrec && t.date_op <= finPrec);
-    const somme = (l, sens) => l.filter((t) => t.sens === sens).reduce((s, t) => s + Number(t.montant), 0);
+    const somme = (l, sens) => l.filter((t) => t.sens === sens && estFlux(t)).reduce((s, t) => s + Number(t.montant), 0);
     const totR = somme(dans, 'recette'), totD = somme(dans, 'depense');
     const precR = somme(prec, 'recette'), precD = somme(prec, 'depense');
     const soldeAu = (date, avant) => comptes.reduce((s, c) => s + Number(c.solde_initial || 0), 0)
@@ -2755,7 +2845,7 @@ async function imprimerRapport(debut, fin, titre) {
     const serie12 = serieMensuelle(txs, comptes, isoLocal(new Date(new Date(fin).getFullYear(), new Date(fin).getMonth() - 11, 1, 12)), fin);
     const reserve = reserveEnMois(soldeFin, serie12);
     const parCat = (sens) => {
-      const m = {}; dans.filter((t) => t.sens === sens).forEach((t) => { m[t.category_id] = (m[t.category_id] || 0) + Number(t.montant); });
+      const m = {}; dans.filter((t) => t.sens === sens && estFlux(t)).forEach((t) => { m[t.category_id] = (m[t.category_id] || 0) + Number(t.montant); });
       return Object.entries(m).map(([id, v]) => ({ nom: nomCategorie(id), valeur: v }));
     };
     const rec = parCat('recette'), dep = parCat('depense');
@@ -2777,7 +2867,7 @@ async function imprimerRapport(debut, fin, titre) {
     const demP = demandes.filter((d) => d.payee_le && String(d.payee_le).slice(0, 10) >= debut && String(d.payee_le).slice(0, 10) <= fin);
     const sansJustif = demP.filter((d) => d.statut === 'payee');
     const contrepassees = new Set(txs.filter((t) => t.contrepasse_de).map((t) => t.contrepasse_de));
-    const depSansPiece = dans.filter((t) => t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id)
+    const depSansPiece = dans.filter((t) => t.sens === 'depense' && estFlux(t) && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id)
       && !pieces.some((p) => p.transaction_id === t.id || (t.request_id && p.request_id === t.request_id)));
     const depasses = budget.filter((b) => b.sens === 'depense' && Number(b.realise) > Number(b.montant_prevu) && Number(b.montant_prevu) > 0);
     // Faits marquants : seulement ce qui est significatif
@@ -2911,7 +3001,7 @@ async function archivePieces(an, bouton) {
     for (const { t, p } of aTraiter) {
       const mois = `${t.date_op.slice(5, 7)}-${MOIS[Number(t.date_op.slice(5, 7)) - 1]}`;
       if (!p.length) {
-        if (t.sens === 'depense' && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id)) inventaire.push([dateFr(t.date_op), t.libelle, nomTiers(t), nomCategorie(t.category_id), Number(t.montant), 'MANQUANTE']);
+        if (t.sens === 'depense' && estFlux(t) && t.montant > 0 && !t.contrepasse_de && !contrepassees.has(t.id)) inventaire.push([dateFr(t.date_op), t.libelle, nomTiers(t), nomCategorie(t.category_id), Number(t.montant), 'MANQUANTE']);
         continue;
       }
       for (const [i, a] of p.entries()) {
@@ -2966,15 +3056,15 @@ async function pdfJournal({ du, au, compte = '', sens = '', categorie = '', titr
   const avant = toutes.filter((t) => dansCompte(t) && du && t.date_op < du);
   const soldeDebut = comptesVus.reduce((x, c) => x + Number(c.solde_initial || 0), 0) + avant.reduce((x, t) => x + signe(t), 0);
   const lignes = toutes.filter((t) => dansCompte(t) && (!du || t.date_op >= du) && (!au || t.date_op <= au) && (!sens || t.sens === sens) && (!categorie || t.category_id === categorie));
-  const rec = lignes.filter((t) => t.sens === 'recette').reduce((x, t) => x + Number(t.montant), 0);
-  const dep = lignes.filter((t) => t.sens === 'depense').reduce((x, t) => x + Number(t.montant), 0);
+  const rec = lignes.filter((t) => t.sens === 'recette' && estFlux(t)).reduce((x, t) => x + Number(t.montant), 0);
+  const dep = lignes.filter((t) => t.sens === 'depense' && estFlux(t)).reduce((x, t) => x + Number(t.montant), 0);
   const nomCompte = (id) => S.comptes.find((c) => c.id === id)?.nom || '';
   const periode = du && au ? `Du ${dateFr(du)} au ${dateFr(au)}` : 'Toutes les opérations';
   const filtres = [compte && `Compte : ${esc(nomCompte(compte))}`, sens && (sens === 'recette' ? 'Recettes seulement' : 'Dépenses seulement'), categorie && `Catégorie : ${esc(nomCategorie(categorie))}`].filter(Boolean).join(' · ');
   const html = `${enteteDocument(titre || 'Journal des opérations', periode + (filtres ? ` · ${filtres}` : ''))}
     ${syntheseDocument([['Solde au début', eur(soldeDebut)], ['Recettes', eur(rec), '#1B77B0'], ['Dépenses', eur(dep), '#C23E10'], ['Solde à la fin', eur(soldeDebut + rec - dep)]])}
     ${tableDocument([['N°', 'nw'], ['Date', 'nw'], ['Libellé', 'large'], ['Tiers'], ['Catégorie'], ['Compte'], ['Pièce'], ['Recette', 'd'], ['Dépense', 'd']],
-      lignes.map((t, i) => [i + 1, dateFr(t.date_op), esc(t.libelle) + (t.contrepasse_de ? ' <span class="muted">(correction)</span>' : ''), esc(nomTiers(t)), esc(nomRubrique(t) || nomCategorie(t.category_id)), esc(nomCompte(t.account_id)),
+      lignes.map((t, i) => [i + 1, dateFr(t.date_op), esc(t.libelle) + (t.contrepasse_de ? ' <span class="muted">(correction)</span>' : '') + (t.virement ? ' <span class="muted">(virement interne, hors totaux)</span>' : ''), esc(nomTiers(t)), esc(nomRubrique(t) || nomCategorie(t.category_id)), esc(nomCompte(t.account_id)),
         t.sens === 'depense' && t.montant > 0 ? (avecPiece.has(t.id) ? 'Oui' : '<b>Non</b>') : '', t.sens === 'recette' ? eur(t.montant) : '', t.sens === 'depense' ? eur(t.montant) : '']),
       ['', '', `<b>${lignes.length} opération${lignes.length > 1 ? 's' : ''}</b>`, '', '', '', '', `<b>${eur(rec)}</b>`, `<b>${eur(dep)}</b>`])}
     ${signaturesDocument()}`;
@@ -3190,8 +3280,8 @@ async function calculBudget(an) {
     return { p, lignes: bl,
       resPrevu: bl.filter((b) => sensDe(b) === 'recette').reduce((s, b) => s + Number(b.montant_prevu), 0),
       empPrevu: bl.filter((b) => sensDe(b) === 'depense').reduce((s, b) => s + Number(b.montant_prevu), 0),
-      resReel: t.filter((x) => x.sens === 'recette').reduce((s, x) => s + Number(x.montant), 0),
-      empReel: t.filter((x) => x.sens === 'depense').reduce((s, x) => s + Number(x.montant), 0) };
+      resReel: t.filter((x) => x.sens === 'recette' && estFlux(x)).reduce((s, x) => s + Number(x.montant), 0),
+      empReel: t.filter((x) => x.sens === 'depense' && estFlux(x)).reduce((s, x) => s + Number(x.montant), 0) };
   }).sort((a, b) => String(a.p.date_debut || '9').localeCompare(String(b.p.date_debut || '9')));
   return { lignes, ressources, emplois, activites,
     resPrevu: total(ressources, 'prevu'), empPrevu: total(emplois, 'prevu'), resReel: total(ressources, 'realise'), empReel: total(emplois, 'realise'),

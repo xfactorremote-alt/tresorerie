@@ -730,3 +730,5 @@ p.anniv,.agenda .anniv{font-size:13px;padding:4px 8px;align-self:flex-start;bord
 .export-carte{max-width:640px}
 /* Un élément masqué l'est toujours, même si son style le met en flex ou en grille */
 [hidden]{display:none!important}
+.puce-bleu{background:var(--surface-2);border:1px dashed var(--bord-fort);color:var(--texte)}
+.justification{margin:0;padding:8px 12px;border-left:3px solid var(--bord);background:var(--surface-2);border-radius:var(--r-petit);white-space:pre-line}

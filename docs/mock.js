@@ -22,6 +22,7 @@ function seed() {
   const categories = [
     cat('Cotisations', 'recette'), cat('Dons', 'recette'), cat('Offrandes dédiées', 'recette'), cat('Activités / événements', 'recette'), cat('Autres recettes', 'recette'),
     cat('Fonctionnement', 'depense'), cat('Activités / événements', 'depense'), cat('Aides et solidarité', 'depense'), cat('Matériel', 'depense'), cat('Autres dépenses', 'depense'),
+    { ...cat('Virement interne', 'recette'), interne: true }, { ...cat('Virement interne', 'depense'), interne: true },
   ];
   const C = (nom, sens) => categories.find((c) => c.nom === nom && c.sens === sens).id;
   const accounts = [
@@ -174,7 +175,7 @@ function seed() {
       organisation: [{ id: 1, nom: 'JP Grenoble', logo_path: null, banniere_path: null, devise: 'EUR' }],
       settings: [
         { cle: 'cotisation_montant', valeur: 20 }, { cle: 'cotisation_periode_mois', valeur: 1 },
-        { cle: 'delai_justificatif_jours', valeur: 7 }, { cle: 'seuil_alerte_budget_pct', valeur: 90 },
+        { cle: 'delai_justificatif_jours', valeur: 7 }, { cle: 'seuil_alerte_budget_pct', valeur: 90 }, { cle: 'seuil_justification', valeur: 100 },
         { cle: 'infos_paiement', valeur: null, texte: 'Virement : IBAN FR76 0000 0000 0000 0000 0000 000 (démonstration)\nEspèces : auprès du trésorier après le culte' },
       ],
       categories, accounts, members, cotisations, transactions, profiles, expense_requests, invitations: [],
@@ -253,7 +254,9 @@ class Requete {
       let lignes;
       if (this.op === 'insert') {
         if (this.table === 'expense_requests' && !peut('demander_depenses')) throw new Error('row-level security');
-        if (this.table === 'attachments' && !(peut('saisir_ecritures') || peut('payer_depenses'))) throw new Error('row-level security');
+        // Comme la règle de la base : trésorier, payeur, ou demandeur pour sa propre demande
+        if (this.table === 'attachments' && !(peut('saisir_ecritures') || peut('payer_depenses')
+          || this.valeur.every((a) => a.request_id && db.tables.expense_requests.find((r) => r.id === a.request_id)?.demandeur === db.moi()))) throw new Error('row-level security');
         if (this.table === 'role_permissions' && t0(db, this.valeur)) throw new Error('duplicate key');
         const t = db.tables[this.table];
         lignes = this.valeur.map((v) => ({ id: uid(), created_at: new Date().toISOString(), ...(this.table === 'transactions' ? { rapproche: false, contrepasse_de: null, reconciliation_id: null, member_id: null, tiers_id: null, est_cotisation: false, collecte_id: null } : {}),
@@ -314,7 +317,7 @@ export function createMockClient() {
           v.validee_par = db.moi(); v.validee_le = new Date().toISOString();
           if (r.regularisation) {
             const tx = tables.transactions.find((x) => x.request_id === r.id);
-            v.statut = tables.attachments.some((a) => a.transaction_id === tx?.id) ? 'justifiee' : 'payee';
+            v.statut = tables.attachments.some((a) => a.transaction_id === tx?.id && (a.nature || 'justificatif') === 'justificatif') ? 'justifiee' : 'payee';
             v.payee_le = r.payee_le || new Date().toISOString();
           }
         }
@@ -442,6 +445,31 @@ export function createMockClient() {
           payee_par: tx.created_by, payee_le: new Date(tx.date_op).toISOString(), created_at: new Date().toISOString() };
         t.expense_requests.push(r); tx.request_id = r.id;
         return ok(r.id);
+      }
+      if (nom === 'virement_interne') {
+        if (!d.has('saisir_ecritures')) return ko('Droit « saisir les écritures » requis');
+        if (args.p_source === args.p_dest) return ko('Choisissez deux comptes différents');
+        if (!(Number(args.p_montant) > 0)) return ko('Le montant doit être positif');
+        const s2 = t.accounts.find((x) => x.id === args.p_source), d2 = t.accounts.find((x) => x.id === args.p_dest);
+        if (!s2 || !d2) return ko('Compte introuvable ou inactif');
+        const lib = (args.p_libelle || '').trim() || (s2.type === 'caisse' && d2.type === 'banque' ? 'Dépôt d’espèces à la banque' : s2.type === 'banque' && d2.type === 'caisse' ? 'Retrait d’espèces pour la caisse' : 'Virement entre comptes');
+        const v = uid(), mode = s2.type === 'caisse' || d2.type === 'caisse' ? 'especes' : 'virement';
+        const jambe = (sens, compte) => ({ id: uid(), date_op: args.p_date, account_id: compte, sens, montant: Number(args.p_montant), category_id: t.categories.find((c) => c.interne && c.sens === sens).id,
+          project_id: null, libelle: lib.slice(0, 120), tiers_id: null, mode, member_id: null, est_cotisation: false, collecte_id: null, request_id: null, rapproche: false, reconciliation_id: null,
+          date_rapprochement: null, contrepasse_de: null, virement: v, created_by: db.moi(), created_at: new Date().toISOString() });
+        t.transactions.push(jambe('depense', s2.id), jambe('recette', d2.id));
+        return ok(v);
+      }
+      if (nom === 'annuler_virement') {
+        if (!d.has('saisir_ecritures')) return ko('Droit « saisir les écritures » requis');
+        if (!String(args.p_motif || '').trim()) return ko('Motif obligatoire');
+        const jambes = t.transactions.filter((x) => x.virement === args.p_virement && !x.contrepasse_de);
+        if (!jambes.length) return ko('Virement introuvable');
+        if (jambes.some((x) => x.rapproche)) return ko('Virement rapproché : période verrouillée, annulation impossible');
+        if (t.transactions.some((x) => x.virement === args.p_virement && x.contrepasse_de)) return ko('Ce virement est déjà annulé');
+        jambes.forEach((x) => t.transactions.push({ ...x, id: uid(), date_op: iso(new Date()), montant: -x.montant, contrepasse_de: x.id, rapproche: false, reconciliation_id: null,
+          libelle: `Contre-passation : ${x.libelle}`.slice(0, 100) + ' · motif : ' + String(args.p_motif).trim().slice(0, 60), created_by: db.moi(), created_at: new Date().toISOString() }));
+        return ok(null);
       }
       if (nom === 'modifier_mon_nom') {
         const p = t.profiles.find((x) => x.id === db.moi());

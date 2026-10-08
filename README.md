@@ -13,7 +13,9 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 |---|---|---|
 | Accueil : bannière tout en haut (photo, logo, nom, roue dentée des paramètres) avec la trésorerie, comptes (touchez pour voir les opérations), rubriques dépliables mémorisées ; **Ma situation** (cotisation et participations) pour chaque membre du bureau | Oui | Oui |
 | **Lien personnel** des membres : chaque membre ouvre sa page (cotisation, participations, rendez-vous, comment régler) d’un geste, sans compte, sans mot de passe, sans installation ; envoi par WhatsApp ou e-mail, un par un ou pour tous ; lien renouvelable ou coupé à tout moment | Oui | Oui (envoi ; la page s’ouvre dans le navigateur) |
-| Opérations : filtres recettes, dépenses, période, compte, catégorie, sans pièce, recherche ; totaux et solde | Oui | Oui |
+| Opérations : recherche et un bouton **Filtres** (type, période, compte, catégorie, rubrique, sans pièce), filtres actifs en pastilles ; totaux et solde | Oui | Oui |
+| **Virement interne** : dépôt d’espèces à la banque, retrait pour la caisse, virement entre comptes ; ni recette ni dépense, annulable avec motif | Oui | Oui |
+| Historique de chaque opération (référence, auteur, demande, annulation et motif) ; contre-passation avec motif ; alerte compte/mode inhabituel | Oui | Oui |
 | Pièces jointes et signature visibles dans le détail ; ajout de pièce ; contre-passation | Oui | Oui |
 | Demandes de dépense (onglet **Demandes**) : demande, signature du président, paiement, justificatif | Oui | Oui |
 | Dépense saisie directement dans les opérations : case « Faire valider par le président » (cochée par défaut) ou bouton « Faire valider » dans le détail ; le président la valide après coup, elle reste signalée « À valider » ou « Refusée » | Oui | Oui |
