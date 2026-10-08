@@ -716,3 +716,17 @@ p.anniv,.agenda .anniv{font-size:13px;padding:4px 8px;align-self:flex-start;bord
 .case-p small{white-space:nowrap;overflow:hidden}
 /* Téléphone : douze mois sur deux lignes de six, noms lisibles */
 @media (max-width:480px){.grille-periodes:has(> :nth-child(12)){grid-template-columns:repeat(6,1fr)!important}}
+
+/* Opérations : recherche + un seul bouton Filtres, filtres actifs en pastilles retirables */
+.barre-filtres{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.barre-filtres input[type=search]{flex:1 1 140px;min-width:0}
+.barre-filtres .btn-tonal{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.pastilles{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pastille{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--bord);background:var(--surface-2);color:var(--texte);font:inherit;font-size:13px;cursor:pointer}
+.pastille:hover{border-color:var(--bord-survol)}
+.pastille:focus-visible{outline:2px solid var(--bord-fort);outline-offset:2px}
+.pastille span{font-size:16px;line-height:1;opacity:.7}
+/* Rapports : un seul formulaire d'export */
+.export-carte{max-width:640px}
+/* Un élément masqué l'est toujours, même si son style le met en flex ou en grille */
+[hidden]{display:none!important}

@@ -627,6 +627,15 @@ async function pageEcritures() {
   const soldeFin = comptesVus.reduce((s, c) => s + Number(c.solde_initial || 0), 0)
     + toutes.filter((t) => (!f.au || t.date_op <= f.au) && comptesVus.some((c) => c.id === t.account_id)).reduce((s, t) => s + signe(t), 0);
   const filtresActifs = f.sens || f.compte || f.categorie || f.rubrique || f.texte || f.sansPiece || f.periode !== 'annee';
+  // Filtres actifs affichés en pastilles : un clic retire le filtre
+  const pastilles = [
+    f.sens && ['sens', f.sens === 'recette' ? 'Recettes' : 'Dépenses'],
+    f.periode !== 'annee' && ['periode', f.periode === 'perso' ? `Du ${dateFr(f.du)} au ${dateFr(f.au)}` : PERIODES[f.periode][0]],
+    f.compte && ['compte', cpt(f.compte)],
+    f.categorie && ['categorie', cat(f.categorie)],
+    f.rubrique && ['rubrique', f.rubrique === 'cotisation' ? 'Cotisations' : nomCollecte(f.rubrique)],
+    f.sansPiece && ['sansPiece', 'Sans pièce'],
+  ].filter(Boolean);
   const puceEtat = (t) => statutDemande[t.request_id] === 'soumise' ? '<span class="puce puce-partiel">À valider</span>'
     : statutDemande[t.request_id] === 'refusee' && !contrepassees.has(t.id) ? `<span class="puce puce-ko">${regularisation.has(t.request_id) ? 'Refusée · à régulariser' : 'Refusée'}</span>`
     : t.rapproche ? '<span class="puce puce-ok">Rapprochée</span>' : t.contrepasse_de ? '<span class="puce puce-neutre">Correction</span>'
@@ -636,17 +645,11 @@ async function pageEcritures() {
 
   rendre(`<div class="page">
     <div class="page-titre"><h1>Opérations</h1><button class="btn-bleu btn-petit" id="b-export">Exporter</button></div>
-    <div class="filtres">
-      <div class="groupe" role="group" aria-label="Type">${[['', 'Tout'], ['recette', 'Recettes'], ['depense', 'Dépenses']].map(([k, l]) => `<button type="button" data-sens="${k}" aria-pressed="${f.sens === k}">${l}</button>`).join('')}</div>
-      <select id="f-periode" aria-label="Période">${Object.entries(PERIODES).map(([k, [l]]) => `<option value="${k}" ${f.periode === k ? 'selected' : ''}>${l}</option>`).join('')}<option value="perso" ${f.periode === 'perso' ? 'selected' : ''}>Du… au…</option></select>
-      ${f.periode === 'perso' ? `<input type="date" id="f-du" value="${esc(f.du)}" aria-label="Du"><input type="date" id="f-au" value="${esc(f.au)}" aria-label="Au">` : ''}
-      <select id="f-compte" aria-label="Compte"><option value="">Tous les comptes</option>${S.comptes.map((c) => `<option value="${c.id}" ${f.compte === c.id ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select>
-      <select id="f-cat" aria-label="Catégorie"><option value="">Toutes les catégories</option>${S.categories.filter((c) => !f.sens || c.sens === f.sens).map((c) => `<option value="${c.id}" ${f.categorie === c.id ? 'selected' : ''}>${esc(c.nom)}${f.sens ? '' : c.sens === 'recette' ? ' (recette)' : ' (dépense)'}</option>`).join('')}</select>
-      <select id="f-rub" aria-label="Rubrique"><option value="">Toutes les rubriques</option><option value="cotisation" ${f.rubrique === 'cotisation' ? 'selected' : ''}>Cotisations</option>${(S.collectes || []).map((c) => `<option value="${c.id}" ${f.rubrique === c.id ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select>
-      <input type="search" id="f-texte" value="${esc(f.texte)}" placeholder="Libellé, tiers…" aria-label="Rechercher">
-      <label class="case"><input type="checkbox" id="f-piece" ${f.sansPiece ? 'checked' : ''}> Sans pièce</label>
-      ${filtresActifs ? '<button class="btn-texte btn-petit" id="f-raz">Réinitialiser</button>' : ''}
+    <div class="barre-filtres">
+      <input type="search" id="f-texte" value="${esc(f.texte)}" placeholder="Rechercher…" title="Libellé, tiers, catégorie ou rubrique" aria-label="Rechercher">
+      <button type="button" class="btn-tonal" id="b-filtres" aria-haspopup="dialog">${icone('filtre', 16)} Filtres${pastilles.length ? ` (${pastilles.length})` : ''}</button>
     </div>
+    ${pastilles.length ? `<div class="pastilles" aria-label="Filtres actifs">${pastilles.map(([cle, l]) => `<button type="button" class="pastille" data-retirer="${cle}" aria-label="Retirer le filtre ${esc(l)}">${esc(l)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="btn-texte btn-petit" id="f-raz">Tout effacer</button></div>` : ''}
     <div class="kpis kpis-4">
       <button class="carte kpi-bouton" data-sens="recette"><span class="muted">Recettes</span><b class="num recette">${eur(rec)}</b></button>
       <button class="carte kpi-bouton" data-sens="depense"><span class="muted">Dépenses</span><b class="num depense">${eur(dep)}</b></button>
@@ -664,14 +667,14 @@ async function pageEcritures() {
 
   const recharger = () => pageEcritures().catch(erreur);
   document.querySelectorAll('[data-sens]').forEach((b) => b.addEventListener('click', () => { f.sens = b.dataset.sens; f.categorie = ''; recharger(); }));
-  $('#f-periode').addEventListener('change', (e) => { f.periode = e.target.value; if (f.periode === 'perso') { f.du = f.du || debutMois(); f.au = f.au || aujourdhui(); } recharger(); });
-  $('#f-du')?.addEventListener('change', (e) => { f.du = e.target.value; recharger(); });
-  $('#f-au')?.addEventListener('change', (e) => { f.au = e.target.value; recharger(); });
-  $('#f-compte').addEventListener('change', (e) => { f.compte = e.target.value; recharger(); });
-  $('#f-cat').addEventListener('change', (e) => { f.categorie = e.target.value; recharger(); });
-  $('#f-rub').addEventListener('change', (e) => { f.rubrique = e.target.value; recharger(); });
+  $('#b-filtres').addEventListener('click', () => feuilleFiltres(f, recharger));
+  document.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.retirer;
+    if (k === 'periode') f.periode = 'annee'; else if (k === 'sansPiece') f.sansPiece = false; else f[k] = '';
+    if (k === 'sens') f.categorie = '';
+    recharger();
+  }));
   let minuteur; $('#f-texte').addEventListener('input', (e) => { clearTimeout(minuteur); minuteur = setTimeout(() => { f.texte = e.target.value; recharger().then?.(() => { const i = $('#f-texte'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); });
-  $('#f-piece').addEventListener('change', (e) => { f.sansPiece = e.target.checked; recharger(); });
   $('#f-raz')?.addEventListener('click', () => { S.filtres = {}; recharger(); });
   ['#b-nouvelle', '#b-nouvelle-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleEcriture()));
   const exportCsv = () => telechargerCsv(`operations-${f.du || 'debut'}-${f.au || aujourdhui()}.csv`,
@@ -689,6 +692,45 @@ async function pageEcritures() {
     const t = toutes.find((x) => x.id === S.ouvrirOperation); S.ouvrirOperation = null;
     if (t) detailEcriture(t, pieces, contrepassees, recharger, toutes);
   }
+}
+
+// Tous les filtres des opérations dans une seule feuille ; appliqués d'un coup
+function feuilleFiltres(f, apres) {
+  const brouillon = { sens: f.sens || '', periode: f.periode, du: f.du, au: f.au, compte: f.compte || '', categorie: f.categorie || '', rubrique: f.rubrique || '', sansPiece: !!f.sansPiece };
+  const optionsCat = (sens) => `<option value="">Toutes les catégories</option>${S.categories.filter((c) => !sens || c.sens === sens).map((c) => `<option value="${c.id}" ${brouillon.categorie === c.id ? 'selected' : ''}>${esc(c.nom)}${sens ? '' : c.sens === 'recette' ? ' (recette)' : ' (dépense)'}</option>`).join('')}`;
+  ouvrirFeuille(`<form id="f-filtres" class="champs"><h2>Filtrer les opérations</h2>
+    <div class="groupe" role="group" aria-label="Type">${[['', 'Tout'], ['recette', 'Recettes'], ['depense', 'Dépenses']].map(([k, l]) => `<button type="button" data-type="${k}" aria-pressed="${brouillon.sens === k}">${l}</button>`).join('')}</div>
+    <div class="champs champs-2">
+      <label class="champ">Période<select name="periode">${Object.entries(PERIODES).map(([k, [l]]) => `<option value="${k}" ${brouillon.periode === k ? 'selected' : ''}>${l}</option>`).join('')}<option value="perso" ${brouillon.periode === 'perso' ? 'selected' : ''}>Du… au…</option></select></label>
+      <label class="champ">Compte<select name="compte"><option value="">Tous les comptes</option>${S.comptes.map((c) => `<option value="${c.id}" ${brouillon.compte === c.id ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select></label>
+    </div>
+    <div class="champs champs-2" id="z-perso" ${brouillon.periode === 'perso' ? '' : 'hidden'}>
+      <label class="champ">Du<input type="date" name="du" value="${esc(brouillon.du || debutMois())}"></label>
+      <label class="champ">Au<input type="date" name="au" value="${esc(brouillon.au || aujourdhui())}"></label>
+    </div>
+    <div class="champs champs-2">
+      <label class="champ">Catégorie<select name="categorie">${optionsCat(brouillon.sens)}</select></label>
+      <label class="champ">Rubrique<select name="rubrique"><option value="">Toutes les rubriques</option><option value="cotisation" ${brouillon.rubrique === 'cotisation' ? 'selected' : ''}>Cotisations</option>${(S.collectes || []).map((c) => `<option value="${c.id}" ${brouillon.rubrique === c.id ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select></label>
+    </div>
+    <label class="case"><input type="checkbox" name="sansPiece" ${brouillon.sansPiece ? 'checked' : ''}> Seulement les dépenses sans pièce justificative</label>
+    <div class="actions"><button type="button" class="btn-texte" id="b-tout-effacer">Tout effacer</button><button class="btn-primaire">Afficher</button></div>
+  </form>`, (root) => {
+    const fo = $('#f-filtres', root);
+    root.querySelectorAll('[data-type]').forEach((b) => b.addEventListener('click', () => {
+      brouillon.sens = b.dataset.type; brouillon.categorie = '';
+      root.querySelectorAll('[data-type]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+      fo.categorie.innerHTML = optionsCat(brouillon.sens);
+    }));
+    fo.periode.addEventListener('change', () => { $('#z-perso', root).hidden = fo.periode.value !== 'perso'; });
+    $('#b-tout-effacer', root).addEventListener('click', () => { fermerFeuille(); S.filtres = {}; apres(); });
+    fo.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (fo.periode.value === 'perso' && (!fo.du.value || !fo.au.value || fo.au.value < fo.du.value)) return toast('Période invalide : la fin doit suivre le début');
+      Object.assign(f, { sens: brouillon.sens, periode: fo.periode.value, compte: fo.compte.value, categorie: fo.categorie.value, rubrique: fo.rubrique.value, sansPiece: fo.sansPiece.checked });
+      if (f.periode === 'perso') { f.du = fo.du.value; f.au = fo.au.value; }
+      fermerFeuille(); apres();
+    });
+  });
 }
 
 // Fiche d'une opération : détails, pièce jointe affichée, actions
@@ -1025,10 +1067,11 @@ async function pageMembres() {
   document.querySelectorAll('[data-acces]').forEach((b) => b.addEventListener('click', () => feuilleAcces(S.membres.find((m) => m.id === b.dataset.acces))));
   document.querySelectorAll('[data-lien]').forEach((b) => b.addEventListener('click', () => feuilleLien(S.membres.find((m) => m.id === b.dataset.lien))));
   $('#b-liens')?.addEventListener('click', feuilleLiens);
-  $('#b-export-m').addEventListener('click', () => choisirFormat('Exporter la liste des membres', () => pdfMembres(), () => telechargerCsv('membres.csv',
-    ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Fonction', 'Accord anniversaire', 'Actif'],
-    S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.consent_anniversaire ? 'Oui' : 'Non', m.actif ? 'Oui' : 'Non']))));
+  $('#b-export-m').addEventListener('click', () => choisirFormat('Exporter la liste des membres', () => pdfMembres(), csvMembres));
 }
+const csvMembres = () => telechargerCsv('membres.csv',
+  ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Fonction', 'Accord anniversaire', 'Actif'],
+  S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.consent_anniversaire ? 'Oui' : 'Non', m.actif ? 'Oui' : 'Non']));
 
 // Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
 function feuilleAcces(m) {
@@ -2541,68 +2584,106 @@ async function pageRapprochement() {
 }
 
 // ---------- Rapports : synthèse pour l'assemblée générale, rapport périodique, exports ----------
-async function pageRapports() {
-  const an = new Date().getFullYear();
-  rendre(`<div class="page"><h1>Rapports</h1>
-    <div class="grille grille-2">
-      <section class="carte"><h2>Rapport d’assemblée générale</h2>
-        <label class="champ">Exercice<select id="ag-an">${[an, an - 1, an - 2].map((a) => `<option>${a}</option>`).join('')}</select></label>
-        <button class="btn-primaire" id="b-ag">Exporter en PDF</button></section>
-      <section class="carte"><h2>Rapport périodique</h2>
-        <div class="champs champs-2"><label class="champ">Du<input type="date" id="rp-debut" value="${aujourdhui().slice(0, 8)}01"></label>
-          <label class="champ">Au<input type="date" id="rp-fin" value="${aujourdhui()}"></label></div>
-        <p class="muted" id="rp-rappel" aria-live="polite"></p>
-        <button class="btn-primaire" id="b-rp">Exporter en PDF</button></section>
-      <section class="carte"><h2>Documents PDF</h2>
-        <label class="champ">Exercice<select id="doc-an">${[an, an - 1, an - 2].map((a) => `<option>${a}</option>`).join('')}</select></label>
-        <div class="docs-pdf">
-          <button class="btn-tonal btn-petit" data-pdf="journal">Journal des opérations</button>
-          <button class="btn-tonal btn-petit" data-pdf="cotisations">État des cotisations</button>
-          <button class="btn-tonal btn-petit" data-pdf="budget">Budget prévu et réalisé</button>
-          <button class="btn-tonal btn-petit" data-pdf="demandes">Registre des demandes</button>
-          ${peut('voir_membres', 'gerer_membres') ? '<button class="btn-tonal btn-petit" data-pdf="membres">Liste des membres</button>' : ''}
-          <button class="btn-tonal btn-petit" data-pdf="inventaire">Inventaire du matériel</button>
-        </div></section>
-      <section class="carte"><h2>Pièces justificatives</h2>
-        <p class="muted" style="margin:0">Toutes les factures et pièces de l’exercice dans un seul fichier ZIP, classées par mois, avec leur inventaire.</p>
-        <label class="champ">Exercice<select id="pj-an">${[an, an - 1, an - 2].map((a) => `<option>${a}</option>`).join('')}</select></label>
-        <button class="btn-primaire" id="b-pj">Télécharger les pièces</button></section>
-      <section class="carte"><h2>Exports Excel</h2>
-        <div class="filtres">
-          <button class="btn-bleu btn-petit" data-export="ecritures">Écritures ${an}</button>
-          <button class="btn-bleu btn-petit" data-export="cotisations">Cotisations ${an}</button>
-          <button class="btn-bleu btn-petit" data-export="participations">Participations</button>
-          <button class="btn-bleu btn-petit" data-export="budget">Budget ${an}</button>
-          <button class="btn-bleu btn-petit" data-export="demandes">Demandes de dépense</button>
-        </div></section>
-      ${peut('administrer') ? `<section class="carte"><h2>Sauvegarde complète</h2>
-        <button class="btn-tonal" id="b-sauve">Télécharger la sauvegarde</button></section>` : ''}
-    </div></div>`);
-  // Rappel en toutes lettres : le format des champs de date dépend du navigateur (parfois mois/jour/année)
-  const dateLongue = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).replace(/^1 /, '1er ') : '…';
-  const rappel = () => { $('#rp-rappel').textContent = `Période : du ${dateLongue($('#rp-debut').value)} au ${dateLongue($('#rp-fin').value)}`; };
-  ['#rp-debut', '#rp-fin'].forEach((sel) => $(sel).addEventListener('change', rappel)); rappel();
-  $('#b-ag').addEventListener('click', () => { const a = Number($('#ag-an').value); imprimerRapport(`${a}-01-01`, `${a}-12-31`, `Rapport financier de l’exercice ${a}`); });
-  $('#b-rp').addEventListener('click', () => {
-    const d = $('#rp-debut').value, f = $('#rp-fin').value;
-    if (!d || !f || f < d) return toast('Période invalide : la fin doit suivre le début');
-    imprimerRapport(d, f, `Rapport de trésorerie du ${dateFr(d)} au ${dateFr(f)}`);
-  });
-  document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exporter(b.dataset.export, an).catch(erreur)));
-  $('#b-sauve')?.addEventListener('click', () => sauvegarder().catch(erreur));
-  document.querySelectorAll('[data-pdf]').forEach((b) => b.addEventListener('click', () => {
-    const a = Number($('#doc-an').value);
-    const faire = { journal: () => pdfJournal({ du: `${a}-01-01`, au: `${a}-12-31`, titre: `Journal des opérations ${a}` }), cotisations: () => pdfCotisations(a),
-      budget: () => pdfBudget(a), demandes: () => pdfDemandes(a), membres: () => pdfMembres(), inventaire: () => pdfInventaire() }[b.dataset.pdf];
-    faire().catch(erreur);
-  }));
-  $('#b-pj').addEventListener('click', (e) => archivePieces(Number($('#pj-an').value), e.currentTarget).catch(erreur));
+// Un seul formulaire pour tout exporter : le document, la période, le format
+const MOIS_LONGS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+function documentsExport() {
+  // [clé, libellé, formats, période : 'libre' (année, mois, trimestre ou dates), 'annee', ou '' (sans période)]
+  return [
+    ['rapport', 'Rapport financier (assemblée générale ou période)', ['pdf'], 'libre'],
+    ['journal', 'Journal des opérations', ['pdf', 'excel'], 'libre'],
+    ['cotisations', 'État des cotisations', ['pdf', 'excel'], 'annee'],
+    ['participations', 'Participations aux activités', ['excel'], ''],
+    ['budget', 'Budget prévu et réalisé', ['pdf', 'excel'], 'annee'],
+    ['demandes', 'Registre des demandes de dépense', ['pdf', 'excel'], 'annee'],
+    peut('voir_membres', 'gerer_membres') && ['membres', 'Liste des membres', ['pdf', 'excel'], ''],
+    ['inventaire', 'Inventaire du matériel', ['pdf', 'excel'], ''],
+    ['pieces', 'Pièces justificatives (fichier ZIP classé par mois)', ['zip'], 'annee'],
+    peut('administrer') && ['sauvegarde', 'Sauvegarde complète des données', ['json'], ''],
+  ].filter(Boolean);
 }
 
-async function exporter(type, an) {
+async function pageRapports() {
+  const an = new Date().getFullYear(), moisCourant = new Date().getMonth();
+  const DOCS = documentsExport();
+  const options = (l, choisi) => l.map(([v, t]) => `<option value="${v}" ${String(v) === String(choisi) ? 'selected' : ''}>${t}</option>`).join('');
+  const annees = [an, an - 1, an - 2].map((a2) => [a2, a2]);
+  rendre(`<div class="page"><h1>Rapports et exports</h1>
+    <section class="carte export-carte">
+      <form id="f-export" class="champs">
+        <label class="champ">Document<select name="doc">${options(DOCS.map(([k, l]) => [k, l]), 'rapport')}</select></label>
+        <div class="champs champs-2" id="z-periode">
+          <label class="champ" id="l-type">Période<select name="type">${options([['annee', 'Exercice complet'], ['mois', 'Un mois'], ['trimestre', 'Un trimestre'], ['libre', 'Du… au…']], 'annee')}</select></label>
+          <label class="champ" id="l-annee">Année<select name="annee">${options(annees, an)}</select></label>
+          <label class="champ" id="l-mois" hidden>Mois<select name="mois">${options(MOIS_LONGS.map((m, i) => [i, majuscule(m)]), moisCourant)}</select></label>
+          <label class="champ" id="l-trim" hidden>Trimestre<select name="trim">${options([[0, '1er trimestre (janv. à mars)'], [1, '2e trimestre (avr. à juin)'], [2, '3e trimestre (juil. à sept.)'], [3, '4e trimestre (oct. à déc.)']], Math.floor(moisCourant / 3))}</select></label>
+          <label class="champ" id="l-du" hidden>Du<input type="date" name="du" value="${aujourdhui().slice(0, 8)}01"></label>
+          <label class="champ" id="l-au" hidden>Au<input type="date" name="au" value="${aujourdhui()}"></label>
+        </div>
+        <div class="groupe" role="group" aria-label="Format" id="z-format"></div>
+        <p class="muted" id="rp-rappel" aria-live="polite"></p>
+        <div class="actions"><button class="btn-primaire" id="b-exporter">Exporter</button></div>
+      </form>
+    </section>
+    <p class="muted aide-bas">PDF&nbsp;: mis en page pour imprimer, signer ou transmettre. Excel&nbsp;: tableau modifiable (CSV). Les exports d’une page (opérations filtrées, membres, matériel) restent disponibles sur chaque page avec le bouton Exporter.</p>
+  </div>`);
+  const fo = $('#f-export');
+  const NOMS_FORMAT = { pdf: 'PDF', excel: 'Excel', zip: 'ZIP', json: 'Fichier de sauvegarde' };
+  let format = 'pdf';
+  // Période choisie : [début, fin, intitulé]
+  const periode = () => {
+    const a2 = Number(fo.annee.value), t = fo.type.value, doc = DOCS.find((d) => d[0] === fo.doc.value);
+    if (doc[3] !== 'libre' || t === 'annee') return [`${a2}-01-01`, `${a2}-12-31`, `exercice ${a2}`];
+    if (t === 'mois') { const m = Number(fo.mois.value); return [isoLocal(new Date(a2, m, 1, 12)), isoLocal(new Date(a2, m + 1, 0, 12)), `${MOIS_LONGS[m]} ${a2}`]; }
+    if (t === 'trimestre') { const tr = Number(fo.trim.value); return [isoLocal(new Date(a2, tr * 3, 1, 12)), isoLocal(new Date(a2, tr * 3 + 3, 0, 12)), `${tr === 0 ? '1er' : tr + 1 + 'e'} trimestre ${a2}`]; }
+    return [fo.du.value, fo.au.value, `période du ${dateFr(fo.du.value)} au ${dateFr(fo.au.value)}`];
+  };
+  const dateLongue = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).replace(/^1 /, '1er ') : '…';
+  const maj = () => {
+    const doc = DOCS.find((d) => d[0] === fo.doc.value), t = fo.type.value;
+    const libre = doc[3] === 'libre', avecAnnee = doc[3] === 'libre' ? t !== 'libre' : doc[3] === 'annee';
+    $('#z-periode').hidden = !doc[3];
+    $('#l-type').hidden = !libre;
+    $('#l-annee').hidden = !avecAnnee;
+    $('#l-mois').hidden = !(libre && t === 'mois');
+    $('#l-trim').hidden = !(libre && t === 'trimestre');
+    $('#l-du').hidden = $('#l-au').hidden = !(libre && t === 'libre');
+    if (!doc[2].includes(format)) format = doc[2][0];
+    $('#z-format').innerHTML = doc[2].length > 1 ? doc[2].map((x) => `<button type="button" data-format="${x}" aria-pressed="${x === format}">${NOMS_FORMAT[x]}</button>`).join('') : '';
+    $('#z-format').hidden = doc[2].length < 2;
+    $('#z-format').querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => { format = b.dataset.format; maj(); }));
+    const [du, au] = periode();
+    $('#rp-rappel').textContent = `${doc[1]}, ${NOMS_FORMAT[format]}${doc[3] === 'annee' ? ` : exercice ${fo.annee.value}` : doc[3] ? ` : du ${dateLongue(du)} au ${dateLongue(au)}` : ''}`;
+    $('#b-exporter').textContent = `Exporter en ${NOMS_FORMAT[format]}`;
+  };
+  ['doc', 'type', 'annee', 'mois', 'trim', 'du', 'au'].forEach((n) => fo[n].addEventListener('change', maj));
+  maj();
+  fo.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const doc = fo.doc.value, [du, au, intitule] = periode(), a2 = Number(fo.annee.value), excel = format === 'excel';
+    if (!du || !au || au < du) return toast('Période invalide : la fin doit suivre le début');
+    const btn = $('#b-exporter'); btn.disabled = true;
+    try {
+      const faire = {
+        rapport: () => imprimerRapport(du, au, fo.type.value === 'annee' ? `Rapport financier de l’exercice ${a2}` : `Rapport de trésorerie, ${intitule}`),
+        journal: () => (excel ? exporter('ecritures', a2, du, au) : pdfJournal({ du, au, titre: `Journal des opérations, ${intitule}` })),
+        cotisations: () => (excel ? exporter('cotisations', a2) : pdfCotisations(a2)),
+        participations: () => exporter('participations', a2),
+        budget: () => (excel ? exporter('budget', a2) : pdfBudget(a2)),
+        demandes: () => (excel ? exporter('demandes', a2) : pdfDemandes(a2)),
+        membres: () => (excel ? csvMembres() : pdfMembres()),
+        inventaire: async () => (excel ? csvInventaire(await q(sb.from('materiel').select('*').order('designation'))) : pdfInventaire()),
+        pieces: () => archivePieces(a2, btn),
+        sauvegarde: () => sauvegarder(),
+      }[doc];
+      await faire();
+    } catch (err) { erreur(err); } finally { btn.disabled = false; }
+  });
+}
+
+async function exporter(type, an, du = `${an}-01-01`, au = `${an}-12-31`) {
   if (type === 'ecritures') {
-    const l = await q(sb.from('transactions').select('*').gte('date_op', `${an}-01-01`).lte('date_op', `${an}-12-31`).order('date_op'));
-    return telechargerCsv(`ecritures-${an}.csv`, ['Date', 'Sens', 'Libellé', 'Tiers', 'Rubrique', 'Catégorie', 'Activité', 'Compte', 'Mode', 'Montant', 'Rapprochée'],
+    const l = await q(sb.from('transactions').select('*').gte('date_op', du).lte('date_op', au).order('date_op'));
+    return telechargerCsv(du === `${an}-01-01` && au === `${an}-12-31` ? `ecritures-${an}.csv` : `ecritures-${du}-au-${au}.csv`, ['Date', 'Sens', 'Libellé', 'Tiers', 'Rubrique', 'Catégorie', 'Activité', 'Compte', 'Mode', 'Montant', 'Rapprochée'],
       l.map((t) => [dateFr(t.date_op), t.sens === 'recette' ? 'Recette' : 'Dépense', t.libelle, nomTiers(t), nomRubrique(t), nomCategorie(t.category_id), nomProjet(t.project_id),
         S.comptes.find((c) => c.id === t.account_id)?.nom, MODES[t.mode], signe(t), t.rapproche ? 'Oui' : 'Non']));
   }
@@ -3406,12 +3487,13 @@ async function pageMateriel() {
     const ouvrir = () => ficheMateriel(items.find((x) => x.id === li.dataset.mat), recharger);
     li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
   });
-  $('#b-export-mat').addEventListener('click', () => choisirFormat('Exporter l’inventaire', () => pdfInventaire(), () => telechargerCsv(`inventaire-materiel-${aujourdhui()}.csv`,
+  $('#b-export-mat').addEventListener('click', () => choisirFormat('Exporter l’inventaire', () => pdfInventaire(), () => csvInventaire(items)));
+}
+const csvInventaire = (items) => telechargerCsv(`inventaire-materiel-${aujourdhui()}.csv`,
     ['Désignation', 'Catégorie', 'Marque et modèle', 'N° de série', 'Quantité', 'Origine', 'Acquis le', 'Valeur d’achat', 'Valeur actuelle', 'État', 'Lieu', 'Chez', 'Vérifié le', 'Sorti le', 'Motif'],
     items.map((x) => [x.designation, CATEGORIES_MATERIEL[x.categorie], x.marque, x.numero_serie, x.quantite, ORIGINES_MATERIEL[x.origine], x.date_acquisition ? dateFr(x.date_acquisition) : '',
       x.valeur_acquisition == null ? '' : Number(x.valeur_acquisition), x.valeur_actuelle == null ? '' : Number(x.valeur_actuelle), ETATS_MATERIEL[x.etat][1], x.lieu, x.detenteur_id ? nomMembre(x.detenteur_id) : '',
-      x.verifie_le ? dateFr(x.verifie_le) : '', x.sorti_le ? dateFr(x.sorti_le) : '', x.motif_sortie ? MOTIFS_SORTIE[x.motif_sortie] : '']))));
-}
+      x.verifie_le ? dateFr(x.verifie_le) : '', x.sorti_le ? dateFr(x.sorti_le) : '', x.motif_sortie ? MOTIFS_SORTIE[x.motif_sortie] : '']));
 
 async function mouvement(materielId, type, memberId = null, notes = null) {
   await q(sb.from('materiel_mouvements').insert({ materiel_id: materielId, type, member_id: memberId, notes, date_mvt: aujourdhui(), par: S.profil.id }));
