@@ -290,6 +290,16 @@ object Repo {
         if (demo) Demo.reglages.toMap()
         else client.from("settings").select().decodeList<Reglage>().associate { it.cle to (it.valeur ?: 0.0) }
 
+    // Réglage en texte libre (ex. : « Comment régler sa cotisation » affiché aux membres)
+    suspend fun texteReglage(cle: String): String? =
+        if (demo) Demo.textes[cle] else client.from("settings").select { filter { eq("cle", cle) } }.decodeList<Reglage>().firstOrNull()?.texte
+
+    suspend fun majTexteReglage(cle: String, texte: String?) {
+        if (demo) { Demo.majTexte(cle, texte, profilDemo.value); return }
+        val n = client.from("settings").update({ set("texte", texte) }) { filter { eq("cle", cle) }; select() }.decodeList<Reglage>()
+        if (n.isEmpty()) client.from("settings").insert(buildJsonObject { put("cle", cle); put("texte", texte); put("description", "Comment régler sa cotisation") })
+    }
+
     suspend fun majReglage(cle: String, valeur: Double) {
         if (demo) { Demo.majReglage(cle, valeur, profilDemo.value); return }
         client.from("settings").update({ set("valeur", valeur) }) { filter { eq("cle", cle) } }
@@ -410,7 +420,8 @@ object Repo {
     suspend fun sauvegardeJson(): String {
         if (demo) return Demo.sauvegardeJson()
         val tables = listOf("organisation", "settings", "accounts", "categories", "projects", "budgets", "members", "cotisations",
-            "tiers", "collectes", "collecte_membres", "transactions", "expense_requests", "attachments", "reconciliations", "profiles", "invitations")
+            "tiers", "collectes", "collecte_membres", "transactions", "expense_requests", "attachments", "reconciliations", "profiles", "invitations",
+            "materiel", "materiel_mouvements")
         return buildString {
             append("""{"format":"tresorerie-jp-v1","exporte_le":"${Clock.System.now()}"""")
             tables.forEach { t -> append(""","$t":"""); append(client.from(t).select().data) }
@@ -549,6 +560,81 @@ object Repo {
     suspend fun cloturerCollecte(id: String, cloturee: Boolean) {
         if (demo) { Demo.cloturerCollecte(id, cloturee, profilDemo.value); return }
         client.from("collectes").update({ set("cloturee", cloturee) }) { filter { eq("id", id) } }
+    }
+
+    // ---------- Liens personnels des membres ----------
+    suspend fun liens(): List<LienMembre> =
+        if (demo) Demo.liens.toList() else client.from("liens_membres").select().decodeList()
+
+    // Crée le lien (ou le renouvelle : l'ancien ne fonctionne plus) ; renvoie le jeton
+    suspend fun lienMembre(membreId: String, renouveler: Boolean): String =
+        if (demo) Demo.lienMembre(membreId, renouveler, profilDemo.value)
+        else client.postgrest.rpc("lien_membre", buildJsonObject { put("p_member", membreId); put("p_renouveler", renouveler) }).decodeAs()
+
+    suspend fun couperLien(membreId: String) {
+        if (demo) { Demo.couperLien(membreId, profilDemo.value); return }
+        client.from("liens_membres").delete { filter { eq("member_id", membreId) } }
+    }
+
+    fun urlLien(jeton: String) = Config.SITE_URL + "?m=" + jeton
+
+    // ---------- Inventaire du matériel ----------
+    suspend fun materiel(): List<Materiel> =
+        if (demo) Demo.materiel.toList().sortedBy { it.designation.lowercase() }
+        else client.from("materiel").select { order("designation", Order.ASCENDING) }.decodeList()
+
+    suspend fun mouvementsMateriel(id: String): List<MouvementMateriel> =
+        if (demo) Demo.mouvements.filter { it.materielId == id }.reversed()
+        else client.from("materiel_mouvements").select { filter { eq("materiel_id", id) }; order("created_at", Order.DESCENDING) }.decodeList()
+
+    private suspend fun mouvement(id: String, type: String, membre: String? = null, notes: String? = null) {
+        val m = MouvementMateriel(id, type, membre, notes, aujourdhui().toString(), profilDemo.value?.id ?: client.auth.currentUserOrNull()?.id)
+        if (demo) Demo.ajouterMouvement(m, profilDemo.value) else client.from("materiel_mouvements").insert(m)
+    }
+
+    // Ajout ou modification d'un article ; la photo va dans le dossier photos/materiel
+    suspend fun enregistrerMateriel(id: String?, m: NouveauMateriel, photo: Fichier?) {
+        var chemin: String? = null
+        if (photo != null) {
+            chemin = "materiel/${Clock.System.now().toEpochMilliseconds()}.jpg"
+            if (demo) Demo.fichiers["photos/$chemin"] = photo.octets
+            else client.storage.from("photos").upload(chemin, photo.octets) { contentType = ContentType.Image.JPEG }
+        }
+        val v = if (chemin != null) m.copy(photo = chemin) else m
+        if (id == null) {
+            val nouveau = if (demo) Demo.ajouterMateriel(v.copy(verifieLe = aujourdhui().toString()), profilDemo.value)
+                else client.from("materiel").insert(v.copy(verifieLe = aujourdhui().toString())) { select() }.decodeSingle<Materiel>().id
+            mouvement(nouveau, "entree", notes = mapOf("achat" to "Acheté", "don" to "Reçu en don", "pret" to "Prêté par un tiers")[m.origine])
+        } else {
+            if (demo) Demo.majMateriel(id, profilDemo.value) { it.copy(designation = v.designation, categorie = v.categorie, marque = v.marque, numeroSerie = v.numeroSerie,
+                quantite = v.quantite, origine = v.origine, dateAcquisition = v.dateAcquisition, valeurAcquisition = v.valeurAcquisition, valeurActuelle = v.valeurActuelle,
+                etat = v.etat, lieu = v.lieu, notes = v.notes, photo = v.photo ?: it.photo) }
+            else client.from("materiel").update({
+                set("designation", v.designation); set("categorie", v.categorie); set("marque", v.marque); set("numero_serie", v.numeroSerie); set("quantite", v.quantite)
+                set("origine", v.origine); set("date_acquisition", v.dateAcquisition); set("valeur_acquisition", v.valeurAcquisition); set("valeur_actuelle", v.valeurActuelle)
+                set("etat", v.etat); set("lieu", v.lieu); set("notes", v.notes); if (v.photo != null) set("photo_path", v.photo)
+            }) { filter { eq("id", id) } }
+            mouvement(id, "modification")
+        }
+    }
+
+    suspend fun verifierMateriel(id: String) {
+        if (demo) Demo.majMateriel(id, profilDemo.value) { it.copy(verifieLe = aujourdhui().toString()) }
+        else client.from("materiel").update({ set("verifie_le", aujourdhui().toString()) }) { filter { eq("id", id) } }
+        mouvement(id, "inventaire")
+    }
+
+    suspend fun confierMateriel(id: String, membre: String?, notes: String?) {
+        val avant = materiel().firstOrNull { it.id == id }?.detenteurId
+        if (demo) Demo.majMateriel(id, profilDemo.value) { it.copy(detenteurId = membre) }
+        else client.from("materiel").update({ set<String?>("detenteur_id", membre) }) { filter { eq("id", id) } }
+        if (membre != null) mouvement(id, "pret", membre, notes) else mouvement(id, "retour", avant)
+    }
+
+    suspend fun sortirMateriel(id: String, date: String, motif: String, notes: String) {
+        if (demo) Demo.majMateriel(id, profilDemo.value) { it.copy(sortiLe = date, motifSortie = motif, detenteurId = null) }
+        else client.from("materiel").update({ set("sorti_le", date); set("motif_sortie", motif); set<String?>("detenteur_id", null) }) { filter { eq("id", id) } }
+        mouvement(id, "sortie", notes = notes)
     }
 
     suspend fun tousLesComptes(): List<Compte> =

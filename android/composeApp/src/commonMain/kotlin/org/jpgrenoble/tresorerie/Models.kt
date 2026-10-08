@@ -273,7 +273,7 @@ class Fichier(val octets: ByteArray, val mime: String, val extension: String) {
 }
 
 @Serializable
-data class Reglage(val cle: String, val valeur: Double? = null)
+data class Reglage(val cle: String, val valeur: Double? = null, val texte: String? = null)
 
 @Serializable
 data class Invitation(
@@ -358,4 +358,67 @@ data class NouvellePiece(
     val mime: String,
     @SerialName("taille_ko") val ko: Int,
     @SerialName("depose_par") val deposePar: String,
+)
+
+// ---------- Inventaire du matériel ----------
+@Serializable
+data class Materiel(
+    val id: String,
+    val designation: String,
+    val categorie: String = "autre",
+    val marque: String? = null,
+    @SerialName("numero_serie") val numeroSerie: String? = null,
+    val quantite: Int = 1,
+    val origine: String = "achat",
+    @SerialName("date_acquisition") val dateAcquisition: String? = null,
+    @SerialName("valeur_acquisition") val valeurAcquisition: Double? = null,
+    @SerialName("valeur_actuelle") val valeurActuelle: Double? = null,
+    val etat: String = "bon",
+    val lieu: String? = null,
+    @SerialName("detenteur_id") val detenteurId: String? = null,
+    @SerialName("transaction_id") val transactionId: String? = null,
+    @SerialName("photo_path") val photo: String? = null,
+    val notes: String? = null,
+    @SerialName("verifie_le") val verifieLe: String? = null,
+    @SerialName("sorti_le") val sortiLe: String? = null,
+    @SerialName("motif_sortie") val motifSortie: String? = null,
+)
+
+@Serializable
+data class NouveauMateriel(
+    val designation: String,
+    val categorie: String,
+    val marque: String? = null,
+    @SerialName("numero_serie") val numeroSerie: String? = null,
+    val quantite: Int = 1,
+    val origine: String = "achat",
+    @SerialName("date_acquisition") val dateAcquisition: String? = null,
+    @SerialName("valeur_acquisition") val valeurAcquisition: Double? = null,
+    @SerialName("valeur_actuelle") val valeurActuelle: Double? = null,
+    val etat: String = "bon",
+    val lieu: String? = null,
+    val notes: String? = null,
+    @SerialName("transaction_id") val transactionId: String? = null,
+    @SerialName("photo_path") val photo: String? = null,
+    @SerialName("verifie_le") val verifieLe: String? = null,
+)
+
+@Serializable
+data class MouvementMateriel(
+    @SerialName("materiel_id") val materielId: String,
+    val type: String,
+    @SerialName("member_id") val membreId: String? = null,
+    val notes: String? = null,
+    @SerialName("date_mvt") val date: String = "",
+    val par: String? = null,
+    @SerialName("created_at") val creeLe: String? = null,
+)
+
+// Lien personnel d'un membre : sa page (cotisation, participations, rendez-vous) sans compte
+@Serializable
+data class LienMembre(
+    @SerialName("member_id") val membreId: String,
+    val jeton: String,
+    @SerialName("nb_consultations") val nbConsultations: Int = 0,
+    @SerialName("derniere_consultation") val derniereConsultation: String? = null,
 )

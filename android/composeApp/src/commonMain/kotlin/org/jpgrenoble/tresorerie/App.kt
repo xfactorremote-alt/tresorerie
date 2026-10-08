@@ -308,6 +308,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit) {
                     "activites" -> EcranPlanning(d, message)
                     "tiers" -> EcranTiers(d, message)
                     "rapprochement" -> EcranRapprochement(d, message)
+                    "materiel" -> EcranMateriel(d, message)
                     "rapports" -> EcranRapports(d, message)
                     "parametres" -> EcranParametres(d, message, recharger)
                     "moi" -> EcranAdherent(d)

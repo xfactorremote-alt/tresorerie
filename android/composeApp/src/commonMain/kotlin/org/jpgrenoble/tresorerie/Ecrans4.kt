@@ -350,11 +350,23 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     val nbRetard = lignes.count { it.second.retard > 0.005 }
     val vues = lignes.filter { (_, c) -> filtre == "tous" || (filtre == "retard") == (c.retard > 0.005) }
     val sansCotis = d.membres.count { it.actif && parMembre[it.id] == null }
+    var exporterCotis by remember { mutableStateOf(false) }
+    val scopeExp = rememberCoroutineScope()
+    val imprimerCotis = rememberImpression()
+    val enregistrerCotis = rememberEnregistrer { it?.let(message) }
+    if (exporterCotis) AlertDialog(
+        onDismissRequest = { exporterCotis = false },
+        title = { Text("Exporter les cotisations $annee") },
+        text = { Text("PDF : état des cotisations mis en page. Excel : tableau modifiable (CSV).") },
+        confirmButton = { Button(onClick = { exporterCotis = false; scopeExp.launch { try { val (t, h) = documentHtml(d, "cotisations", annee); imprimerCotis(t, h) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("PDF") } },
+        dismissButton = { OutlinedButton(onClick = { exporterCotis = false; scopeExp.launch { try { enregistrerCotis("cotisations-$annee.csv", "text/csv", exportCsv(d, "cotisations", annee).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("Excel") } },
+    )
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PuceMenu(annee.toString(), true, listOf(an + 1, an, an - 1, an - 2).map { it.toString() }) { annee = an + 1 - it }
-                Text("${PERIODICITES[pas] ?: ""}, ${euros(montantPeriode)} par période", fontSize = 13.sp, color = Couleurs.Texte2)
+                Text("${PERIODICITES[pas] ?: ""}, ${euros(montantPeriode)} par période", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.weight(1f))
+                OutlinedButton(onClick = { exporterCotis = true }) { Text("Exporter") }
             }
         }
         if (gere && sansCotis > 0 && synth != null) item {
@@ -684,32 +696,33 @@ fun FormulaireCollecte(d: Donnees, c: Collecte?, preProjet: String?, projets: Li
 // =====================================================================
 // Planning : mois, semaine, agenda (et suivi des activités pour le bureau)
 // =====================================================================
-object PreferencesPlanning { var vue = "mois" }
+object PreferencesPlanning { var vue = "calendrier"; var affichage = "mois" }
 
+// Planning : même conception que le site. Deux onglets, « Calendrier » (affichage Mois ou Semaine,
+// navigation, Aujourd'hui) et « À venir » (rendez-vous des douze prochains mois, par mois).
+// Un appui sur un jour ouvre le détail du jour.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EcranPlanning(d: Donnees, message: (String) -> Unit) {
-    val suivi = d.peut("gerer_activites", "consulter_finances")
-    val vues = listOf("mois" to "Mois", "semaine" to "Semaine", "agenda" to "Agenda") + if (suivi) listOf("liste" to "Activités") else emptyList()
-    var vue by remember { mutableStateOf(PreferencesPlanning.vue.takeIf { v -> vues.any { it.first == v } } ?: "mois") }
+    var vue by remember { mutableStateOf(PreferencesPlanning.vue.takeIf { it in listOf("calendrier", "avenir") } ?: "calendrier") }
+    var affichage by remember { mutableStateOf(PreferencesPlanning.affichage.takeIf { it in listOf("mois", "semaine") } ?: "mois") }
     var ref by remember { mutableStateOf(aujourdhui()) }
-    var choisi by remember { mutableStateOf(aujourdhui().toString()) }
     var evts by remember { mutableStateOf<List<Projet>?>(null) }
     var anniv by remember { mutableStateOf<Map<Int, List<Anniversaire>>>(emptyMap()) }
     var version by remember { mutableStateOf(0) }
     var detail by remember { mutableStateOf<Projet?>(null) }
+    var jour by remember { mutableStateOf<String?>(null) }
     var nouveau by remember { mutableStateOf<String?>(null) }
-    val (debut, fin) = when (vue) {
-        "mois" -> { val p = LocalDate(ref.year, ref.monthNumber, 1); val dern = p.plus(DatePeriod(months = 1)).minus(DatePeriod(days = 1))
+    val (debut, fin) = when {
+        vue == "avenir" -> aujourdhui() to aujourdhui().plus(DatePeriod(days = 365))
+        affichage == "mois" -> { val p = LocalDate(ref.year, ref.monthNumber, 1); val dern = p.plus(DatePeriod(months = 1)).minus(DatePeriod(days = 1))
             p.minus(DatePeriod(days = p.dayOfWeek.isoDayNumber - 1)) to dern.plus(DatePeriod(days = 7 - dern.dayOfWeek.isoDayNumber)) }
-        "semaine" -> { val l = ref.minus(DatePeriod(days = ref.dayOfWeek.isoDayNumber - 1)); l to l.plus(DatePeriod(days = 6)) }
-        else -> ref to ref.plus(DatePeriod(days = 90))
+        else -> { val l = ref.minus(DatePeriod(days = ref.dayOfWeek.isoDayNumber - 1)); l to l.plus(DatePeriod(days = 6)) }
     }
     LaunchedEffect(vue, debut, fin, version) {
-        if (vue == "liste") return@LaunchedEffect
         try {
             evts = Repo.planning(debut.toString(), fin.toString())
-            val mois = generateSequence(debut) { it.plus(DatePeriod(days = 7)) }.takeWhile { it <= fin }.map { it.monthNumber }.toSet() + fin.monthNumber
+            val mois = if (vue == "avenir") emptySet() else generateSequence(debut) { it.plus(DatePeriod(days = 7)) }.takeWhile { it <= fin }.map { it.monthNumber }.toSet() + fin.monthNumber
             anniv = mois.associateWith { m -> try { Repo.anniversaires(m) } catch (_: Exception) { emptyList() } }
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
@@ -723,69 +736,102 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit) {
     }
     fun annivDe(s: String): List<Anniversaire> { val j = LocalDate.parse(s); return anniv[j.monthNumber].orEmpty().filter { it.jour == j.dayOfMonth } }
     val gere = d.peut("gerer_activites")
+    val auj = aujourdhui().toString()
 
-    Column(Modifier.fillMaxSize()) {
-        Text("Planning", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp))
-        ScrollableTabRow(selectedTabIndex = vues.indexOfFirst { it.first == vue }.coerceAtLeast(0), edgePadding = 16.dp, containerColor = MaterialTheme.colorScheme.background) {
-            vues.forEach { (k, l) -> Tab(selected = vue == k, onClick = { vue = k; PreferencesPlanning.vue = k }, text = { Text(l) }) }
-        }
-        if (vue == "liste") { Box(Modifier.weight(1f)) { EcranActivites(d, message) }; return@Column }
-        Box(Modifier.weight(1f)) {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 104.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { Titre("Planning") }
+            item {
+                TabRow(selectedTabIndex = if (vue == "calendrier") 0 else 1, containerColor = MaterialTheme.colorScheme.background) {
+                    listOf("calendrier" to "Calendrier", "avenir" to "À venir").forEach { (k, l) ->
+                        Tab(selected = vue == k, onClick = { vue = k; PreferencesPlanning.vue = k }, text = { Text(l) })
+                    }
+                }
+            }
+            if (vue == "calendrier") {
+                item {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        listOf("mois" to "Mois", "semaine" to "Semaine").forEachIndexed { i, (k, l) ->
+                            SegmentedButton(selected = affichage == k, onClick = { affichage = k; PreferencesPlanning.affichage = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(l) }
+                        }
+                    }
+                }
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { ref = when (vue) { "mois" -> LocalDate(ref.year, ref.monthNumber, 1).minus(DatePeriod(months = 1)); "semaine" -> ref.minus(DatePeriod(days = 7)); else -> ref.minus(DatePeriod(days = 90)) } }) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Précédent") }
-                        Text(when (vue) { "mois" -> "${MOIS[ref.monthNumber - 1].replaceFirstChar { it.uppercase() }} ${ref.year}"
-                            "semaine" -> "Semaine du ${debut.dayOfMonth} ${MOIS[debut.monthNumber - 1]}"; else -> "À partir du ${ref.dayOfMonth} ${MOIS[ref.monthNumber - 1]}" },
+                        IconButton(onClick = { ref = if (affichage == "mois") LocalDate(ref.year, ref.monthNumber, 1).minus(DatePeriod(months = 1)) else ref.minus(DatePeriod(days = 7)) }) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Précédent", tint = Couleurs.Orange) }
+                        Text(if (affichage == "mois") "${MOIS[ref.monthNumber - 1].replaceFirstChar { it.uppercase() }} ${ref.year}" else "Semaine du ${debut.dayOfMonth} ${MOIS[debut.monthNumber - 1]}",
                             Modifier.weight(1f), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        IconButton(onClick = { ref = when (vue) { "mois" -> LocalDate(ref.year, ref.monthNumber, 1).plus(DatePeriod(months = 1)); "semaine" -> ref.plus(DatePeriod(days = 7)); else -> ref.plus(DatePeriod(days = 90)) } }) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Suivant") }
-                        FilledTonalButton(onClick = { ref = aujourdhui(); choisi = aujourdhui().toString() }) { Text("Aujourd’hui") }
+                        IconButton(onClick = { ref = if (affichage == "mois") LocalDate(ref.year, ref.monthNumber, 1).plus(DatePeriod(months = 1)) else ref.plus(DatePeriod(days = 7)) }) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Suivant", tint = Couleurs.Orange) }
+                        OutlinedButton(onClick = { ref = aujourdhui() }) { Text("Aujourd’hui") }
                     }
                 }
                 if (evts == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                when (vue) {
-                    "mois" -> {
-                        item { CalendrierMois(ref, debut, fin, choisi, parJour, ::annivDe) { choisi = it } }
-                        item {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                                Text(jourLong(choisi).replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                if (gere) TextButton(onClick = { nouveau = choisi }) { Text("Ajouter") }
+                if (affichage == "mois") {
+                    item { CalendrierMois(ref, debut, fin, parJour, ::annivDe) { jour = it } }
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Legende(Couleurs.Bleu, "Rendez-vous"); Legende(Couleurs.Jaune, "Anniversaire")
+                            Text("Touchez un jour pour le détail", fontSize = 12.sp, color = Couleurs.Texte2)
+                        }
+                    }
+                } else item {
+                    // Semaine : sept jours, logo en filigrane comme le calendrier du mois
+                    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp)) { Box {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            generateSequence(debut) { it.plus(DatePeriod(days = 1)) }.takeWhile { it <= fin }.map { it.toString() }.forEach { s ->
+                                LigneJour(s, s == auj, parJour[s].orEmpty(), annivDe(s), onJour = { jour = s }) { detail = it }
                             }
                         }
-                        val l = parJour[choisi].orEmpty()
-                        if (l.isEmpty() && annivDe(choisi).isEmpty()) item { Text("Rien de prévu", color = Couleurs.Texte2) }
-                        items(l, key = { "j" + it.id }) { e -> CarteEvenement(e) { detail = e } }
-                        items(annivDe(choisi), key = { "a" + it.prenom + it.nom }) { a -> PuceAnniversaire(a) }
+                        Filigrane(Modifier.align(Alignment.Center))
+                    } }
+                }
+            } else {
+                item { Text("Les rendez-vous des douze prochains mois.", color = Couleurs.Texte2) }
+                val l = (evts ?: emptyList()).filter { (it.fin ?: it.debut ?: "") >= auj }.sortedBy { it.debut }
+                if (evts != null && l.isEmpty()) item {
+                    CarteBlanche {
+                        Text("Aucun rendez-vous prévu.", color = Couleurs.Texte2)
+                        if (gere) Button(onClick = { nouveau = auj }) { Text("Ajouter un rendez-vous") }
                     }
-                    else -> {
-                        val jours = generateSequence(debut) { it.plus(DatePeriod(days = 1)) }.takeWhile { it <= fin }.map { it.toString() }
-                            .filter { vue == "semaine" || parJour[it] != null || annivDe(it).isNotEmpty() }.toList()
-                        if (jours.isEmpty() && evts != null) item { Text("Aucun événement sur cette période", color = Couleurs.Texte2) }
-                        items(jours, key = { it }) { s ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                                val auj = s == aujourdhui().toString()
-                                Surface(onClick = { if (gere) nouveau = s }, color = if (auj) Couleurs.Orange else MaterialTheme.colorScheme.surface,
-                                    contentColor = if (auj) Color.White else Couleurs.Texte, shape = RoundedCornerShape(16.dp), modifier = Modifier.size(52.dp)) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                        Text(s.takeLast(2).trimStart('0'), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                                        Text(JOURS_COURTS[LocalDate.parse(s).dayOfWeek.isoDayNumber - 1], fontSize = 11.sp)
+                }
+                l.groupBy { it.debut!!.take(7) }.forEach { (m, liste) ->
+                    item(key = m) {
+                        CarteBlanche {
+                            Text("${MOIS[m.substring(5, 7).toInt() - 1].replaceFirstChar { it.uppercase() }} ${m.take(4)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            liste.forEach { e ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    PastilleDate(e.debut!!.take(10), e.debut.take(10) == auj) {}
+                                    Column(Modifier.weight(1f)) {
+                                        CarteEvenement(e) { detail = e }
+                                        if (e.fin != null && e.fin.take(10) != e.debut.take(10)) Text("Jusqu’au ${jourLong(e.fin.take(10))}", fontSize = 12.sp, color = Couleurs.Texte2)
                                     }
-                                }
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    parJour[s].orEmpty().forEach { e -> CarteEvenement(e) { detail = e } }
-                                    annivDe(s).forEach { PuceAnniversaire(it) }
-                                    if (parJour[s].isNullOrEmpty() && annivDe(s).isEmpty()) Text("–", color = Couleurs.Texte2, modifier = Modifier.padding(top = 14.dp))
                                 }
                             }
                         }
                     }
                 }
             }
-            if (gere) LargeFloatingActionButton(onClick = { nouveau = if (vue == "mois") choisi else aujourdhui().toString() },
-                containerColor = Couleurs.Jaune, contentColor = Couleurs.SurJaune, modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = "Nouvel événement")
+        }
+        if (gere) LargeFloatingActionButton(onClick = { nouveau = if (vue == "calendrier" && affichage == "mois" && ref.monthNumber != aujourdhui().monthNumber) LocalDate(ref.year, ref.monthNumber, 1).toString() else auj },
+            containerColor = Couleurs.Jaune, contentColor = Couleurs.SurJaune, modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
+            Icon(Icons.Filled.Add, contentDescription = "Nouveau rendez-vous")
+        }
+    }
+    // Détail du jour (comme sur le site) : rendez-vous, anniversaires, ajout
+    jour?.let { s ->
+        ModalBottomSheet(onDismissRequest = { jour = null }) {
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(jourLong(s).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                val l = parJour[s].orEmpty()
+                if (l.isEmpty()) Text("Rien de prévu", color = Couleurs.Texte2)
+                l.forEach { e -> CarteEvenement(e) { jour = null; detail = e } }
+                annivDe(s).forEach { PuceAnniversaire(it) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    if (gere) FilledTonalButton(onClick = { jour = null; nouveau = s }) { Text("Ajouter un rendez-vous") }
+                    Button(onClick = { jour = null }) { Text("Fermer") }
+                }
             }
         }
     }
@@ -800,7 +846,39 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit) {
 }
 
 @Composable
-private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, choisi: String, parJour: Map<String, List<Projet>>,
+private fun Legende(couleur: Color, texte: String) = Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Box(Modifier.size(width = 14.dp, height = 4.dp).background(couleur, RoundedCornerShape(2.dp))); Text(texte, fontSize = 12.sp, color = Couleurs.Texte2)
+}
+
+@Composable
+private fun PastilleDate(s: String, aujourdhuiOui: Boolean, onClick: () -> Unit) =
+    Surface(onClick = onClick, color = if (aujourdhuiOui) Couleurs.Orange else Color(0xFFEFEDEC), contentColor = if (aujourdhuiOui) Color.White else Couleurs.Texte,
+        shape = RoundedCornerShape(14.dp), modifier = Modifier.size(48.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Text(s.takeLast(2).trimStart('0'), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(JOURS_COURTS[LocalDate.parse(s).dayOfWeek.isoDayNumber - 1], fontSize = 11.sp)
+        }
+    }
+
+@Composable
+private fun LigneJour(s: String, estAuj: Boolean, evts: List<Projet>, anniv: List<Anniversaire>, onJour: () -> Unit, onEvt: (Projet) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        PastilleDate(s, estAuj, onJour)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            evts.forEach { e -> CarteEvenement(e) { onEvt(e) } }
+            anniv.forEach { PuceAnniversaire(it) }
+            if (evts.isEmpty() && anniv.isEmpty()) Text("–", color = Couleurs.Texte2, modifier = Modifier.padding(top = 12.dp))
+        }
+    }
+}
+
+// Logo de l'association en filigrane : très discret, laisse passer les appuis
+@Composable
+private fun Filigrane(modifier: Modifier) =
+    LogoAsso(modifier.fillMaxWidth(0.6f).aspectRatio(1f).graphicsLayer { alpha = 0.08f }.clip(CircleShape).clearAndSetSemantics { })
+
+@Composable
+private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, parJour: Map<String, List<Projet>>,
                            annivDe: (String) -> List<Anniversaire>, onJour: (String) -> Unit) {
     val jours = generateSequence(debut) { it.plus(DatePeriod(days = 1)) }.takeWhile { it <= fin }.toList()
     val auj = aujourdhui().toString()
@@ -814,13 +892,13 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, cho
                         val e = parJour[s].orEmpty(); val a = annivDe(s)
                         val hors = j.monthNumber != ref.monthNumber
                         Column(Modifier.weight(1f).height(62.dp).clip(RoundedCornerShape(12.dp))
-                            .background(if (s == choisi) Couleurs.OrangeClair else Couleurs.Fond)
+                            .background(Couleurs.Fond.copy(alpha = if (hors) 0.5f else 1f))
                             .clickable { onJour(s) }.padding(3.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Box(Modifier.size(22.dp).background(if (s == auj) Couleurs.Orange else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
                                 Text(j.dayOfMonth.toString(), fontSize = 12.sp, fontWeight = FontWeight.Bold,
                                     color = if (s == auj) Color.White else if (hors) Color(0xFFB0A9A6) else Couleurs.Texte)
                             }
-                            e.take(3).forEach { ev -> Box(Modifier.fillMaxWidth().height(5.dp).background(if (ev.type == "evenement") Couleurs.Bleu else Couleurs.Orange, RoundedCornerShape(3.dp))) }
+                            e.take(3).forEach { ev -> Box(Modifier.fillMaxWidth().height(5.dp).background(Couleurs.Bleu, RoundedCornerShape(3.dp))) }
                             if (a.isNotEmpty()) Box(Modifier.fillMaxWidth().height(5.dp).background(Couleurs.Jaune, RoundedCornerShape(3.dp)))
                         }
                     }
@@ -828,14 +906,13 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, cho
             }
         }
         // Logo de l'association en filigrane : très discret, laisse passer les appuis sur les jours
-        LogoAsso(Modifier.align(Alignment.Center).fillMaxWidth(0.6f).aspectRatio(1f).graphicsLayer { alpha = 0.08f }.clip(CircleShape)
-            .clearAndSetSemantics { })
+        Filigrane(Modifier.align(Alignment.Center))
     } }
 }
 
 @Composable
 private fun CarteEvenement(e: Projet, onClick: () -> Unit) {
-    val (fond, texte) = if (e.type == "evenement") Couleurs.BleuClair to Couleurs.SurBleuClair else Couleurs.OrangeClair to Couleurs.SurOrangeClair
+    val (fond, texte) = Couleurs.BleuClair to Couleurs.SurBleuClair
     Surface(onClick = onClick, color = fond, contentColor = texte, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -843,7 +920,7 @@ private fun CarteEvenement(e: Projet, onClick: () -> Unit) {
                 val l = listOfNotNull(if (e.heureDebut != null) heureFr(e.heureDebut) + (e.heureFin?.let { " – " + heureFr(it) } ?: "") else "Journée", e.lieu)
                 Text(l.joinToString(" · "), fontSize = 13.sp)
             }
-            e.participation?.let { Puce(euros(it), Couleurs.JauneClair, Couleurs.SurJaune) }
+            e.participation?.let { Puce("Participation ${euros(it)}", Couleurs.JauneClair, Couleurs.SurJaune) }
         }
     }
 }

@@ -1,6 +1,7 @@
 package org.jpgrenoble.tresorerie
 
 import kotlin.test.Test
+import kotlinx.datetime.minus
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -94,5 +95,32 @@ class AuditTest {
         val d = Donnees(tresorier, Organisation(), Demo.comptes, Demo.categories.toList(), emptyList(), emptySet(), emptyList())
         assertTrue(d.categories.none { it.interne })
         assertEquals("Virement interne", d.nomCategorie("ci-d"))
+    }
+
+    @Test fun budgetCommeLeSite() {
+        val cats = listOf(Categorie("r1", "Cotisations", "recette"), Categorie("d1", "Fournitures", "depense"),
+            Categorie("ci-d", "Virement interne (sortie)", "depense", interne = true))
+        val projets = listOf(Projet("p1", "Sortie été", debut = "2026-07-01"))
+        val lignes = listOf(Budget("b1", 2026, "r1", null, 500.0), Budget("b2", 2026, "d1", null, 100.0), Budget("b3", 2026, "d1", "p1", 50.0))
+        fun ec(id: String, date: String, sens: String, m: Double, cat: String, p: String? = null, v: String? = null) =
+            Ecriture(id, date, "acc", sens, m, cat, id, projetId = p, virement = v)
+        val txs = listOf(ec("1", "2026-02-01", "recette", 300.0, "r1"), ec("2", "2026-03-01", "depense", 120.0, "d1", "p1"),
+            ec("3", "2026-03-02", "depense", 200.0, "ci-d", v = "v1"), ec("4", "2025-05-01", "recette", 450.0, "r1"))
+        val b = calculBudget(2026, cats, projets, lignes, txs)
+        // Catégorie interne exclue des postes ; réalisé et N-1 par catégorie
+        assertEquals(listOf("d1"), b.emplois.map { it.cat.id })
+        assertEquals(500.0, b.resPrevu, 0.001); assertEquals(300.0, b.resReel, 0.001); assertEquals(450.0, b.resN1, 0.001)
+        assertEquals(120.0, b.empReel, 0.001)
+        // Activité : prévu de ses lignes, réalisé hors virements
+        val a = b.activites.single()
+        assertEquals("Sortie été", a.p.nom); assertEquals(50.0, a.empPrevu, 0.001); assertEquals(120.0, a.empReel, 0.001)
+    }
+
+    @Test fun materielAVerifier() {
+        val ancien = aujourdhui().minus(kotlinx.datetime.DatePeriod(days = 400)).toString()
+        assertTrue(aVerifier(Materiel("m", "Sono")))
+        assertTrue(aVerifier(Materiel("m", "Sono", verifieLe = ancien)))
+        assertTrue(!aVerifier(Materiel("m", "Sono", verifieLe = aujourdhui().toString())))
+        assertTrue(!aVerifier(Materiel("m", "Sono", sortiLe = aujourdhui().toString())))
     }
 }

@@ -66,6 +66,9 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     var operations by remember { mutableStateOf<List<Ecriture>>(emptyList()) }
     var comptesTous by remember { mutableStateOf<List<Compte>>(emptyList()) }
     var cotis by remember { mutableStateOf<List<Cotisation>>(emptyList()) }
+    var maCot by remember { mutableStateOf<List<PeriodeCotisation>>(emptyList()) }
+    var mesParts by remember { mutableStateOf<List<Participation>>(emptyList()) }
+    var pas by remember { mutableStateOf(1) }
     val voitSoldes = d.peut("consulter_finances")
     var nbComptes by remember { mutableStateOf(1) }
     LaunchedEffect(Unit) {
@@ -74,6 +77,11 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     LaunchedEffect(Unit) {
         try {
             anniv = Repo.anniversaires()
+            if (d.profil.memberId != null) {
+                maCot = try { Repo.maCotisation() } catch (_: Exception) { emptyList() }
+                mesParts = try { Repo.mesParticipations() } catch (_: Exception) { emptyList() }
+                pas = try { (Repo.reglages()["cotisation_periode_mois"] ?: 1.0).toInt() } catch (_: Exception) { 1 }
+            }
             if (voitSoldes) {
                 soldes = Repo.soldes(); retards = Repo.retards()
                 operations = Repo.toutesEcritures(); comptesTous = try { Repo.tousLesComptes() } catch (_: Exception) { d.comptes }
@@ -132,9 +140,11 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     val faites = etapesDemarrage.count { it.second }
     val rubriques = buildList {
         if (etapesDemarrage.isNotEmpty() && faites < etapesDemarrage.size) add("demarrer")
+        if (d.profil.memberId != null) add("masituation")
         if (taches.isNotEmpty()) add("traiter")
         if (voitSoldes && operations.isNotEmpty()) addAll(listOf("chiffres", "evolution", "repartition"))
         add("anniversaires")
+        if (voitSoldes) add("operations")
     }
     val toutOuvert = rubriques.all { EtatAccueil.ouvertes[it] ?: true }
 
@@ -185,6 +195,13 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
                             textDecoration = if (fait) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
                     }
                 }
+            }
+        }
+        if (d.profil.memberId != null) item {
+            val retardMoi = retardDe(maCot)
+            Rubrique("masituation", "Ma situation", if (retardMoi > 0.005) "Cotisation : ${euros(retardMoi)} en retard" else "Cotisation à jour", alerte = false) {
+                BlocMaCotisation(maCot, pas)
+                if (mesParts.isNotEmpty()) { Text("Mes participations", fontWeight = FontWeight.Bold); ListeParticipations(mesParts) }
             }
         }
         if (taches.isNotEmpty()) item {
@@ -251,6 +268,23 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
                         if (a.jour == auj.dayOfMonth) Pastille("Aujourd’hui", Couleurs.JauneClair, Couleurs.SurJaune)
                     }
                 }
+            }
+        }
+        if (voitSoldes) item {
+            Rubrique("operations", "Dernières opérations", "") {
+                val dernieres = operations.sortedWith(compareByDescending<Ecriture> { it.date }.thenByDescending { it.creeLe ?: "" }).take(5)
+                if (dernieres.isEmpty()) Text("Aucune opération.", color = Couleurs.Texte2)
+                dernieres.forEach { e ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(e.libelle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${dateFr(e.date)} · ${d.nomCategorie(e.categorieId)}", fontSize = 13.sp, color = Couleurs.Texte2)
+                        }
+                        val v = e.signe
+                        Text((if (v >= 0) "+ " else "− ") + euros(kotlin.math.abs(v)), color = if (v >= 0) Couleurs.Bleu else Couleurs.Orange, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                TextButton(onClick = { onAller("operations:") }) { Text("Toutes les opérations") }
             }
         }
     }
@@ -403,6 +437,10 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
     var tiers by remember { mutableStateOf<List<Tiers>>(emptyList()) }
     var collectes by remember { mutableStateOf<List<Collecte>>(emptyList()) }
     var rubrique by remember { mutableStateOf<String?>(null) }
+    var exporter by remember { mutableStateOf(false) }
+    val scopeOps = rememberCoroutineScope()
+    val imprimer = rememberImpression()
+    val enregistrer = rememberEnregistrer { it?.let(message) }
     LaunchedEffect(version) {
         try { tiers = Repo.tiers() } catch (_: Exception) { }
         try { collectes = Repo.collectes() } catch (_: Exception) { }
@@ -445,7 +483,7 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 104.dp)) {
-            item { Titre("Opérations") }
+            item { Titre("Opérations") { OutlinedButton(onClick = { exporter = true }) { Text("Exporter") } } }
             item {
                 Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(recherche, { recherche = it }, placeholder = { Text("Rechercher…") }, singleLine = true,
@@ -511,6 +549,32 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
             FormulaireVirement(d, message) { ok -> virement = false; if (ok) { message("Virement enregistré"); version++ } }
         }
     }
+    // Exporter les opérations affichées : la période et les filtres actifs sont repris
+    if (exporter) AlertDialog(
+        onDismissRequest = { exporter = false },
+        title = { Text("Exporter les opérations affichées") },
+        text = { Text("PDF : mis en page pour imprimer, archiver ou transmettre. Excel : tableau modifiable (CSV).") },
+        confirmButton = { Button(onClick = {
+            exporter = false
+            scopeOps.launch { try {
+                val (t, h) = documentHtml(d, "journal", debut.take(4).toIntOrNull()?.takeIf { it > 1000 } ?: aujourdhui().year, debut.takeIf { it > "0000" }, minOf(fin, "9999-12-31"),
+                    null, compte, sens.takeIf { it != "tout" }, categorie)
+                imprimer(t, h)
+            } catch (e: Exception) { message(traduireErreur(e)) } }
+        }) { Text("PDF") } },
+        dismissButton = { OutlinedButton(onClick = {
+            exporter = false
+            scopeOps.launch { try {
+                fun cel(v: Any?): String { val s2 = when (v) { is Double -> v.toString().replace('.', ','); null -> ""; else -> v.toString() }; return if (s2.any { it == ';' || it == '"' || it == '\n' }) "\"" + s2.replace("\"", "\"\"") + "\"" else s2 }
+                val entetes = listOf("Date", "Sens", "Libellé", "Tiers", "Rubrique", "Catégorie", "Activité", "Compte", "Mode", "Montant", "Pièce", "Rapprochée")
+                val lignesCsv = vues.map { e -> listOf(dateFr(e.date), if (e.virement != null) "Virement interne" else if (e.sens == "recette") "Recette" else "Dépense", e.libelle,
+                    nomTiers(e, d.membres, tiers), nomRubrique(e, collectes), d.nomCategorie(e.categorieId), projets.firstOrNull { it.id == e.projetId }?.nom,
+                    d.comptes.firstOrNull { it.id == e.compteId }?.nom, MODES[e.mode], e.signe, if (aPiece(e)) "Oui" else "Non", if (e.rapproche) "Oui" else "Non") }
+                enregistrer("operations-${debut.takeIf { it > "0000" } ?: "debut"}-${minOf(fin, aujourdhui().toString())}.csv", "text/csv",
+                    ("\uFEFF" + (listOf(entetes) + lignesCsv).joinToString("\r\n") { l -> l.joinToString(";") { cel(it) } }).encodeToByteArray())
+            } catch (e: Exception) { message(traduireErreur(e)) } }
+        }) { Text("Excel") } },
+    )
     if (filtres) {
         ModalBottomSheet(onDismissRequest = { filtres = false }) {
             FeuilleFiltres(d, collectes, sens, periode, perso, compte, categorie, rubrique, sansPiece) { s2, p2, perso2, c2, cat2, r2, sp2 ->
@@ -642,7 +706,7 @@ internal fun LigneInfo(titre: String, valeur: String?) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pieces: List<Piece>, demandes: List<Demande>, projets: List<Projet>,
                              profils: List<ProfilCourt>, tiers: String, rubrique: String, message: (String) -> Unit,
@@ -650,6 +714,7 @@ internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pi
     val scope = rememberCoroutineScope()
     var confirmer by remember { mutableStateOf(false) }
     var annulerVir by remember { mutableStateOf(false) }
+    var inventaire by remember { mutableStateOf(false) }
     var motif by remember { mutableStateOf("") }
     var enCours by remember { mutableStateOf(false) }
     val siennes = pieces.filter { it.transactionId == e.id || (e.demandeId != null && it.demandeId == e.demandeId) }.distinctBy { it.id }
@@ -718,8 +783,15 @@ internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pi
                 FilledTonalButton(onClick = {
                     scope.launch { try { Repo.demanderValidation(e.id); message("Dépense envoyée au président pour validation"); onFini(true) } catch (x: Exception) { message(traduireErreur(x)) } }
                 }) { Text("Faire valider") }
+            if (d.peut("gerer_materiel") && e.sens == "depense" && e.estFlux && e.montant > 0 && Regex("mat[ée]riel|instrument|[ée]quipement", RegexOption.IGNORE_CASE).containsMatchIn(d.nomCategorie(e.categorieId)))
+                TextButton(onClick = { inventaire = true }) { Text("Inscrire à l’inventaire") }
             if (d.peut("saisir_ecritures", "payer_depenses") && correction == null && e.contrepasseDe == null)
                 FilledTonalButton(onClick = choix) { Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Joindre une pièce") }
+        }
+    }
+    if (inventaire) ModalBottomSheet(onDismissRequest = { inventaire = false }) {
+        FormulaireMateriel(null, NouveauMateriel(e.libelle, "instrument", valeurAcquisition = e.montant, valeurActuelle = e.montant, dateAcquisition = e.date, etat = "neuf", transactionId = e.id), message) { ok ->
+            inventaire = false; if (ok) message("Article inscrit à l’inventaire")
         }
     }
     if (confirmer || annulerVir) AlertDialog(

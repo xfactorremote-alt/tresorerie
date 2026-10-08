@@ -49,6 +49,7 @@ object Demo {
         Permission("gerer_membres", "Ajouter, modifier et importer des membres", "Membres", 10),
         Permission("gerer_activites", "Créer et modifier les activités", "Activités", 11),
         Permission("administrer", "Paramètres, rôles et accès", "Administration", 12),
+        Permission("gerer_materiel", "Tenir l’inventaire du matériel : ajouter, prêter, sortir", "Matériel", 13),
     )
     val roles = mutableListOf(Role("tresorier", "Trésorier", true), Role("president", "Président", true),
         Role("bureau", "Bureau", true), Role("adherent", "Adhérent", true))
@@ -263,6 +264,44 @@ object Demo {
     }
 
     fun ecritures(): List<Ecriture> = lignes.map { it.e }.sortedByDescending { it.date }
+
+    val textes = mutableMapOf<String, String?>("infos_paiement" to "En espèces auprès du trésorier après la répétition, ou par virement (IBAN sur demande).")
+    fun majTexte(cle: String, texte: String?, profil: Profil?) { exiger(profil, "administrer"); textes[cle] = texte }
+
+    // ---------- Liens personnels (même règle que la fonction lien_membre de la base) ----------
+    val liens = mutableListOf(LienMembre("m0", "a1b2c3d4e5f60718293a4b5c6d7e8f90", 3, ilYa(2)))
+    fun lienMembre(membreId: String, renouveler: Boolean, profil: Profil?): String {
+        exiger(profil, "gerer_membres", "gerer_cotisations")
+        val l = liens.firstOrNull { it.membreId == membreId }
+        if (l != null && !renouveler) return l.jeton
+        val jeton = (1..32).map { "0123456789abcdef".random() }.joinToString("")
+        liens.removeAll { it.membreId == membreId }; liens += LienMembre(membreId, jeton)
+        return jeton
+    }
+    fun couperLien(membreId: String, profil: Profil?) { exiger(profil, "gerer_membres", "gerer_cotisations"); liens.removeAll { it.membreId == membreId } }
+
+    // ---------- Inventaire du matériel (mêmes règles que la base : gestion réservée à gerer_materiel) ----------
+    val materiel = mutableListOf(
+        Materiel("mat1", "Guitare basse", "instrument", "Yamaha TRBX174", "QK0123", 1, "achat", ilYa(400), 249.0, 180.0, "bon", "Église, local du fond", verifieLe = ilYa(30)),
+        Materiel("mat2", "Enceinte portable", "sonorisation", "JBL EON One", null, 2, "achat", ilYa(200), 378.0, 300.0, "bon", "Église", detenteurId = "m3", verifieLe = ilYa(30)),
+        Materiel("mat3", "Micros sans fil", "sonorisation", "Shure BLX", null, 4, "don", ilYa(700), 400.0, 250.0, "usage", "Église", verifieLe = ilYa(420)),
+        Materiel("mat4", "Clavier numérique", "instrument", "Roland FP-10", null, 1, "pret", ilYa(90), null, null, "bon", "Église", notes = "Prêté par M. et Mme Lefèvre", verifieLe = ilYa(60)),
+        Materiel("mat5", "Tenues de chorale", "textile", null, null, 25, "achat", ilYa(800), 625.0, 300.0, "a_reparer", "Armoire du local", verifieLe = ilYa(30)),
+    )
+    val mouvements = mutableListOf(MouvementMateriel("mat2", "pret", "m3", "Répétitions", ilYa(5)))
+
+    fun ajouterMateriel(n: NouveauMateriel, profil: Profil?): String {
+        exiger(profil, "gerer_materiel")
+        val id = "mat${compteur++}"
+        materiel += Materiel(id, n.designation, n.categorie, n.marque, n.numeroSerie, n.quantite, n.origine, n.dateAcquisition, n.valeurAcquisition, n.valeurActuelle,
+            n.etat, n.lieu, null, n.transactionId, n.photo, n.notes, n.verifieLe)
+        return id
+    }
+    fun majMateriel(id: String, profil: Profil?, maj: (Materiel) -> Materiel) {
+        exiger(profil, "gerer_materiel")
+        val i = materiel.indexOfFirst { it.id == id }; materiel[i] = maj(materiel[i])
+    }
+    fun ajouterMouvement(m: MouvementMateriel, profil: Profil?) { exiger(profil, "gerer_materiel"); mouvements += m }
 
     // ---------- Pièces jointes ----------
     val pieces = mutableListOf<Piece>()

@@ -520,30 +520,6 @@ internal fun Chiffre(titre: String, montant: Double, sous: String, couleur: Colo
         }
     }
 
-@Composable
-internal fun LigneBudgetVue(b: LigneBudget, activite: String?) {
-    val taux = b.taux ?: 0.0
-    val couleur = when {
-        b.sens == "recette" -> Couleurs.Bleu
-        taux > 100 -> Couleurs.Erreur
-        b.alerte -> Couleurs.Jaune
-        else -> Couleurs.Orange
-    }
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(b.categorie, fontWeight = FontWeight.SemiBold)
-                activite?.let { Text(it, fontSize = 12.sp, color = Couleurs.Texte2) }
-            }
-            if (b.sens == "depense" && taux > 100) Puce("Dépassé", Couleurs.ErreurClair, Color(0xFF410002))
-            else if (b.alerte) Puce("Alerte", Couleurs.JauneClair, Couleurs.SurJaune)
-        }
-        LinearProgressIndicator(progress = { (taux / 100).toFloat().coerceIn(0f, 1f) }, color = couleur,
-            trackColor = Color(0xFFEFEDEC), modifier = Modifier.fillMaxWidth().height(8.dp))
-        Text("${euros(b.realise)} sur ${euros(b.prevu)} · ${taux.toString().replace('.', ',')}$NBSP%", fontSize = 13.sp, color = Couleurs.Texte2)
-    }
-}
-
 // ---------- Rapprochement ----------
 @Composable
 fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {

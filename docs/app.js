@@ -1942,7 +1942,8 @@ async function paramFinances(zone) {
     e.preventDefault();
     try {
       await q(sb.from('categories').insert({ nom: fc.nom.value.trim(), sens: fc.sens.value }));
-      S.categories = await q(sb.from('categories').select('*').order('nom'));
+      S.categoriesToutes = await q(sb.from('categories').select('*').order('nom'));
+      S.categories = S.categoriesToutes.filter((c) => !c.interne);
       toast('Catégorie ajoutée'); pageParametres();
     } catch (err) { erreur(err); }
   });

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Contacts
 import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PieChart
 import androidx.compose.material.icons.outlined.Settings
@@ -47,7 +48,7 @@ private fun nombre(s: String) = s.replace(',', '.').replace(" ", "").replace(NBS
 // =====================================================================
 // Paramètres (droit « administrer ») : quatre onglets
 // =====================================================================
-private val ONGLETS_PARAM = listOf("Mon compte", "Association", "Comptes", "Rôles et droits", "Accès")
+private val ONGLETS_PARAM = listOf("Mon compte", "Association", "Montants et comptes", "Rôles et droits", "Accès")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -165,22 +166,9 @@ private fun ParamAssociation(d: Donnees, message: (String) -> Unit, recharger: (
     var nouvelleBanniere by remember { mutableStateOf<Fichier?>(null) }
     var retirerBanniere by remember { mutableStateOf(false) }
     val banniereActuelle by Repo.banniere.collectAsState()
-    var cotisation by remember { mutableStateOf("") }
-    var periodicite by remember { mutableStateOf(1) }
-    var delai by remember { mutableStateOf("") }
-    var seuil by remember { mutableStateOf("") }
     val choixLogo = rememberChoixFichier(pdfAccepte = false) { f, err -> if (err != null) message(err); if (f != null) nouveauLogo = f }
     val choixBanniere = rememberChoixFichier(pdfAccepte = false) { f, err -> if (err != null) message(err); if (f != null) { nouvelleBanniere = f; retirerBanniere = false } }
     val action = rememberAction(message, recharger)
-    LaunchedEffect(Unit) {
-        try {
-            val r = Repo.reglages()
-            cotisation = montantSaisie(r["cotisation_montant"] ?: 0.0)
-            periodicite = (r["cotisation_periode_mois"] ?: 1.0).toInt()
-            delai = (r["delai_justificatif_jours"] ?: 7.0).toInt().toString()
-            seuil = (r["seuil_alerte_budget_pct"] ?: 90.0).toInt().toString()
-        } catch (e: Exception) { message(traduireErreur(e)) }
-    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             CarteBlanche {
@@ -208,27 +196,54 @@ private fun ParamAssociation(d: Donnees, message: (String) -> Unit, recharger: (
                 }) { Text("Enregistrer") }
             }
         }
-        item {
-            CarteBlanche {
-                Text("Montants et délais", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                OutlinedTextField(cotisation, { cotisation = it }, label = { Text("Cotisation par période") }, suffix = { Text("€") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                ChoixListe("Périodicité", PERIODICITES[periodicite] ?: "", PERIODICITES.values.toList()) { periodicite = PERIODICITES.keys.toList()[it] }
-                OutlinedTextField(delai, { delai = it.filter { c -> c.isDigit() }.take(2) }, label = { Text("Délai du justificatif après paiement") },
-                    suffix = { Text("jours") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(seuil, { seuil = it.filter { c -> c.isDigit() }.take(3) }, label = { Text("Alerte budget à partir de") },
-                    suffix = { Text("%") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-                Button(modifier = Modifier.align(Alignment.End), enabled = nombre(cotisation) != null && delai.isNotBlank() && seuil.isNotBlank(), onClick = {
-                    action({
-                        Repo.majReglage("cotisation_montant", nombre(cotisation)!!)
-                        Repo.majReglage("cotisation_periode_mois", periodicite.toDouble())
-                        Repo.majReglage("delai_justificatif_jours", delai.toDouble())
-                        Repo.majReglage("seuil_alerte_budget_pct", seuil.toDouble())
-                    }, "Paramètres enregistrés")
-                }) { Text("Enregistrer") }
-            }
-        }
-        item { BlocSauvegarde(message) }
+    }
+}
+
+// Montants et délais (même bloc que le site) : cotisation, périodicité, délai et seuil de justification,
+// alerte budget, et « Comment régler » affiché aux membres sur leur page
+@Composable
+private fun BlocMontants(message: (String) -> Unit) {
+    var cotisation by remember { mutableStateOf("") }
+    var periodicite by remember { mutableStateOf(1) }
+    var delai by remember { mutableStateOf("") }
+    var seuil by remember { mutableStateOf("") }
+    var seuilJustif by remember { mutableStateOf("") }
+    var infos by remember { mutableStateOf("") }
+    val action = rememberAction(message) {}
+    LaunchedEffect(Unit) {
+        try {
+            val r = Repo.reglages()
+            cotisation = montantSaisie(r["cotisation_montant"] ?: 0.0)
+            periodicite = (r["cotisation_periode_mois"] ?: 1.0).toInt()
+            delai = (r["delai_justificatif_jours"] ?: 7.0).toInt().toString()
+            seuil = (r["seuil_alerte_budget_pct"] ?: 90.0).toInt().toString()
+            seuilJustif = (r["seuil_justification"] ?: 100.0).toInt().toString()
+            infos = Repo.texteReglage("infos_paiement") ?: ""
+        } catch (e: Exception) { message(traduireErreur(e)) }
+    }
+    CarteBlanche {
+        Text("Montants et délais", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        OutlinedTextField(cotisation, { cotisation = it }, label = { Text("Cotisation par période") }, suffix = { Text("€") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+        ChoixListe("Périodicité", PERIODICITES[periodicite] ?: "", PERIODICITES.values.toList()) { periodicite = PERIODICITES.keys.toList()[it] }
+        OutlinedTextField(delai, { delai = it.filter { c -> c.isDigit() }.take(2) }, label = { Text("Délai du justificatif après paiement") },
+            suffix = { Text("jours") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(seuilJustif, { seuilJustif = it.filter { c -> c.isDigit() }.take(6) }, label = { Text("Justification obligatoire à partir de") },
+            suffix = { Text("€") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(seuil, { seuil = it.filter { c -> c.isDigit() }.take(3) }, label = { Text("Alerte budget à partir de") },
+            suffix = { Text("%") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(infos, { infos = it.take(500) }, label = { Text("Comment régler (affiché aux membres)") },
+            placeholder = { Text("IBAN, application, remise au trésorier…") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+        Button(modifier = Modifier.align(Alignment.End), enabled = nombre(cotisation) != null && delai.isNotBlank() && seuil.isNotBlank() && seuilJustif.isNotBlank(), onClick = {
+            action({
+                Repo.majReglage("cotisation_montant", nombre(cotisation)!!)
+                Repo.majReglage("cotisation_periode_mois", periodicite.toDouble())
+                Repo.majReglage("delai_justificatif_jours", delai.toDouble())
+                Repo.majReglage("seuil_alerte_budget_pct", seuil.toDouble())
+                Repo.majReglage("seuil_justification", seuilJustif.toDouble())
+                Repo.majTexteReglage("infos_paiement", infos.trim().ifBlank { null })
+            }, "Paramètres enregistrés")
+        }) { Text("Enregistrer") }
     }
 }
 
@@ -244,10 +259,11 @@ private fun ParamComptes(d: Donnees, message: (String) -> Unit, recharger: () ->
     LaunchedEffect(version) {
         try {
             comptes = Repo.tousLesComptes(); soldes = comptes.associate { it.id to montantSaisie(it.soldeInitial) }
-            categories = Repo.categories()
+            categories = Repo.categories().filter { !it.interne }
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { BlocMontants(message) }
         item {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -498,145 +514,6 @@ fun DialogueSimple(titre: String, bouton: String, valide: Boolean, onAnnuler: ()
     )
 }
 
-@Composable
-private fun BlocSauvegarde(message: (String) -> Unit) {
-    val scope = rememberCoroutineScope()
-    val enregistrer = rememberEnregistrer { it?.let(message) }
-    CarteBlanche {
-        Text("Sauvegarde complète", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        FilledTonalButton(onClick = {
-            scope.launch {
-                try { enregistrer("sauvegarde-tresorerie-${aujourdhui()}.json", "application/json", Repo.sauvegardeJson().encodeToByteArray()) }
-                catch (e: Exception) { message(traduireErreur(e)) }
-            }
-        }) { Text("Enregistrer la sauvegarde") }
-    }
-}
-
-// =====================================================================
-// Budget : saisie (trésorier) et suivi
-// =====================================================================
-@Composable
-fun EcranBudget(d: Donnees, message: (String) -> Unit) {
-    var annee by remember { mutableStateOf(aujourdhui().year) }
-    var suivi by remember { mutableStateOf<List<LigneBudget>?>(null) }
-    var lignes by remember { mutableStateOf<List<Budget>>(emptyList()) }
-    var projets by remember { mutableStateOf<List<Projet>>(emptyList()) }
-    var version by remember { mutableStateOf(0) }
-    var ajout by remember { mutableStateOf(false) }
-    var aModifier by remember { mutableStateOf<Pair<Budget, LigneBudget>?>(null) }
-    val scope = rememberCoroutineScope()
-    LaunchedEffect(annee, version) {
-        try { suivi = Repo.budget(annee); lignes = Repo.lignesBudget(annee); projets = Repo.projets() } catch (e: Exception) { message(traduireErreur(e)) }
-    }
-    fun brute(b: LigneBudget) = lignes.firstOrNull { it.categorieId == b.categorieId && it.projetId == b.projetId }
-
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
-                Titre("Budget") {
-                    Box(Modifier.width(140.dp)) { ChoixListe("Année", annee.toString(), (aujourdhui().year + 1 downTo aujourdhui().year - 2).map { it.toString() }) { annee = aujourdhui().year + 1 - it } }
-                }
-            }
-            if (!d.peut("gerer_budget")) item {
-                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text("Consultation$NBSP: le budget est construit par le trésorier. Vous voyez le prévu et le réalisé de chaque poste.", Modifier.padding(12.dp), fontSize = 14.sp)
-                }
-            }
-            val l = suivi
-            if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            else if (l.isEmpty()) item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Aucun budget pour $annee.", color = Couleurs.Texte2)
-                    if (d.peut("gerer_budget")) Button(onClick = { ajout = true }) { Text("Ajouter une ligne") }
-                }
-            } else {
-                val general = l.filter { it.projetId == null }
-                val rp = general.filter { it.sens == "recette" }; val ep = general.filter { it.sens == "depense" }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Chiffre("Ressources", rp.sumOf { it.realise }, "sur ${euros(rp.sumOf { it.prevu })}", Couleurs.Bleu, Modifier.weight(1f))
-                        Chiffre("Emplois", ep.sumOf { it.realise }, "sur ${euros(ep.sumOf { it.prevu })}", Couleurs.Orange, Modifier.weight(1f))
-                    }
-                }
-                item { Text("Résultat prévu$NBSP: ${euros(rp.sumOf { it.prevu } - ep.sumOf { it.prevu })}", color = Couleurs.Texte2) }
-                listOf("Emplois (dépenses)" to ep, "Ressources (recettes)" to rp, "Par activité" to l.filter { it.projetId != null }).forEach { (titre, liste) ->
-                    if (liste.isNotEmpty()) item {
-                        CarteBlanche {
-                            Text(titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            liste.forEach { b ->
-                                Box(Modifier.fillMaxWidth().clickable(enabled = d.peut("gerer_budget")) { brute(b)?.let { aModifier = it to b } }) {
-                                    LigneBudgetVue(b, projets.firstOrNull { it.id == b.projetId }?.nom)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (d.peut("gerer_budget") && !suivi.isNullOrEmpty()) {
-            ExtendedFloatingActionButton(onClick = { ajout = true }, containerColor = Couleurs.Jaune, contentColor = Couleurs.SurJaune,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) }, text = { Text("Ajouter une ligne") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp))
-        }
-    }
-
-    if (ajout) {
-        val cats = d.categories.sortedBy { it.sens }
-        var cat by remember { mutableStateOf(cats.firstOrNull { it.sens == "depense" }) }
-        var projet by remember { mutableStateOf<Projet?>(null) }
-        var montant by remember { mutableStateOf("") }
-        DialogueSimple("Ligne de budget $annee", "Ajouter", cat != null && nombre(montant) != null, { ajout = false }, {
-            scope.launch {
-                try {
-                    val seuil = (Repo.reglages()["seuil_alerte_budget_pct"] ?: 90.0).toInt()
-                    Repo.ajouterBudget(NouveauBudget(annee, cat!!.id, projet?.id, nombre(montant)!!, seuil)); message("Ligne ajoutée"); version++
-                }
-                catch (e: Exception) { message(traduireErreur(e)) }
-                ajout = false
-            }
-        }) {
-            ChoixListe("Poste", cat?.let { (if (it.sens == "recette") "Ressource : " else "Emploi : ") + it.nom } ?: "",
-                cats.map { (if (it.sens == "recette") "Ressource : " else "Emploi : ") + it.nom }) { cat = cats[it] }
-            ChoixListe("Activité", projet?.nom ?: "Budget général", listOf("Budget général") + projets.map { it.nom }) { projet = if (it == 0) null else projets[it - 1] }
-            OutlinedTextField(montant, { montant = it }, label = { Text("Montant prévu") }, suffix = { Text("€") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-        }
-    }
-    aModifier?.let { (brut, ligne) ->
-        var montant by remember(brut.id) { mutableStateOf(montantSaisie(brut.prevu)) }
-        var confirmer by remember(brut.id) { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { aModifier = null },
-            title = { Text(ligne.categorie) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Réalisé$NBSP: ${euros(ligne.realise)}", color = Couleurs.Texte2)
-                    OutlinedTextField(montant, { montant = it }, label = { Text("Montant prévu") }, suffix = { Text("€") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                    if (confirmer) Text("Retirer cette ligne du budget$NBSP? Les écritures ne sont pas touchées.", color = Couleurs.Erreur, fontSize = 14.sp)
-                }
-            },
-            confirmButton = {
-                Button(enabled = nombre(montant) != null, onClick = {
-                    scope.launch {
-                        try { Repo.majBudget(brut.id, nombre(montant)!!); message("Budget modifié"); version++ } catch (e: Exception) { message(traduireErreur(e)) }
-                        aModifier = null
-                    }
-                }) { Text("Enregistrer") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    if (!confirmer) confirmer = true
-                    else scope.launch {
-                        try { Repo.supprimerBudget(brut.id); message("Ligne retirée"); version++ } catch (e: Exception) { message(traduireErreur(e)) }
-                        aModifier = null
-                    }
-                }) { Text(if (confirmer) "Confirmer le retrait" else "Retirer la ligne", color = Couleurs.Erreur) }
-            },
-        )
-    }
-}
 
 // =====================================================================
 // Activités et planning
@@ -788,6 +665,13 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     var version by remember { mutableStateOf(0) }
     var aImporter by remember { mutableStateOf<Pair<List<NouveauMembre>, List<String>>?>(null) }
     var photos by remember { mutableStateOf<Map<String, androidx.compose.ui.graphics.ImageBitmap>>(emptyMap()) }
+    var liens by remember { mutableStateOf<List<LienMembre>>(emptyList()) }
+    var lienDe by remember { mutableStateOf<Membre?>(null) }
+    var tousLiens by remember { mutableStateOf(false) }
+    var exporter by remember { mutableStateOf(false) }
+    val gereLiens = d.peut("gerer_membres", "gerer_cotisations")
+    val imprimer = rememberImpression()
+    val enregistrer = rememberEnregistrer { it?.let(message) }
     val scope = rememberCoroutineScope()
     val choixCsv = rememberChoixTexte { texte ->
         if (texte != null) aImporter = try { analyserCsvMembres(texte, membres) } catch (e: Exception) { message(e.message ?: "Fichier illisible"); null }
@@ -797,6 +681,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             if (version > 0) membres = Repo.membres()
             if (d.peut("administrer", "consulter_finances", "valider_depenses", "payer_depenses")) profils = Repo.profilsComplets()
             if (admin) invitations = Repo.invitations()
+            if (gereLiens) liens = try { Repo.liens() } catch (_: Exception) { emptyList() }
             photos = membres.mapNotNull { m -> m.photo?.let { ch -> try { Repo.telecharger("photos", ch)?.let { imageDepuisOctets(it) }?.let { m.id to it } } catch (_: Exception) { null } } }.toMap()
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
@@ -831,6 +716,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                     if (!m.consentement) Puce("Sans accord", Color(0xFFEFEDEC), Couleurs.Texte2)
                 }
             }
+            if (gereLiens && m.actif) TextButton(onClick = { lienDe = m }) { Text("Lien") }
             if (admin) TextButton(onClick = { fonction = m }) { Text("Fonction") }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
@@ -838,7 +724,13 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp)) {
             item {
-                Titre("Membres") { if (d.peut("gerer_membres")) TextButton(onClick = choixCsv) { Text("Importer") } }
+                Titre("Membres") { OutlinedButton(onClick = { exporter = true }) { Text("Exporter") } }
+            }
+            item {
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (gereLiens && membres.isNotEmpty()) FilledTonalButton(onClick = { tousLiens = true }) { Text("Liens personnels") }
+                    if (d.peut("gerer_membres")) OutlinedButton(onClick = choixCsv) { Text("Importer (CSV, Excel)") }
+                }
             }
             item { Text("${membres.count { it.actif }} actifs", color = Couleurs.Texte2, modifier = Modifier.padding(bottom = 8.dp)) }
             if (sansFiche) item {
@@ -878,6 +770,21 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
         FicheMembre(null, membres, titre = "Ma fiche de membre", onCree = { id, n -> Repo.lierProfil(d.profil.id, id, n) },
             onFini = { ok -> maFiche = false; if (ok) { message("Votre fiche est créée"); recharger() } }, message = message)
     }
+    lienDe?.let { m ->
+        ModalBottomSheet(onDismissRequest = { lienDe = null }) {
+            FeuilleLien(d, m, liens.firstOrNull { it.membreId == m.id }, message, onChange = { scope.launch { liens = try { Repo.liens() } catch (_: Exception) { liens } } }) { lienDe = null }
+        }
+    }
+    if (tousLiens) ModalBottomSheet(onDismissRequest = { tousLiens = false }) {
+        FeuilleLiens(d, membres, liens, message, onChange = { scope.launch { liens = try { Repo.liens() } catch (_: Exception) { liens } } }) { tousLiens = false }
+    }
+    if (exporter) AlertDialog(
+        onDismissRequest = { exporter = false },
+        title = { Text("Exporter la liste des membres") },
+        text = { Text("PDF : mis en page pour imprimer ou transmettre. Excel : tableau modifiable (CSV). Données personnelles : à garder dans le bureau.") },
+        confirmButton = { Button(onClick = { exporter = false; scope.launch { try { val (t, h) = documentHtml(d, "membres", aujourdhui().year); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("PDF") } },
+        dismissButton = { OutlinedButton(onClick = { exporter = false; scope.launch { try { enregistrer("membres.csv", "text/csv", exportCsv(d, "membres", aujourdhui().year).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("Excel") } },
+    )
     fonction?.let { m ->
         FeuilleFonction(d, m, profils, invitations, onFini = { msg -> fonction = null; if (msg != null) { message(msg); version++; if (profils.any { it.id == d.profil.id && it.memberId == m.id }) recharger() } }, message = message)
     }
@@ -1134,6 +1041,7 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
         add(Quadruple("budget", "Budget prévu et réalisé", listOf("pdf", "excel"), "annee"))
         add(Quadruple("demandes", "Registre des demandes de dépense", listOf("pdf"), "annee"))
         if (d.peut("voir_membres", "gerer_membres")) add(Quadruple("membres", "Liste des membres", listOf("pdf", "excel"), ""))
+        add(Quadruple("inventaire", "Inventaire du matériel", listOf("pdf", "excel"), ""))
         add(Quadruple("pieces", "Pièces justificatives (fichier ZIP)", listOf("zip"), "annee"))
         if (d.peut("administrer")) add(Quadruple("sauvegarde", "Sauvegarde complète des données", listOf("json"), ""))
     }
@@ -1197,6 +1105,8 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
                                     message("$n pièce${if (n > 1) "s" else ""} archivée${if (n > 1) "s" else ""}")
                                 }
                                 "sauvegarde" -> enregistrer("sauvegarde-tresorerie-${aujourdhui()}.json", "application/json", Repo.sauvegardeJson().encodeToByteArray())
+                                "inventaire" -> if (format == "excel") enregistrer("inventaire-materiel-${aujourdhui()}.csv", "text/csv", csvInventaire(d, Repo.materiel()).encodeToByteArray())
+                                                else { val (t, html) = documentHtml(d, "inventaire", annee); imprimer(t, html) }
                                 else -> if (format == "excel") enregistrer("${doc.a}-$annee.csv", "text/csv", exportCsv(d, doc.a, annee).encodeToByteArray())
                                         else { val (t, html) = documentHtml(d, doc.a, annee); imprimer(t, html) }
                             }
@@ -1223,7 +1133,7 @@ private fun csv(entetes: List<String>, lignes: List<List<Any?>>): String {
     return "﻿" + (listOf(entetes) + lignes).joinToString("\r\n") { l -> l.joinToString(";") { cel(it) } }
 }
 
-private suspend fun exportCsv(d: Donnees, type: String, an: Int, du: String = "$an-01-01", au: String = "$an-12-31"): String {
+internal suspend fun exportCsv(d: Donnees, type: String, an: Int, du: String = "$an-01-01", au: String = "$an-12-31"): String {
     val cat = { id: String -> d.nomCategorie(id) }
     return when (type) {
         "ecritures" -> csv(listOf("Date", "Sens", "Libellé", "Catégorie", "Compte", "Mode", "Montant", "Rapprochée"),
@@ -1247,8 +1157,11 @@ private suspend fun exportCsv(d: Donnees, type: String, an: Int, du: String = "$
                 listOf(cs.firstOrNull { it.id == e.collecteId }?.nom, dateFr(e.date), nomTiers(e, ms, ts), e.montant)
             })
         }
-        else -> csv(listOf("Poste", "Type", "Prévu", "Réalisé", "Taux %"),
-            Repo.budget(an).map { listOf(it.categorie, if (it.sens == "recette") "Ressource" else "Emploi", it.prevu, it.realise, it.taux ?: 0.0) })
+        else -> {
+            val ps = Repo.projets()
+            csv(listOf("Poste", "Type", "Activité", "Prévu", "Réalisé", "Écart", "Taux %"),
+                Repo.budget(an).map { listOf(it.categorie, if (it.sens == "recette") "Ressource" else "Emploi", ps.firstOrNull { p -> p.id == it.projetId }?.nom ?: "", it.prevu, it.realise, it.prevu - it.realise, it.taux ?: 0.0) })
+        }
     }
 }
 
@@ -1417,6 +1330,7 @@ fun EcranPlus(d: Donnees, onChoix: (String) -> Unit) {
         if (d.peut("consulter_finances", "gerer_budget")) add(Triple("budget", "Budget", Icons.Outlined.PieChart))
         add(Triple("activites", "Planning", Icons.Outlined.Event))
         if (d.peut("consulter_finances", "saisir_ecritures", "gerer_cotisations")) add(Triple("tiers", "Tiers", Icons.Outlined.Contacts))
+        if (d.peut("gerer_materiel", "consulter_finances", "voir_membres")) add(Triple("materiel", "Matériel", Icons.Outlined.Inventory2))
         if (d.peut("rapprocher", "consulter_finances")) add(Triple("rapprochement", "Rapprochement", Icons.Outlined.AccountBalance))
         if (d.peut("consulter_finances")) add(Triple("rapports", "Rapports et exports", Icons.Outlined.Description))
         if (d.profil.memberId != null) add(Triple("moi", "Ma cotisation", Icons.Outlined.Person))

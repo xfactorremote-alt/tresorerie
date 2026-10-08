@@ -61,15 +61,17 @@ private fun table(colonnes: List<Pair<String, String>>, lignes: List<List<String
 private const val SIGNATURES = "<div class=\"sig\"><div>Le trésorier</div><div>Le président</div></div>"
 
 /** Types : journal, cotisations, budget, demandes, membres. */
-suspend fun documentHtml(d: Donnees, type: String, an: Int, du: String? = null, au: String? = null, intitule: String? = null): Pair<String, String> = when (type) {
+suspend fun documentHtml(d: Donnees, type: String, an: Int, du: String? = null, au: String? = null, intitule: String? = null,
+                         compte: String? = null, sens: String? = null, categorie: String? = null): Pair<String, String> = when (type) {
     "journal" -> {
         val toutes = Repo.toutesEcritures().sortedBy { it.date }
         val comptes = try { Repo.tousLesComptes() } catch (_: Exception) { d.comptes }
         val avecPiece = Repo.pieces().mapNotNull { it.transactionId }.toSet()
         val ms = d.membres; val ts = try { Repo.tiers() } catch (_: Exception) { emptyList() }
         val debut = du ?: "$an-01-01"; val fin = au ?: "$an-12-31"
-        val soldeDebut = comptes.sumOf { it.soldeInitial } + toutes.filter { it.date < debut }.sumOf { it.signe }
-        val lignes = toutes.filter { it.date in debut..fin }
+        val vus = comptes.filter { compte == null || it.id == compte }
+        val soldeDebut = vus.sumOf { it.soldeInitial } + toutes.filter { it.date < debut && vus.any { c -> c.id == it.compteId } }.sumOf { it.signe }
+        val lignes = toutes.filter { it.date in debut..fin && (compte == null || it.compteId == compte) && (sens == null || it.sens == sens) && (categorie == null || it.categorieId == categorie) }
         // Les virements internes figurent au journal mais pas dans les totaux de recettes et de dépenses
         val rec = lignes.filter { it.sens == "recette" && it.estFlux }.sumOf { it.montant }; val dep = lignes.filter { it.sens == "depense" && it.estFlux }.sumOf { it.montant }
         val titre = "Journal des opérations, " + (intitule ?: "exercice $an")
@@ -98,15 +100,25 @@ suspend fun documentHtml(d: Donnees, type: String, an: Int, du: String? = null, 
             "<p class=\"m\">Les versements sont imputés sur la période la plus ancienne non réglée.</p>" + SIGNATURES)
     }
     "budget" -> {
-        val l = Repo.budget(an)
-        fun bloc(sens: String, titre: String): String {
-            val x = l.filter { it.sens == sens }; val p = x.sumOf { it.prevu }; val r = x.sumOf { it.realise }
-            return "<h2>$titre</h2>" + table(listOf("Poste" to "", "Prévu" to "d", "Réalisé" to "d", "Écart" to "d", "Taux" to "d"),
-                x.map { listOf(e(it.categorie), euros(it.prevu), euros(it.realise), euros(it.prevu - it.realise), "${(it.taux ?: 0.0).toString().replace('.', ',')}$NBSP%" + if (sens == "depense" && (it.taux ?: 0.0) > 100) " <b>dépassé</b>" else "") },
-                listOf("<b>Total</b>", "<b>${euros(p)}</b>", "<b>${euros(r)}</b>", "<b>${euros(p - r)}</b>", if (p > 0) "<b>${kotlin.math.round(100 * r / p).toInt()}$NBSP%</b>" else ""))
+        // Même contenu que pdfBudget() du site : postes non internes, réalisé N-1, activités
+        val x = chargerBudget(an, d.categoriesToutes)
+        fun pct(r: Double, p: Double) = if (p > 0) "${kotlin.math.round(100 * r / p).toInt()}$NBSP%" else "–"
+        fun bloc(postes: List<PosteBudget>, titre: String, sens: String): String {
+            val l = postes.filter { it.prevu != 0.0 || it.realise != 0.0 || it.n1 != 0.0 }
+            val tp = l.sumOf { it.prevu }; val tr = l.sumOf { it.realise }; val tn = l.sumOf { it.n1 }
+            return "<h2>$titre</h2>" + table(listOf("Poste" to "", "Prévu" to "d", "Réalisé" to "d", "Écart" to "d", "Taux" to "d", "Réalisé ${an - 1}" to "d"),
+                l.map { listOf(e(it.cat.nom), euros(it.prevu), euros(it.realise), euros(it.realise - it.prevu), pct(it.realise, it.prevu) + if (sens == "depense" && it.prevu > 0 && it.realise > it.prevu) " <b>dépassé</b>" else "", euros(it.n1)) },
+                listOf("<b>Total</b>", "<b>${euros(tp)}</b>", "<b>${euros(tr)}</b>", "<b>${euros(tr - tp)}</b>", "<b>${pct(tr, tp)}</b>", "<b>${euros(tn)}</b>"))
         }
+        val eq = x.resPrevu - x.empPrevu
+        val activites = if (x.activites.isEmpty()) "" else "<h2>Activités</h2>" + table(listOf("Activité" to "", "Ressources prévues" to "d", "Ressources réalisées" to "d", "Emplois prévus" to "d", "Emplois réalisés" to "d", "Résultat" to "d"),
+            x.activites.map { listOf(e(it.p.nom), euros(it.resPrevu), euros(it.resReel), euros(it.empPrevu), euros(it.empReel), euros(it.resReel - it.empReel)) })
         val titre = "Budget $an : prévu et réalisé"
-        titre to page(d, titre, "Arrêté au ${dateFr(aujourdhui().toString())}", bloc("recette", "Ressources") + bloc("depense", "Emplois") + SIGNATURES)
+        titre to page(d, titre, "Arrêté au ${dateFr(aujourdhui().toString())}",
+            synthese(Triple("Ressources prévues", euros(x.resPrevu), "#1B77B0"), Triple("Emplois prévus", euros(x.empPrevu), "#C23E10"),
+                Triple(if (eq >= 0) "Excédent prévu" else "Déficit prévu", euros(kotlin.math.abs(eq)), if (eq < 0) "#BA1A1A" else null), Triple("Résultat réalisé", euros(x.resReel - x.empReel), null)) +
+            bloc(x.ressources, "Ressources (recettes)", "recette") + bloc(x.emplois, "Emplois (dépenses)", "depense") + activites +
+            "<p class=\"m\">Le réalisé reprend toutes les opérations de l’exercice par catégorie, activités comprises.</p>" + SIGNATURES)
     }
     "demandes" -> {
         val l = Repo.demandes().filter { it.creeLe.startsWith("$an") }.sortedBy { it.creeLe }
@@ -120,6 +132,27 @@ suspend fun documentHtml(d: Donnees, type: String, an: Int, du: String? = null, 
                     situation[r.statut] ?: r.statut, r.valideeLe?.let { dateFr(it.take(10)) } ?: "", e(nom(r.valideePar)), r.payeeLe?.let { dateFr(it.take(10)) } ?: "",
                     r.empreinte?.let { "<span class=\"m\">${it.take(12)}…</span>" } ?: "") }) +
             "<p class=\"m\">L’empreinte SHA-256 relie chaque signature au montant et à l’objet validés.</p>" + SIGNATURES)
+    }
+    "inventaire" -> {
+        val tous = Repo.materiel()
+        val items = tous.filter { it.sortiLe == null }
+        val sortis = tous.filter { it.sortiLe != null && it.sortiLe >= "${aujourdhui().year}-01-01" }
+        val propres = items.filter { it.origine != "pret" }
+        val va = propres.sumOf { it.valeurAcquisition ?: 0.0 }; val vc = propres.sumOf { it.valeurActuelle ?: it.valeurAcquisition ?: 0.0 }
+        fun nom(id: String?) = d.membres.firstOrNull { it.id == id }?.nomComplet ?: ""
+        val blocs = CATEGORIES_MATERIEL.filterKeys { c -> items.any { it.categorie == c } }.map { (c, l) ->
+            "<h2>${e(l)}</h2>" + table(listOf("Désignation" to "", "Qté" to "d", "N° de série" to "", "Origine" to "", "Entrée" to "nw", "Valeur d’achat" to "d", "Valeur actuelle" to "d", "État" to "", "Lieu ou détenteur" to "", "Vérifié" to "nw"),
+                items.filter { it.categorie == c }.map { x -> listOf(e(x.designation) + (x.marque?.let { "<br><span class=\"m\">${e(it)}</span>" } ?: ""), "${x.quantite}", e(x.numeroSerie), ORIGINES_MATERIEL[x.origine] ?: "",
+                    x.dateAcquisition?.let(::dateFr) ?: "", if (x.origine == "pret") "–" else euros(x.valeurAcquisition ?: 0.0), if (x.origine == "pret") "–" else euros(x.valeurActuelle ?: x.valeurAcquisition ?: 0.0),
+                    ETATS_MATERIEL[x.etat] ?: "", e(x.detenteurId?.let { "Chez " + nom(it) } ?: x.lieu), x.verifieLe?.let(::dateFr) ?: "<b>non</b>") })
+        }.joinToString("")
+        val titre = "Inventaire du matériel"
+        titre to page(d, titre, "Arrêté au ${dateFr(aujourdhui().toString())}",
+            synthese(Triple("Articles en service", "${items.sumOf { it.quantite }}", null), Triple("Valeur d’achat", euros(va), null), Triple("Valeur actuelle estimée", euros(vc), null),
+                Triple("Non vérifiés depuis un an", "${items.count(::aVerifier)}", null)) +
+            blocs.ifEmpty { "<p class=\"m\">Aucun article.</p>" } +
+            (if (sortis.isNotEmpty()) "<h2>Sorties de l’exercice</h2>" + table(listOf("Désignation" to "", "Date" to "nw", "Motif" to ""), sortis.map { listOf(e(it.designation), dateFr(it.sortiLe!!), MOTIFS_SORTIE[it.motifSortie] ?: "") }) else "") +
+            "<p class=\"m\">Le matériel prêté par un tiers figure pour mémoire, sans valeur. Les valeurs actuelles sont des estimations du bureau.</p>" + SIGNATURES)
     }
     else -> {
         val ms = Repo.membres().filter { it.actif }
