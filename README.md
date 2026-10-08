@@ -156,3 +156,14 @@ La copie sur Google Drive n’est **pas automatique** : elle demanderait de conf
 2. **En fin d’exercice**, **Rapports** > **Pièces justificatives** > **Télécharger les pièces** : un ZIP classé par mois (fichiers nommés date_montant_libellé), avec `inventaire.csv` qui liste aussi les dépenses sans pièce, et les relevés des rapprochements. Déposez-le sur Drive avec le **Journal des opérations** et le **Rapport d’assemblée générale** en PDF.
 
 Testez une fois la restauration : ouvrez le ZIP et vérifiez qu’une facture s’affiche.
+
+## Sauvegarde et restauration
+
+1. **Sauvegarder** : Rapports > Document « Sauvegarde complète des données » > Exporter. Un fichier `sauvegarde-tresorerie-AAAA-MM-JJ.json` est téléchargé. À faire chaque mois, et à ranger hors de la plateforme (Drive, clé USB).
+2. **Restaurer** (sur un ordinateur avec Node.js) :
+   `node outils/restaurer-sauvegarde.mjs sauvegarde-tresorerie-AAAA-MM-JJ.json > restauration.sql`
+   puis coller `restauration.sql` dans Supabase > SQL Editor, sur une base où `supabase/schema.sql` a déjà été exécuté. Tout passe ou rien ne change ; la dernière requête affiche les soldes à comparer avec ceux d'avant.
+3. Les comptes de connexion ne sont pas restaurés (les personnes se reconnectent ou sont réinvitées). Les pièces justificatives restent dans Supabase Storage ou dans l'archive ZIP annuelle.
+
+Essayez une restauration sur un projet Supabase de test au moins une fois par an : une sauvegarde jamais restaurée n'est pas une sauvegarde vérifiée.
+
