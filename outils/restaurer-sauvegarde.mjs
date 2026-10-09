@@ -19,8 +19,8 @@ const s = JSON.parse(readFileSync(fichier, 'utf8'));
 if (s.format !== 'tresorerie-jp-v1') { console.error('Ce fichier n’est pas une sauvegarde de la trésorerie (format inconnu).'); process.exit(1); }
 
 // Ordre d'insertion : chaque table après celles qu'elle référence
-const ORDRE = ['organisation', 'settings', 'accounts', 'categories', 'projects', 'budgets', 'members', 'cotisations', 'tiers', 'collectes',
-  'collecte_membres', 'reconciliations', 'expense_requests', 'transactions', 'attachments', 'materiel', 'materiel_mouvements'];
+const ORDRE = ['organisation', 'settings', 'exercices', 'accounts', 'categories', 'projects', 'budgets', 'members', 'cotisations', 'tiers', 'collectes',
+  'collecte_membres', 'reconciliations', 'expense_requests', 'transactions', 'attachments', 'materiel', 'materiel_mouvements', 'corbeille'];
 const IGNOREES = ['profiles', 'invitations'];
 // Colonnes calculées ou absentes d'une base plus ancienne : ignorées si présentes dans le fichier
 const litteral = (v) => v === null || v === undefined ? 'null'

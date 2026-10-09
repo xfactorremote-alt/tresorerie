@@ -120,7 +120,8 @@ async function demarrer() {
     afficherBandeauDemo();
   } else {
     const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-    sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // « Rester connecté » : session gardée sur l'appareil ; sinon effacée à la fermeture du navigateur
+    sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { storage: stockageSession } });
   }
   sb.auth.onAuthStateChange((evt, session) => {
     if (evt === 'PASSWORD_RECOVERY') { S.session = session; return ecranNouveauMotDePasse(); }
@@ -169,8 +170,12 @@ async function entrer() {
     if (!S.profil || !S.profil.actif) return ecranSansAcces();
     if (!S.org) await chargerOrganisation();
     await chargerReferentiels();
+    // Ordre de l'arrivée : configuration de l'association (administrateur, une fois), puis l'accueil ;
+    // la fiche de membre est demandée par-dessus l'accueil tant qu'elle n'est pas remplie
+    if (peut('administrer') && S.org && S.org.configuree === false && !S.assistantRepousse) return assistantConfiguration();
     if (!location.hash) location.hash = '#tableau';
     router();
+    demarrerNouveautes();
   } catch (e) { erreur(e); }
 }
 
@@ -190,6 +195,7 @@ async function chargerReferentiels() {
   S.membres = peut('voir_membres', 'gerer_membres', 'gerer_cotisations') ? await q(sb.from('members').select('*').order('nom')) : [];
   S.tiers = peut('consulter_finances', 'saisir_ecritures', 'gerer_cotisations', 'payer_depenses') ? await q(sb.from('tiers').select('*').order('nom')) : [];
   S.collectes = peut('consulter_finances', 'gerer_cotisations', 'gerer_activites', 'saisir_ecritures') ? await q(sb.from('collectes').select('*').order('created_at', { ascending: false })) : [];
+  S.exercices = await q(sb.from('exercices').select('*').order('debut', { ascending: false })).catch(() => []);
   await chargerAcces();
   await chargerPhotos(S.membres);
 }
@@ -221,51 +227,96 @@ function avatar(m) {
 }
 
 // ---------- Connexion ----------
-function ecranConnexion(message = '') {
+const resterConnecte = () => { try { return localStorage.getItem('resterConnecte') !== '0'; } catch { return true; } };
+const stockageSession = {
+  getItem: (k) => { try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); } catch { return null; } },
+  setItem: (k, v) => { try { (resterConnecte() ? localStorage : sessionStorage).setItem(k, v); (resterConnecte() ? sessionStorage : localStorage).removeItem(k); } catch { /* stockage indisponible */ } },
+  removeItem: (k) => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch { /* stockage indisponible */ } },
+};
+// Champ mot de passe avec bouton « afficher » (œil)
+const champMotDePasse = (nom, libelle, autocomplete, extra = '') => `<label class="champ">${libelle}
+  <span class="champ-mdp"><input type="password" name="${nom}" id="i-${nom}" autocomplete="${autocomplete}" minlength="8" required ${extra}>
+    <button type="button" class="btn-oeil" data-oeil="i-${nom}" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe">${icone('oeil')}</button></span></label>`;
+function brancherYeux(root = document) {
+  root.querySelectorAll('[data-oeil]').forEach((b) => b.addEventListener('click', () => {
+    const i = document.getElementById(b.dataset.oeil); const voir = i.type === 'password';
+    i.type = voir ? 'text' : 'password'; b.setAttribute('aria-pressed', voir);
+    b.setAttribute('aria-label', voir ? 'Masquer le mot de passe' : 'Afficher le mot de passe'); b.title = b.getAttribute('aria-label');
+    b.innerHTML = icone(voir ? 'oeil_barre' : 'oeil'); i.focus();
+  }));
+}
+// Enregistrement du mot de passe par le navigateur (Chrome, Edge) ; les autres le proposent après l'envoi du formulaire
+async function memoriserIdentifiants(form) {
+  try { if (window.PasswordCredential && navigator.credentials?.store) await navigator.credentials.store(new window.PasswordCredential(form)); } catch { /* refusé par la personne */ }
+}
+
+function ecranConnexion(message = '', mode = 'connexion') {
+  const premiere = mode === 'premiere';
   $('#app').innerHTML = `
-  <main class="connexion"><form class="carte" id="f-connexion">
-    <img src="${esc(S.logoUrl)}" alt="Logo ${esc(S.org?.nom || '')}">
-    <h1>Trésorerie ${esc(S.org?.nom || '')}</h1>
+  <main class="connexion"><div class="carte connexion-carte">
+    <div class="connexion-tete"><img src="${esc(S.logoUrl)}" alt=""><div><h1>${esc(S.org?.nom || 'Trésorerie')}</h1><span class="muted">Trésorerie de l’association</span></div></div>
+    <div class="segments" role="tablist" aria-label="Connexion">
+      <button type="button" role="tab" aria-selected="${!premiere}" data-mode="connexion">Se connecter</button>
+      <button type="button" role="tab" aria-selected="${premiere}" data-mode="premiere">Première connexion</button></div>
     ${message ? `<p class="info">${esc(message)}</p>` : ''}
-    <label class="champ">Adresse e-mail<input type="email" name="email" autocomplete="email" required></label>
-    <label class="champ">Mot de passe<input type="password" name="mdp" autocomplete="current-password" minlength="8" required></label>
-    <button class="btn-primaire" type="submit">Se connecter</button>
-    <div class="actions" style="justify-content:space-between">
-      <button class="btn-texte" type="button" id="b-creer">Créer mon compte</button>
-      <button class="btn-texte" type="button" id="b-oubli">Mot de passe oublié</button>
-    </div>
-    <p class="muted">Le compte se crée avec l’adresse e-mail enregistrée par le trésorier.</p>
+    ${premiere ? `<form id="f-premiere" class="champs" method="post" action="#" autocomplete="on">
+      <p class="muted" style="margin:0">Utilisez l’adresse e-mail que le trésorier a enregistrée pour vous, puis choisissez votre mot de passe.</p>
+      <label class="champ">Adresse e-mail<input type="email" name="email" id="i-email" autocomplete="username" inputmode="email" required></label>
+      ${champMotDePasse('mdp', 'Mot de passe (8 caractères minimum)', 'new-password')}
+      ${champMotDePasse('mdp2', 'Confirmez le mot de passe', 'new-password')}
+      <button class="btn-primaire btn-large" type="submit">Créer mon compte</button>
+    </form>` : `<form id="f-connexion" class="champs" method="post" action="#" autocomplete="on">
+      <label class="champ">Adresse e-mail<input type="email" name="email" id="i-email" autocomplete="username" inputmode="email" required autofocus></label>
+      ${champMotDePasse('mdp', 'Mot de passe', 'current-password')}
+      <div class="connexion-options">
+        <label class="case"><input type="checkbox" name="rester" ${resterConnecte() ? 'checked' : ''}> Rester connecté sur cet appareil</label>
+        <button class="btn-texte btn-petit" type="button" id="b-oubli">Mot de passe oublié&#8239;?</button></div>
+      <button class="btn-primaire btn-large" type="submit">Se connecter</button>
+    </form>`}
     ${demo ? '<button class="btn-tonal" type="button" id="b-demo">Comptes de démonstration</button>' : ''}
-  </form></main>`;
-  const f = $('#f-connexion');
+  </div></main>`;
+  brancherYeux($('#app'));
+  document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
+    const email = $('#i-email')?.value || ''; ecranConnexion('', b.dataset.mode); if (email) $('#i-email').value = email;
+  }));
   $('#b-demo')?.addEventListener('click', () => ouvrirFeuille(`<h2>Comptes de démonstration</h2>
     <p class="muted">Données fictives, effacées à la fermeture de la page.</p>
     <ul class="liste">${S.comptesDemo.liste.map(([r, e]) => `<li><div class="corps"><b>${r}</b><span>${e}</span></div><button class="btn-tonal btn-petit" data-email="${e}">Utiliser</button></li>`).join('')}</ul>
     <p>Mot de passe&nbsp;: <b>${S.comptesDemo.mdp}</b></p>
     <div class="actions"><button class="btn-texte" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
-    root.querySelectorAll('[data-email]').forEach((b) => b.addEventListener('click', () => { f.email.value = b.dataset.email; f.mdp.value = S.comptesDemo.mdp; fermerFeuille(); }));
+    root.querySelectorAll('[data-email]').forEach((b) => b.addEventListener('click', () => {
+      if (premiere) ecranConnexion();
+      const f = $('#f-connexion'); f.email.value = b.dataset.email; f.mdp.value = S.comptesDemo.mdp; fermerFeuille();
+    }));
   }));
-  f.addEventListener('submit', async (e) => {
+  const f = $('#f-connexion');
+  f?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const bouton = f.querySelector('[type=submit]'); bouton.disabled = true; bouton.textContent = 'Connexion…';
     try {
+      try { localStorage.setItem('resterConnecte', f.rester.checked ? '1' : '0'); } catch { /* stockage indisponible */ }
       const d = await q(sb.auth.signInWithPassword({ email: f.email.value.trim(), password: f.mdp.value }));
+      await memoriserIdentifiants(f);
       S.session = d.session; await entrer();
-    } catch (err) { erreur(err); }
+    } catch (err) { bouton.disabled = false; bouton.textContent = 'Se connecter'; erreur(err); }
   });
-  $('#b-creer').addEventListener('click', async () => {
-    if (!f.email.checkValidity() || !f.mdp.checkValidity()) return toast('Saisissez votre adresse et un mot de passe de 8 caractères minimum');
-    try {
-      const d = await q(sb.auth.signUp({ email: f.email.value.trim(), password: f.mdp.value, options: { emailRedirectTo: location.origin + location.pathname } }));
-      if (d.session) { S.session = d.session; await entrer(); }
-      else ecranConnexion('Compte créé. Ouvrez le lien reçu par e-mail pour le confirmer, puis connectez-vous.');
-    } catch (err) { erreur(err); }
-  });
-  $('#b-oubli').addEventListener('click', async () => {
-    if (!f.email.checkValidity()) return toast('Saisissez d’abord votre adresse e-mail');
+  $('#b-oubli')?.addEventListener('click', async () => {
+    if (!f.email.checkValidity()) { f.email.focus(); return toast('Saisissez d’abord votre adresse e-mail'); }
     try {
       await q(sb.auth.resetPasswordForEmail(f.email.value.trim(), { redirectTo: location.origin + location.pathname }));
       toast('Lien envoyé, consultez votre messagerie');
+    } catch (err) { erreur(err); }
+  });
+  const fp = $('#f-premiere');
+  fp?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (fp.mdp.value !== fp.mdp2.value) { fp.mdp2.focus(); return toast('Les deux mots de passe sont différents'); }
+    try {
+      const d = await q(sb.auth.signUp({ email: fp.email.value.trim(), password: fp.mdp.value, options: { emailRedirectTo: location.origin + location.pathname } }));
+      await memoriserIdentifiants(fp);
+      if (d.session) { S.session = d.session; await entrer(); }
+      else ecranConnexion('Compte créé. Ouvrez le lien reçu par e-mail pour le confirmer, puis connectez-vous.');
     } catch (err) { erreur(err); }
   });
 }
@@ -273,8 +324,9 @@ function ecranConnexion(message = '') {
 function ecranNouveauMotDePasse() {
   $('#app').innerHTML = `<main class="connexion"><form class="carte" id="f-mdp">
     <h1>Nouveau mot de passe</h1>
-    <label class="champ">Mot de passe (8 caractères minimum)<input type="password" name="mdp" minlength="8" autocomplete="new-password" required></label>
-    <button class="btn-primaire">Enregistrer</button></form></main>`;
+    ${champMotDePasse('mdp', 'Mot de passe (8 caractères minimum)', 'new-password')}
+    <button class="btn-primaire btn-large">Enregistrer</button></form></main>`;
+  brancherYeux($('#app'));
   $('#f-mdp').addEventListener('submit', async (e) => {
     e.preventDefault();
     try { await q(sb.auth.updateUser({ password: e.target.mdp.value })); toast('Mot de passe modifié'); await entrer(); }
@@ -289,6 +341,155 @@ function ecranSansAcces() {
     <p>Votre adresse <b>${esc(S.session?.user?.email)}</b> n’est pas encore autorisée. Demandez au trésorier de vous inviter avec cette adresse, puis reconnectez-vous.</p>
     <button class="btn-tonal" id="b-sortir">Se déconnecter</button></div></main>`;
   $('#b-sortir').addEventListener('click', () => sb.auth.signOut());
+}
+
+// ---------- Arrivée d'un nouveau membre : il remplit sa fiche ----------
+function feuilleMaFiche() {
+  const [prenom, ...reste] = (S.profil.nom.includes('@') ? '' : S.profil.nom).split(' ');
+  ouvrirFeuille(`<form id="f-ma-fiche" class="champs">
+    <div class="bienvenue">${icone('nouveau', 28)}<div><h2>Bienvenue${prenom ? ' ' + esc(prenom) : ''}&#8239;!</h2>
+      <p class="muted" style="margin:0">Complétez votre fiche de membre : elle permet au trésorier de suivre votre cotisation et à l’association de fêter votre anniversaire.</p></div></div>
+    <div class="champs champs-2">
+      <label class="champ"><span class="obligatoire">Prénom</span><input name="prenom" value="${esc(prenom || '')}" maxlength="60" required autocomplete="given-name"></label>
+      <label class="champ"><span class="obligatoire">Nom</span><input name="nom" value="${esc(reste.join(' '))}" maxlength="60" required autocomplete="family-name"></label>
+    </div>
+    <fieldset style="border:0;padding:0;margin:0"><legend class="champ obligatoire" style="font-size:13px;font-weight:600;color:var(--texte-2);margin-bottom:4px">Anniversaire (jour et mois, sans l’année)</legend>
+      <div class="champs champs-2">
+        <select name="jour" required aria-label="Jour"><option value="">Jour</option>${Array.from({ length: 31 }, (_, i) => `<option>${i + 1}</option>`).join('')}</select>
+        <select name="mois" required aria-label="Mois"><option value="">Mois</option>${MOIS.map((x, i) => `<option value="${i + 1}">${x}</option>`).join('')}</select>
+      </div></fieldset>
+    <div class="champs champs-2">
+      <label class="champ">WhatsApp<input name="whatsapp" type="tel" placeholder="06 12 34 56 78" autocomplete="tel"></label>
+      <label class="champ">Profession (facultatif)<input name="profession" maxlength="80" autocomplete="organization-title"></label>
+    </div>
+    <label class="case"><input type="checkbox" name="consent" checked> J’accepte que mon anniversaire soit affiché aux autres membres</label>
+    <div class="actions"><button type="button" class="btn-texte" id="b-plus-tard">Plus tard</button><button class="btn-primaire">Enregistrer ma fiche</button></div>
+  </form>`, (root) => {
+    const f = $('#f-ma-fiche', root);
+    $('#b-plus-tard', root).addEventListener('click', () => { S.ficheRepoussee = true; fermerFeuille(); });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const bouton = f.querySelector('.btn-primaire'); bouton.disabled = true;
+      try {
+        const id = await q(sb.rpc('enregistrer_ma_fiche', { p_prenom: f.prenom.value, p_nom: f.nom.value, p_jour: Number(f.jour.value), p_mois: Number(f.mois.value),
+          p_whatsapp: f.whatsapp.value || null, p_profession: f.profession.value || null, p_consent: f.consent.checked }));
+        S.profil.member_id = id; S.profil.nom = `${f.prenom.value.trim()} ${f.nom.value.trim()}`;
+        await chargerReferentiels(); fermerFeuille(); toast('Fiche enregistrée, merci\u202f!'); router();
+      } catch (err) { bouton.disabled = false; erreur(err); }
+    });
+  });
+}
+
+// ---------- Assistant de configuration (administrateur, à la première connexion ; relançable dans Paramètres) ----------
+const ETAPES_ASSISTANT = ['Association', 'Coordonnées', 'Exercice', 'Comptes', 'Cotisation', 'Terminé'];
+const exerciceDe = (debut) => { const d = new Date(debut + 'T12:00:00'); const f = new Date(d); f.setFullYear(f.getFullYear() + 1); f.setDate(f.getDate() - 1);
+  return { debut, fin: isoLocal(f), libelle: d.getMonth() === 0 ? `Exercice ${d.getFullYear()}` : `Exercice ${d.getFullYear()}-${d.getFullYear() + 1}` }; };
+async function assistantConfiguration(etape = 0) {
+  S.assistant = S.assistant || { etape: 0 };
+  const o = S.org || {};
+  const comptes = await q(sb.from('accounts').select('*').order('nom'));
+  const ex = (S.exercices || []).find((e) => !e.cloture) || null;
+  const an = new Date().getFullYear();
+  const corps = [
+    () => `<h2>Votre association</h2><p class="muted">Ces informations apparaissent sur les documents (rapports, reçus, PDF).</p>
+      <div style="display:flex;align-items:center;gap:16px"><img id="apercu-logo" src="${esc(S.logoUrl)}" alt="Logo" class="logo-apercu">
+        <label class="btn btn-tonal btn-petit">Choisir le logo<input type="file" name="logo" accept="image/*" hidden></label></div>
+      <div class="champs champs-2"><label class="champ"><span class="obligatoire">Nom de l’association</span><input name="nom" value="${esc(o.nom || '')}" required maxlength="80"></label>
+        <label class="champ">Sigle<input name="sigle" value="${esc(o.sigle || '')}" maxlength="20" placeholder="JP"></label></div>
+      <label class="champ">Objet (but de l’association)<textarea name="objet" rows="2" maxlength="300">${esc(o.objet || '')}</textarea></label>
+      <label class="champ">Date de création<input type="date" name="date_creation" value="${esc(o.date_creation || '')}"></label>`,
+    () => `<h2>Coordonnées</h2><p class="muted">Le numéro RNA (W…) figure sur le récépissé de la préfecture ; le SIRET seulement si l’association en a un.</p>
+      <label class="champ">Adresse<input name="adresse" value="${esc(o.adresse || '')}" autocomplete="street-address"></label>
+      <div class="champs champs-2"><label class="champ">Code postal<input name="code_postal" value="${esc(o.code_postal || '')}" inputmode="numeric" maxlength="10" autocomplete="postal-code"></label>
+        <label class="champ">Ville<input name="ville" value="${esc(o.ville || '')}" autocomplete="address-level2"></label>
+        <label class="champ">E-mail<input type="email" name="email" value="${esc(o.email || '')}"></label>
+        <label class="champ">Téléphone<input type="tel" name="telephone" value="${esc(o.telephone || '')}"></label>
+        <label class="champ">N° RNA<input name="rna" value="${esc(o.rna || '')}" placeholder="W381000000" maxlength="12"></label>
+        <label class="champ">SIRET<input name="siret" value="${esc(o.siret || '')}" inputmode="numeric" maxlength="17"></label></div>
+      <label class="champ">Site internet<input type="url" name="site_web" value="${esc(o.site_web || '')}" placeholder="https://"></label>`,
+    () => `<h2>Exercice comptable</h2><p class="muted">Période de 12 mois sur laquelle les comptes sont arrêtés et présentés à l’assemblée générale.</p>
+      <div class="choix-cartes" role="radiogroup">
+        ${[['civil', `Année civile`, `1er janvier – 31 décembre ${an}`, `${an}-01-01`], ['scolaire', 'Année scolaire', `1er septembre ${an} – 31 août ${an + 1}`, `${an}-09-01`], ['autre', 'Autre période', 'Choisir les dates', '']]
+          .map(([k, t, d, deb]) => `<label class="choix-carte"><input type="radio" name="type_ex" value="${k}" data-debut="${deb}" ${(ex ? (ex.debut.slice(5) === '01-01' ? 'civil' : ex.debut.slice(5) === '09-01' ? 'scolaire' : 'autre') : 'civil') === k ? 'checked' : ''}><b>${t}</b><span class="muted">${d}</span></label>`).join('')}</div>
+      <div class="champs champs-2"><label class="champ">Début<input type="date" name="debut" value="${esc(ex?.debut || `${an}-01-01`)}" required></label>
+        <label class="champ">Fin<input type="date" name="fin" value="${esc(ex?.fin || `${an}-12-31`)}" required></label></div>
+      <label class="champ">Nom<input name="libelle" value="${esc(ex?.libelle || `Exercice ${an}`)}" required maxlength="40"></label>`,
+    () => `<h2>Comptes et soldes de départ</h2><p class="muted">Le solde de chaque compte au début de l’exercice : relevé de banque et comptage de la caisse.</p>
+      <div id="z-comptes" class="champs">${comptes.map((c) => `<div class="ligne-compte"><span class="puce puce-neutre">${c.type === 'caisse' ? 'Caisse' : 'Banque'}</span>
+        <label class="champ" style="flex:1">${esc(c.nom)} (€)<input type="number" step="0.01" name="c-${c.id}" value="${Number(c.solde_initial || 0).toFixed(2)}"></label></div>`).join('') || '<p class="muted">Aucun compte pour l’instant.</p>'}</div>
+      <div class="champs champs-2 carte-interne"><label class="champ">Nouveau compte<input name="nouveau_nom" placeholder="Livret A, Caisse des jeunes…" maxlength="60"></label>
+        <label class="champ">Type<select name="nouveau_type"><option value="banque">Banque</option><option value="caisse">Caisse</option></select></label>
+        <label class="champ">Solde de départ (€)<input name="nouveau_solde" type="number" step="0.01" value="0"></label></div>`,
+    () => `<h2>Cotisation des membres</h2>
+      <div class="champs champs-2"><label class="champ">Montant par période (€)<input name="cotisation_montant" type="number" step="0.01" min="0" value="${esc(S.settings.cotisation_montant ?? 0)}"></label>
+        <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+      <label class="champ">Comment régler (affiché aux membres)<textarea name="infos_paiement" rows="3" maxlength="400" placeholder="Virement : IBAN FR76…&#10;Espèces : auprès du trésorier">${esc(S.textes?.infos_paiement || '')}</textarea></label>`,
+    () => `<div class="bienvenue">${icone('valide', 32)}<div><h2>Tout est prêt</h2><p class="muted" style="margin:0">Vous pourrez modifier ces informations à tout moment dans Paramètres.</p></div></div>
+      <ul class="liste liste-compacte">
+        <li><div class="corps"><b>${esc(S.org?.nom || '')}</b><span>${esc([S.org?.adresse, S.org?.code_postal, S.org?.ville].filter(Boolean).join(', ') || 'Adresse non renseignée')}</span></div></li>
+        <li><div class="corps"><b>${esc(((S.exercices || []).find((e) => !e.cloture) || {}).libelle || 'Exercice')}</b><span>${(S.exercices || []).filter((e) => !e.cloture).slice(0, 1).map((e) => `${dateFr(e.debut)} au ${dateFr(e.fin)}`).join('')}</span></div></li>
+        <li><div class="corps"><b>${comptes.length} compte${comptes.length > 1 ? 's' : ''}</b><span>${comptes.map((c) => `${esc(c.nom)} ${eur(c.solde_initial)}`).join(' · ')}</span></div></li>
+        <li><div class="corps"><b>Cotisation</b><span>${eur(S.settings.cotisation_montant || 0)} · ${PERIODICITES[pasCotis()]}</span></div></li></ul>
+      <p class="muted">Étapes suivantes conseillées : ajouter les membres (Membres, Importer), inviter le président et le bureau (Paramètres, Personnes).</p>`,
+  ];
+  $('#app').innerHTML = `<main class="assistant"><div class="carte assistant-carte">
+    <div class="assistant-tete"><img src="${esc(S.logoUrl)}" alt=""><b>Configuration de l’association</b>
+      ${etape < 5 ? '<button class="btn-texte btn-petit" id="b-assistant-plus-tard">Plus tard</button>' : ''}</div>
+    <ol class="etapes-assistant">${ETAPES_ASSISTANT.map((e, i) => `<li class="${i < etape ? 'fait' : i === etape ? 'actuelle' : ''}" ${i === etape ? 'aria-current="step"' : ''}><span>${i < etape ? '✓' : i + 1}</span><b>${e}</b></li>`).join('')}</ol>
+    <form id="f-assistant" class="champs anime-entree">${corps[etape]()}
+      <div class="actions" style="justify-content:space-between">${etape > 0 ? '<button type="button" class="btn-texte" id="b-precedent">Précédent</button>' : '<span></span>'}
+        <button class="btn-primaire btn-large">${etape === 5 ? 'Accéder à la trésorerie' : 'Suivant'}</button></div></form></div></main>`;
+  const f = $('#f-assistant');
+  let logoBlob = null;
+  f.logo?.addEventListener('change', async () => { const file = f.logo.files[0]; if (!file) return; logoBlob = await compresserImage(file, 512, 0.85); $('#apercu-logo').src = URL.createObjectURL(logoBlob); });
+  f.querySelectorAll('[name=type_ex]').forEach((r) => r.addEventListener('change', () => {
+    if (!r.dataset.debut) return;
+    const e = exerciceDe(r.dataset.debut); f.debut.value = e.debut; f.fin.value = e.fin; f.libelle.value = e.libelle;
+  }));
+  f.debut?.addEventListener('change', () => { if (!f.debut.value) return; const e = exerciceDe(f.debut.value); f.fin.value = e.fin; f.libelle.value = e.libelle; });
+  $('#b-precedent')?.addEventListener('click', () => assistantConfiguration(etape - 1));
+  $('#b-assistant-plus-tard')?.addEventListener('click', () => { S.assistantRepousse = true; if (!location.hash) location.hash = '#tableau'; router(); demarrerNouveautes(); });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const bouton = f.querySelector('.btn-primaire'); bouton.disabled = true;
+    try {
+      const champs = (l) => Object.fromEntries(l.map((k) => [k, f[k].value.trim() || null]));
+      if (etape === 0) {
+        const maj = champs(['nom', 'sigle', 'objet', 'date_creation']);
+        if (logoBlob) { const chemin = `logo-${Date.now()}.jpg`; await q(sb.storage.from('logos').upload(chemin, logoBlob, { contentType: 'image/jpeg' })); maj.logo_path = chemin; }
+        await q(sb.from('organisation').update(maj).eq('id', 1));
+      } else if (etape === 1) {
+        await q(sb.from('organisation').update(champs(['adresse', 'code_postal', 'ville', 'email', 'telephone', 'rna', 'siret', 'site_web'])).eq('id', 1));
+      } else if (etape === 2) {
+        const v = { libelle: f.libelle.value.trim(), debut: f.debut.value, fin: f.fin.value };
+        if (ex) await q(sb.from('exercices').update(v).eq('id', ex.id)); else await q(sb.from('exercices').insert(v));
+        await q(sb.from('organisation').update({ exercice_debut: v.debut }).eq('id', 1));
+        S.exercices = await q(sb.from('exercices').select('*').order('debut', { ascending: false }));
+      } else if (etape === 3) {
+        for (const c of comptes) { const v = Number(f[`c-${c.id}`].value); if (v !== Number(c.solde_initial)) await q(sb.from('accounts').update({ solde_initial: v }).eq('id', c.id)); }
+        if (f.nouveau_nom.value.trim()) await q(sb.from('accounts').insert({ nom: f.nouveau_nom.value.trim(), type: f.nouveau_type.value, solde_initial: Number(f.nouveau_solde.value || 0) }));
+        S.comptes = await q(sb.from('accounts').select('*').eq('actif', true).order('nom'));
+        if (f.nouveau_nom.value.trim()) return assistantConfiguration(3);   // reste sur l'étape pour en ajouter un autre
+      } else if (etape === 4) {
+        for (const cle of ['cotisation_montant', 'cotisation_periode_mois']) { await q(sb.from('settings').update({ valeur: Number(f[cle].value) }).eq('cle', cle)); S.settings[cle] = Number(f[cle].value); }
+        await enregistrerTexteReglage('infos_paiement', f.infos_paiement.value.trim() || null, 'Comment régler sa cotisation');
+      } else {
+        await q(sb.from('organisation').update({ configuree: true }).eq('id', 1));
+        await chargerOrganisation(); S.assistant = null;
+        if (!location.hash) location.hash = '#tableau';
+        router(); demarrerNouveautes(); toast('Configuration enregistrée');
+        return;
+      }
+      await chargerOrganisation();
+      assistantConfiguration(etape + 1);
+    } catch (err) { bouton.disabled = false; erreur(err); }
+  });
+}
+async function enregistrerTexteReglage(cle, texte, description) {
+  if (texte === (S.textes?.[cle] || null)) return;
+  const n = await q(sb.from('settings').update({ texte }).eq('cle', cle).select());
+  if (!n?.length) await q(sb.from('settings').insert({ cle, texte, description }));
+  S.textes = { ...S.textes, [cle]: texte };
 }
 
 // ---------- Navigation ----------
@@ -337,13 +538,14 @@ function coquille(page, contenu) {
         <a href="#tableau" class="rail-logo" aria-label="Accueil"><img src="${esc(S.logoUrl)}" alt=""><span class="nav-texte">${esc(S.org?.nom || 'Trésorerie')}</span></a>
       </div>
       <div class="rail-liens">${principales.map(lien).join('')}</div>
-      <div class="rail-bas">${lien(['parametres', 'Paramètres'])}</div>
+      <div class="rail-bas"><button type="button" class="nav-item b-cloche" title="Nouveautés"><span class="nav-icone">${iconeNav('cloche')}</span><span class="nav-texte">Nouveautés</span></button>${lien(['parametres', 'Paramètres'])}</div>
     </nav>
     <div class="volet-voile" id="volet-voile" hidden></div>
     <div class="cadre">
       <header class="entete">
         <img class="logo-mobile" src="${esc(S.logoUrl)}" alt="">
         <div class="titre"><b>${esc(S.org?.nom || 'Trésorerie')}</b></div>
+        <button type="button" class="entete-reglages b-cloche" aria-label="Nouveautés" title="Nouveautés">${icone('cloche')}</button>
         <a class="entete-reglages" href="#parametres" aria-label="Paramètres" title="Paramètres" ${page === 'parametres' ? 'aria-current="page"' : ''}>${icone('parametres')}</a>
       </header>
       <main class="contenu" id="contenu">${contenu}</main>
@@ -363,8 +565,86 @@ function coquille(page, contenu) {
   shell.querySelectorAll('.rail a').forEach((a) => a.addEventListener('click', fermerVolet));
   $('#b-plus')?.addEventListener('click', (e) => {
     e.preventDefault();
-    ouvrirFeuille(`<h2>Plus</h2><ul class="liste liste-menu">${autres.map(([k, l]) => `<li><a href="#${k}" class="lien-plus">${icone(k)}<span>${l}</span></a></li>`).join('')}</ul>`,
-      (root) => root.querySelectorAll('.lien-plus').forEach((a) => a.addEventListener('click', fermerFeuille)));
+    ouvrirFeuille(`<h2>Plus</h2><ul class="liste liste-menu">${autres.map(([k, l]) => `<li><a href="#${k}" class="lien-plus" data-section="${k}">${icone(k)}<span>${l}</span></a></li>`).join('')}</ul>`,
+      (root) => { root.querySelectorAll('.lien-plus').forEach((a) => a.addEventListener('click', fermerFeuille)); afficherPastilles(root); });
+  });
+  shell.addEventListener('click', (e) => { if (e.target.closest('.b-cloche')) feuilleNouveautes(); });
+  S.autresPages = autres.map(([k]) => k);
+  afficherPastilles();
+}
+
+// ---------- Nouveautés : pastilles sur les onglets, cloche, notifications du navigateur ----------
+// Une pastille compte ce qui attend une action (demande à valider, à payer) et ce qui est nouveau depuis la dernière visite de l'onglet.
+const SECTIONS_NOUVEAUTES = ['ecritures', 'depenses', 'cotisations', 'activites', 'membres'];
+const LIBELLES_SECTIONS = { ecritures: 'Opérations', depenses: 'Demandes', cotisations: 'Cotisations', activites: 'Planning', membres: 'Membres' };
+async function chargerNouveautes() {
+  if (!S.profil) return;
+  try {
+    const n = await q(sb.rpc('mes_nouveautes'));
+    const avant = S.nouveautes;
+    S.nouveautes = n || { compteurs: {}, elements: [] };
+    afficherPastilles();
+    // Notification du navigateur pour ce qui arrive pendant que la page est ouverte en arrière-plan
+    const recent = (S.nouveautes.elements || [])[0];
+    if (avant && recent && recent.quand > (avant.elements?.[0]?.quand || '') && document.hidden && window.Notification?.permission === 'granted') {
+      try { new Notification(`${S.org?.nom || 'Trésorerie'} · ${recent.titre}`, { body: recent.detail, icon: S.logoUrl, tag: 'tresorerie' }); } catch { /* non pris en charge */ }
+    }
+  } catch (e) { console.warn(e); }
+}
+function demarrerNouveautes() {
+  chargerNouveautes();
+  if (S.minuterieNouveautes) return;
+  S.minuterieNouveautes = setInterval(chargerNouveautes, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) chargerNouveautes(); });
+}
+async function marquerVu(page) {
+  const sec = page === 'moi' ? 'cotisations' : page;
+  if (!SECTIONS_NOUVEAUTES.includes(sec) || !S.nouveautes) return;
+  try { await q(sb.rpc('marquer_vu', { p_section: sec })); await chargerNouveautes(); } catch (e) { console.warn(e); }
+}
+function afficherPastilles(racine = document) {
+  const c = S.nouveautes?.compteurs || {};
+  const total = SECTIONS_NOUVEAUTES.reduce((t, k) => t + (Number(c[k]) || 0), 0);
+  const pastille = (n) => (n > 0 ? `<span class="pastille-nav" aria-label="${n} nouveauté${n > 1 ? 's' : ''}">${n > 99 ? '99+' : n}</span>` : '');
+  racine.querySelectorAll('a[href^="#"]').forEach((a) => {
+    const k = a.getAttribute('href').slice(1);
+    if (!SECTIONS_NOUVEAUTES.includes(k) && !(k === 'moi')) return;
+    const n = Number(c[k === 'moi' ? 'cotisations' : k]) || 0;
+    const cible = a.querySelector('.nav-icone') || a;
+    cible.querySelector('.pastille-nav')?.remove();
+    if (n) cible.insertAdjacentHTML('beforeend', pastille(n));
+  });
+  const plus = racine.querySelector?.('#b-plus');
+  if (plus) {
+    const n = (S.autresPages || []).reduce((t, k) => t + (Number(c[k]) || 0), 0);
+    plus.querySelector('.pastille-nav')?.remove();
+    if (n) plus.querySelector('.nav-icone').insertAdjacentHTML('beforeend', pastille(n));
+  }
+  document.querySelectorAll('.b-cloche').forEach((b) => {
+    b.querySelector('.pastille-nav')?.remove();
+    (b.querySelector('.nav-icone') || b).insertAdjacentHTML('beforeend', pastille(total));
+    b.classList.toggle('a-du-nouveau', total > 0);
+  });
+}
+function feuilleNouveautes() {
+  const els = S.nouveautes?.elements || [];
+  const quand = (d) => { const j = joursDepuis(d); return j <= 0 ? 'aujourd’hui' : j === 1 ? 'hier' : `il y a ${j} jours`; };
+  const notif = window.Notification && Notification.permission !== 'granted' && Notification.permission !== 'denied';
+  ouvrirFeuille(`<h2>Nouveautés</h2>
+    ${els.length ? `<ul class="liste liste-nouveautes">${els.map((e) => `<li><a href="#${e.section}" class="lien-nouveaute" data-section="${e.section}">
+      <span class="puce-section puce-${e.section}">${icone(e.section, 18)}</span>
+      <div class="corps"><b>${esc(e.titre)}</b><span>${esc(e.detail)}</span></div><span class="muted">${quand(e.quand)}</span></a></li>`).join('')}</ul>`
+      : `<div class="vide">${icone('valide', 32)}<p>Rien de nouveau. Vous êtes à jour.</p></div>`}
+    ${notif ? `<p class="info">Recevez une alerte quand quelque chose arrive pendant que la page est ouverte.<button class="btn-tonal btn-petit" id="b-notif">Activer les alertes</button></p>` : ''}
+    <div class="actions">${els.length ? '<button class="btn-texte" id="b-tout-vu">Tout marquer comme vu</button>' : ''}<button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    root.querySelectorAll('.lien-nouveaute').forEach((a) => a.addEventListener('click', fermerFeuille));
+    $('#b-notif', root)?.addEventListener('click', async () => {
+      const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Alertes activées' : 'Alertes refusées par le navigateur'); fermerFeuille();
+    });
+    $('#b-tout-vu', root)?.addEventListener('click', async () => {
+      try { for (const k of SECTIONS_NOUVEAUTES) await q(sb.rpc('marquer_vu', { p_section: k })); await chargerNouveautes(); fermerFeuille(); toast('Tout est marqué comme vu'); } catch (e) { erreur(e); }
+    });
   });
 }
 
@@ -375,14 +655,31 @@ async function router() {
   if (!S.profil) return;
   let page = location.hash.slice(1) || 'tableau';
   if (!pagesAutorisees().some(([k]) => k === page) && !(page === 'moi' && S.profil.member_id)) page = 'tableau';
+  // Paramètres ouverts depuis un autre écran : sur téléphone, le menu d'abord (sauf lien direct vers une section)
+  if (page === 'parametres' && S.pagePrecedente !== 'parametres' && !S.sectionDemandee && !window.matchMedia('(min-width: 900px)').matches) S.ongletParam = null;
+  S.sectionDemandee = false; S.pagePrecedente = page;
   fermerFeuille();
   coquille(page, '<p class="chargement">Chargement…</p>');
   try { await PAGES[page](); } catch (e) { erreur(e); }
   window.scrollTo(0, 0);
+  marquerVu(page);
+  // Nouveau membre : sa fiche lui est demandée tant qu'elle n'est pas remplie (« Plus tard » la repousse à la prochaine connexion)
+  if (!S.profil.member_id && !S.ficheRepoussee) feuilleMaFiche();
 }
 window.addEventListener('hashchange', router);
+// Chiffres clés qui « montent » jusqu'à leur valeur (désactivé si la personne préfère moins d'animations)
+function animerChiffres(racine) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  racine.querySelectorAll('[data-compteur]').forEach((el) => {
+    const fin = Number(el.dataset.compteur); if (!fin) return;
+    const t0 = performance.now(), duree = 700;
+    const pas = (t) => { const k = Math.min(1, (t - t0) / duree); const v = fin * (1 - Math.pow(1 - k, 3)); el.textContent = eur(v); if (k < 1) requestAnimationFrame(pas); else el.textContent = eur(fin); };
+    requestAnimationFrame(pas);
+  });
+}
 const rendre = (html) => {
   const c = $('.contenu'); c.innerHTML = html;
+  animerChiffres(c);
   // Commande principale (+) : bouton dans l'en-tête de page sur tablette et ordinateur, bouton flottant sur téléphone
   const fab = c.querySelector('.page > .fab'); const titre = c.querySelector('.page > .page-titre');
   if (fab) {
@@ -425,10 +722,11 @@ function banniere(contenu) {
   const fiche = S.profil.member_id ? (S.membres || []).find((m) => m.id === S.profil.member_id) : null;
   const premier = esc(fiche ? fiche.prenom : S.profil.nom.split('@')[0].split(' ')[0]);
   const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  return `<section class="banniere ${S.banniereUrl ? 'avec-photo' : ''}"${fond} aria-label="${esc(S.org?.nom || 'Association')}">
+  return `<section class="banniere ${S.banniereUrl ? 'avec-photo' : ''} ${contenu ? '' : 'banniere-compacte'}"${fond} aria-label="${esc(S.org?.nom || 'Association')}">
     <div class="banniere-tete"><img src="${esc(S.logoUrl)}" alt=""><div><b>${esc(S.org?.nom || '')}</b><span>Bonjour ${premier} · ${date}</span></div>
       ${!S.banniereUrl && peut('administrer') ? '<a class="banniere-ajout" href="#parametres" aria-label="Ajouter une photo" title="Ajouter une photo">' + icone('camera') + '<span>Ajouter une photo</span></a>' : ''}</div>
-    <a class="banniere-reglages" href="#parametres" aria-label="Paramètres" title="Paramètres">${icone('parametres')}</a>
+    <div class="banniere-outils"><button type="button" class="banniere-reglages b-cloche" aria-label="Nouveautés" title="Nouveautés">${icone('cloche')}</button>
+      <a class="banniere-reglages" href="#parametres" aria-label="Paramètres" title="Paramètres">${icone('parametres')}</a></div>
     ${contenu}</section>`;
 }
 
@@ -491,7 +789,7 @@ async function pageTableau() {
   const ecart12 = serie.length ? serie[serie.length - 1].solde - (serie[0].solde - serie[0].rec + serie[0].dep) : 0;
   const reserveTxt = reserve == null ? 'Non définie' : `${reserve.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}&nbsp;mois`;
 
-  const situation = banniere(`<a class="banniere-solde" href="#ecritures" data-compte=""><span>Trésorerie au ${dateFr(jour)}</span><b class="num">${eur(total)}</b></a>
+  const situation = banniere(`<a class="banniere-solde" href="#ecritures" data-compte=""><span>Trésorerie au ${dateFr(jour)}</span><b class="num" data-compteur="${total}">${eur(total)}</b></a>
     <div class="banniere-indic">
       <span>Résultat ${an}<b class="num">${signeEur(resultat)}</b></span>
       <span title="${reserve == null ? 'Calculée sur les dépenses moyennes des 12 derniers mois : pas encore de dépenses' : 'Nombre de mois de dépenses que la trésorerie actuelle permet de couvrir'}">Réserve<b class="num">${reserveTxt}</b></span>
@@ -555,8 +853,8 @@ async function pageTableau() {
   brancherRubriques();
   document.querySelectorAll('[data-filtre-dep]').forEach((a) => a.addEventListener('click', () => { S.filtreDepenses = a.dataset.filtreDep; }));
   $('#b-dem-fiche')?.addEventListener('click', (e) => { e.preventDefault(); feuilleMembre(null, { lierAMoi: true, apres: () => router() }); });
-  $('#b-dem-soldes')?.addEventListener('click', () => { S.ongletParam = 'finances'; });
-  $('#b-dem-asso')?.addEventListener('click', () => { S.ongletParam = 'association'; });
+  $('#b-dem-soldes')?.addEventListener('click', () => { S.ongletParam = 'comptes'; S.sectionDemandee = true; });
+  $('#b-dem-asso')?.addEventListener('click', () => { S.ongletParam = 'apparence'; S.sectionDemandee = true; });
   document.querySelectorAll('[data-compte]').forEach((a) => a.addEventListener('click', () => {
     S.filtres = { periode: 'annee', compte: a.dataset.compte };
   }));
@@ -570,21 +868,65 @@ function listeAnniversaires(anniv, mois) {
   }).join('')}</ul>` : '<div class="vide">Aucun anniversaire ce mois-ci.</div>';
 }
 
+// Accueil d'un membre, par ordre d'importance : le prochain rendez-vous (grand, en tête), ce que je dois
+// (cotisation, participations), puis la suite du planning et les anniversaires. Deux colonnes sur ordinateur.
 async function pageTableauAdherent(anniv, mois) {
   const [cot, planning, parts] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('planning_activites', { p_debut: isoLocal(new Date()) })), q(sb.rpc('mes_participations'))]);
-  rendre(`<div class="page accueil">
+  const prochain = planning[0];
+  const suite = planning.slice(1, 6);
+  const retard = retardDe(cot);
+  const aRegler = parts.filter((p) => Number(p.montant_attendu) > 0 && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
+  const resteParts = aRegler.reduce((t, p) => t + Number(p.montant_attendu) - Number(p.donne), 0);
+  const jour = new Date().getDate();
+  const prochainAnniv = anniv.find((a) => a.jour >= jour);
+  const partDe = (e) => parts.find((x) => x.collecte_id === e?.collecte_id);
+  const hero = prochain ? (() => {
+    const d = dateDe(prochain.date_debut); const p = partDe(prochain);
+    return `<article class="hero-evt cliquable" data-evt="${prochain.id}" tabindex="0" role="button" style="${styleEvt(prochain)}">
+      <div class="hero-date"><span>${JOURS_COURTS[(d.getDay() + 6) % 7]}</span><b>${d.getDate()}</b><span>${MOIS_COURTS[d.getMonth()]}</span></div>
+      <div class="hero-corps"><span class="hero-sur">Prochain rendez-vous · <b>${dansJours(prochain.date_debut)}</b></span>
+        <h2>${esc(prochain.nom)}</h2>
+        <p>${[prochain.heure_debut ? heure(prochain.heure_debut) + (prochain.heure_fin ? ' – ' + heure(prochain.heure_fin) : '') : 'Toute la journée', prochain.lieu ? esc(prochain.lieu) : ''].filter(Boolean).join(' · ')}</p>
+        ${prochain.participation ? `<span class="hero-puce">Participation ${eur(prochain.participation)}${p ? ` · vous avez donné ${eur(p.donne)}` : ''}</span>` : ''}</div>
+      ${icone('suivant', 24)}</article>`;
+  })() : `<article class="hero-evt hero-vide"><div class="hero-corps"><span class="hero-sur">Prochain rendez-vous</span><h2>Rien de prévu pour l’instant</h2><p>Le planning s’affichera ici dès qu’un rendez-vous sera ajouté.</p></div></article>`;
+  const tuileCotis = `<a class="tuile ${retard > 0 ? 'tuile-alerte' : 'tuile-ok'}" href="#cotisations">
+      <span class="tuile-icone">${icone(retard > 0 ? 'attention' : 'valide', 24)}</span>
+      <span class="tuile-texte"><small>Ma cotisation</small><b>${!cot?.length ? 'Non commencée' : retard > 0 ? `${eur(retard)} en retard` : 'À jour'}</b></span></a>`;
+  const tuileParts = `<a class="tuile ${resteParts > 0 ? 'tuile-attention' : 'tuile-neutre'}" href="#cotisations">
+      <span class="tuile-icone">${icone('cotisations', 24)}</span>
+      <span class="tuile-texte"><small>Participations</small><b>${resteParts > 0 ? `${eur(resteParts)} à régler` : parts.length ? 'Rien à régler' : 'Aucune demandée'}</b></span></a>`;
+  const tuileAnniv = `<div class="tuile tuile-jaune"><span class="tuile-icone">${icone('nouveau', 24)}</span>
+      <span class="tuile-texte"><small>Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}</small><b>${prochainAnniv ? `${esc(prochainAnniv.prenom)} le ${prochainAnniv.jour}` : anniv.length ? `${anniv.length} ce mois` : 'Aucun'}</b></span></div>`;
+  const infos = S.textes?.infos_paiement;
+  rendre(`<div class="page accueil accueil-membre">
     ${banniere('')}
-    <div class="rub-outils"><button class="btn-texte btn-petit" id="b-rubriques">Tout replier</button></div>
-    <div class="grille grille-2 rub-grille">
-      ${rubrique('macotisation', 'Ma cotisation', '', blocMaCotisation(cot))}
-      ${rubrique('anniversaires', `Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}`, anniv.length ? `${anniv.length} personne${anniv.length > 1 ? 's' : ''}` : 'Aucun', listeAnniversaires(anniv, mois))}
-    </div>
-    ${rubrique('avenir', 'À venir', planning.length ? `${Math.min(5, planning.length)} rendez-vous` : '', `${listePlanning(planning.slice(0, 5))}
-      <a class="btn btn-texte" href="#activites" style="align-self:flex-start">Voir le planning</a>`)}
-    ${parts.length ? rubrique('participations', 'Mes participations', '', listeParticipations(parts)) : ''}
-    </div>`);
+    <div class="membre-grille">
+      <div class="membre-principal">
+        ${hero}
+        <div class="tuiles">${tuileCotis}${tuileParts}${tuileAnniv}</div>
+        ${retard > 0 || resteParts > 0 ? `<div class="carte carte-regler"><h3>Comment régler</h3><p class="texte-libre" style="margin:0">${esc(infos || 'Adressez-vous au trésorier.')}</p></div>` : ''}
+        ${rubrique('avenir', 'Ensuite au planning', suite.length ? `${suite.length} rendez-vous` : '', `${suite.length ? listePlanningCouleur(suite) : '<p class="muted">Rien d’autre de prévu.</p>'}
+          <a class="btn btn-texte" href="#activites" style="align-self:flex-start">Ouvrir le planning</a>`)}
+      </div>
+      <div class="membre-cote">
+        ${rubrique('macotisation', 'Ma cotisation', retard > 0 ? `${eur(retard)} en retard` : 'À jour', blocMaCotisation(cot), { classe: retard > 0 ? 'rubrique-alerte' : '' })}
+        ${parts.length ? rubrique('participations', 'Mes participations', resteParts > 0 ? `${eur(resteParts)} à régler` : '', listeParticipations(parts)) : ''}
+        ${rubrique('anniversaires', `Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}`, anniv.length ? `${anniv.length} personne${anniv.length > 1 ? 's' : ''}` : 'Aucun', listeAnniversaires(anniv, mois))}
+      </div>
+    </div></div>`);
   brancherRubriques();
-  document.querySelectorAll('[data-evt]').forEach((li) => li.addEventListener('click', () => detailEvenement(planning.find((p) => p.id === li.dataset.evt), () => router())));
+  document.querySelectorAll('[data-evt]').forEach((li) => {
+    const ouvrir = () => detailEvenement(planning.find((p) => p.id === li.dataset.evt), () => router());
+    li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+  });
+}
+// Liste des rendez-vous avec la couleur de chacun (accueil des membres)
+function listePlanningCouleur(l) {
+  return `<ul class="liste liste-evt">${l.map((p) => `<li class="cliquable" data-evt="${p.id}" tabindex="0" role="button" style="${styleEvt(p)}">
+    <span class="date-evt"><b>${p.date_debut ? Number(p.date_debut.slice(8, 10)) : '–'}</b>${p.date_debut ? MOIS_COURTS[Number(p.date_debut.slice(5, 7)) - 1] : ''}</span>
+    <div class="corps"><b>${esc(p.nom)}</b><span>${p.date_debut ? jourLong(p.date_debut) : 'Date à fixer'}${p.heure_debut ? ' · ' + heure(p.heure_debut) : ''}${p.lieu ? ' · ' + esc(p.lieu) : ''}</span></div>
+    ${p.participation ? `<span class="puce puce-partiel">${eur(p.participation)}</span>` : `<span class="muted">${p.date_debut ? dansJours(p.date_debut) : ''}</span>`}</li>`).join('')}</ul>`;
 }
 
 // ---------- Opérations : recettes, dépenses et soldes, avec filtres ----------
@@ -801,11 +1143,14 @@ async function detailEcriture(t, pieces, contrepassees, recharger, toutes = []) 
       ${t.sens === 'depense' && t.montant > 0 && /mat[ée]riel|instrument|[ée]quipement/i.test(nomCategorie(t.category_id)) && peut('gerer_materiel') ? '<button class="btn-texte" id="b-inventaire">Inscrire à l’inventaire</button>' : ''}
       ${peutCorriger && !t.virement ? `<button class="btn-texte" id="b-contre">Contre-passer</button>` : ''}
       ${t.virement && !virementAnnule && !t.contrepasse_de && peut('saisir_ecritures') && !jambes.some((x) => x.rapproche) ? `<button class="btn-texte" id="b-annuler-virement">Annuler le virement</button>` : ''}
+      ${peut('saisir_ecritures') && !t.rapproche && !correction && !(t.request_id && !t.contrepasse_de) && !exerciceClos(t.date_op) && !(t.virement && (virementAnnule || jambes.some((x) => x.rapproche)))
+        ? `<button class="btn-texte btn-texte-danger" id="b-supprimer-op">${icone('corbeille', 16)} Supprimer</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button>
     </div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-contre', root)?.addEventListener('click', () => contrePasser(t));
     $('#b-annuler-virement', root)?.addEventListener('click', () => annulerVirement(t));
+    $('#b-supprimer-op', root)?.addEventListener('click', () => supprimerAvecConfirmation('transactions', t.id, t.libelle, recharger));
     root.querySelectorAll('[data-voir-op]').forEach((b) => b.addEventListener('click', () => {
       const autre = toutes.find((x) => x.id === b.dataset.voirOp);
       if (autre) detailEcriture(autre, pieces, contrepassees, recharger, toutes);
@@ -1239,10 +1584,14 @@ function feuilleMembre(m = null, opts = {}) {
     </div>
     <label class="case"><input type="checkbox" name="consent" ${v.consent_anniversaire ? 'checked' : ''}> Le membre accepte que son anniversaire soit affiché aux autres membres</label>
     ${m ? `<label class="case"><input type="checkbox" name="actif" ${v.actif ? 'checked' : ''}> Membre actif</label>` : ''}
-    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div>
+    <div class="actions" style="justify-content:space-between">${m && peut('gerer_membres') ? `<button type="button" class="btn-texte btn-texte-danger" id="b-suppr-membre">${icone('corbeille', 16)} Supprimer</button>` : '<span></span>'}
+      <span><button type="button" class="btn-texte" id="b-annuler">Annuler</button> <button class="btn-primaire">Enregistrer</button></span></div>
   </form>`, (root) => {
     const f = $('#f-membre', root);
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    $('#b-suppr-membre', root)?.addEventListener('click', () => supprimerAvecConfirmation('members', m.id, nomComplet(m), async () => {
+      S.membres = await q(sb.from('members').select('*').order('nom')); if (opts.apres) opts.apres(); else pageMembres();
+    }));
     f.photo.addEventListener('change', async () => {
       const file = f.photo.files[0]; if (!file) return;
       try {
@@ -1586,8 +1935,10 @@ async function detailCollecte(c) {
       <button class="btn-bleu" id="b-exp">Exporter</button>
       ${peut('gerer_activites', 'gerer_cotisations') ? `<button class="btn-texte" id="b-modif">Modifier</button><button class="btn-texte" id="b-clot">${c.cloturee ? 'Rouvrir' : 'Clôturer'}</button>` : ''}
       ${gere && !c.cloturee ? '<button class="btn-tonal" id="b-enc-autre">Autre encaissement</button>' : ''}
+      ${peut('gerer_activites', 'gerer_cotisations') && !txs.length ? `<button class="btn-texte btn-texte-danger" id="b-suppr-col">${icone('corbeille', 16)} Supprimer</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button></div>`;
   const brancher = (root) => {
+    $('#b-suppr-col', root)?.addEventListener('click', () => supprimerAvecConfirmation('collectes', c.id, c.nom, () => pageCotisations().catch(erreur)));
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     root.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { filtre = b.dataset.f; root.innerHTML = rendu(); brancher(root); }));
     const apres = () => { pageCotisations().catch(erreur); };
@@ -1713,10 +2064,12 @@ function ficheTiers(genre, id, txs, recharger) {
     <div class="actions">
       <button class="btn-bleu" id="b-exp">Exporter</button>
       ${t && peut('saisir_ecritures', 'gerer_cotisations') ? '<button class="btn-texte" id="b-modif">Modifier</button>' : ''}
+      ${t && peut('saisir_ecritures', 'gerer_cotisations') && !txs.length ? `<button class="btn-texte btn-texte-danger" id="b-suppr-tiers">${icone('corbeille', 16)} Supprimer</button>` : ''}
       ${m && peut('gerer_cotisations') ? '<button class="btn-texte" id="b-cotis">Cotisation</button>' : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-modif', root)?.addEventListener('click', () => feuilleTiers(t, recharger));
+    $('#b-suppr-tiers', root)?.addEventListener('click', () => supprimerAvecConfirmation('tiers', t.id, t.nom, async () => { S.tiers = await q(sb.from('tiers').select('*').order('nom')); recharger(); }));
     $('#b-cotis', root)?.addEventListener('click', () => ficheCotisation(m));
     $('#b-exp', root).addEventListener('click', () => telechargerCsv(`tiers-${sansAccents(m ? nomComplet(m) : t.nom).replace(/[^a-z0-9]+/g, '-')}.csv`,
       ['Date', 'Libellé', 'Rubrique', 'Catégorie', 'Montant'], tri.map((x) => [dateFr(x.date_op), x.libelle, nomRubrique(x), nomCategorie(x.category_id), signe(x)])));
@@ -1750,16 +2103,55 @@ function feuilleTiers(t, apres) {
 }
 
 // ---------- Paramètres (trésorier) ----------
-async function pageParametres() {
+// Paramètres : un menu par thème (Mon compte, Association, Finances, Accès, Données) et le contenu à côté ;
+// sur téléphone, le menu puis la section choisie (bouton retour).
+function sectionsParametres() {
   const admin = peut('administrer');
-  const onglets = [['compte', 'Mon compte'], ...(admin ? [['association', 'Association'], ['finances', 'Montants et comptes'], ['roles', 'Rôles et droits'], ['personnes', 'Accès']] : [])];
-  if (!onglets.some(([k]) => k === S.ongletParam)) S.ongletParam = 'compte';
-  const corps = { compte: paramCompte, association: paramAssociation, finances: paramFinances, roles: paramRoles, personnes: paramPersonnes };
-  rendre(`<div class="page"><div class="page-titre"><h1>Paramètres</h1></div>
-    ${onglets.length > 1 ? `<div class="onglets onglets-defile" role="tablist">${onglets.map(([k, l]) => `<button role="tab" aria-selected="${S.ongletParam === k}" data-onglet="${k}">${l}</button>`).join('')}</div>` : ''}
-    <div id="param-corps"></div></div>`);
-  document.querySelectorAll('[data-onglet]').forEach((b) => b.addEventListener('click', () => { S.ongletParam = b.dataset.onglet; pageParametres().catch(erreur); }));
-  await corps[S.ongletParam]($('#param-corps'));
+  const corbeille = admin || peut('consulter_finances', 'saisir_ecritures', 'gerer_membres', 'gerer_activites', 'gerer_materiel', 'demander_depenses');
+  return [
+    ['Mon compte', [
+      ['compte', 'Profil et fiche de membre', 'personne', 'Nom affiché, ma fiche, ma cotisation', paramCompte, true],
+      ['securite', 'Mot de passe et session', 'cadenas', 'Changer le mot de passe, se déconnecter', paramSecurite, true],
+      ['notifications', 'Notifications', 'cloche', 'Pastilles et alertes du navigateur', paramNotifications, true]]],
+    ['Association', [
+      ['association', 'Identité et coordonnées', 'association', 'Nom, sigle, objet, adresse, RNA, SIRET', paramAssociation, admin],
+      ['apparence', 'Logo et bannière', 'image', 'Logo, photo de l’accueil', paramApparence, admin],
+      ['exercices', 'Exercices', 'exercice', 'Créer, clôturer ou rouvrir un exercice', paramExercices, admin]]],
+    ['Finances', [
+      ['comptes', 'Comptes et soldes de départ', 'compte', 'Banque, caisse, livret', paramComptes, admin],
+      ['categories', 'Catégories', 'categorie', 'Recettes et dépenses', paramCategories, admin],
+      ['regles', 'Cotisations et dépenses', 'cotisations', 'Montant, périodicité, délais, seuils', paramMontants, admin]]],
+    ['Accès', [
+      ['personnes', 'Personnes et invitations', 'acces', 'Qui a accès, avec quel rôle', paramPersonnes, admin],
+      ['roles', 'Rôles et droits', 'roles', 'Ce que chaque rôle peut faire', paramRoles, admin]]],
+    ['Données', [
+      ['corbeille', 'Corbeille', 'corbeille', 'Éléments supprimés, à restaurer', paramCorbeille, corbeille],
+      ['sauvegarde', 'Sauvegarde', 'donnees', 'Télécharger toutes les données', paramSauvegarde, admin],
+      ['assistant', 'Assistant de configuration', 'assistant', 'Reprendre la configuration pas à pas', paramAssistant, admin]]],
+  ].map(([g, l]) => [g, l.filter((x) => x[5])]).filter(([, l]) => l.length);
+}
+async function pageParametres() {
+  const groupes = sectionsParametres();
+  const toutes = groupes.flatMap(([, l]) => l);
+  const large = window.matchMedia('(min-width: 900px)').matches;
+  if (S.ongletParam && !toutes.some((x) => x[0] === S.ongletParam)) S.ongletParam = null;
+  if (!S.ongletParam && large) S.ongletParam = 'compte';
+  const choisie = toutes.find((x) => x[0] === S.ongletParam);
+  rendre(`<div class="page page-param ${choisie ? 'avec-section' : ''}">
+    <div class="param-grille">
+      <nav class="param-menu carte" aria-label="Sections des paramètres">
+        <h1>Paramètres</h1>
+        ${groupes.map(([g, l]) => `<div class="param-groupe"><span class="param-groupe-titre">${g}</span>
+          ${l.map(([k, t, ic, d]) => `<a href="#parametres" class="param-lien" data-section="${k}" ${k === S.ongletParam ? 'aria-current="page"' : ''}>
+            <span class="param-icone">${icone(ic)}</span><span class="param-texte"><b>${t}</b><small>${d}</small></span>${icone('suivant', 16)}</a>`).join('')}</div>`).join('')}
+      </nav>
+      <section class="param-contenu" aria-live="polite">
+        ${choisie ? `<div class="param-entete"><button class="btn-texte btn-petit param-retour" type="button">${icone('precedent', 16)} Paramètres</button>
+          <h2>${choisie[1]}</h2><p class="muted">${choisie[3]}</p></div><div id="param-corps" class="anime-entree"></div>` : ''}
+      </section></div></div>`);
+  document.querySelectorAll('.param-lien[data-section]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); S.ongletParam = a.dataset.section; pageParametres().then(() => window.scrollTo(0, 0)).catch(erreur); }));
+  $('.param-retour')?.addEventListener('click', () => { S.ongletParam = null; pageParametres().catch(erreur); });
+  if (choisie) await choisie[4]($('#param-corps'));
 }
 
 // Mon compte : nom affiché, fiche de membre rattachée, mot de passe, déconnexion
@@ -1781,21 +2173,9 @@ async function paramCompte(zone) {
       ${fiche ? `<div class="identite">${avatar(fiche)}<div><b>${esc(nomComplet(fiche))}</b><span class="muted">${fiche.naissance_jour} ${MOIS[fiche.naissance_mois - 1]}${fiche.profession ? ' · ' + esc(fiche.profession) : ''}</span></div></div>
         <div class="actions-gauche">${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-ma-fiche">Modifier ma fiche</button>' : ''}<a class="btn btn-texte btn-petit" href="#cotisations">Ma cotisation</a></div>`
       : peut('gerer_membres') ? `<p class="muted" style="margin:0">Aucune fiche rattachée à votre compte.</p>
-        <div class="actions-gauche"><button class="btn-primaire btn-petit" id="b-creer-fiche">Créer ma fiche</button></div>
+        <div class="actions-gauche"><button class="btn-primaire btn-petit" id="b-remplir-fiche">Remplir ma fiche</button></div>
         ${libres.length ? `<label class="champ">Ou rattacher une fiche existante<select id="s-rattacher"><option value="">Choisir un membre</option>${libres.map((m) => `<option value="${m.id}">${esc(nomComplet(m))}</option>`).join('')}</select></label>` : ''}`
-      : '<p class="muted" style="margin:0">Aucune fiche rattachée à votre compte. Le trésorier peut la rattacher.</p>'}
-    </section>
-    <section class="carte">
-      <h2>Mot de passe</h2>
-      <form id="f-mdp2" class="champs">
-        <label class="champ">Nouveau mot de passe (8 caractères minimum)<input type="password" name="mdp" minlength="8" autocomplete="new-password" required></label>
-        <button class="btn-tonal btn-petit" style="align-self:flex-end">Modifier</button>
-      </form>
-    </section>
-    <section class="carte carte-sortie">
-      <h2>Session</h2>
-      <p class="muted" style="margin:0">Connecté avec ${esc(email)}</p>
-      <button class="btn-sortie" id="b-deconnexion">Se déconnecter</button>
+      : '<p class="muted" style="margin:0">Aucune fiche rattachée à votre compte.</p><div class="actions-gauche"><button class="btn-primaire btn-petit" id="b-remplir-fiche">Remplir ma fiche</button></div>'}
     </section>
   </div>`;
   $('#f-nom', zone).addEventListener('submit', async (e) => {
@@ -1803,14 +2183,8 @@ async function paramCompte(zone) {
     try { await q(sb.rpc('modifier_mon_nom', { p_nom: e.target.nom.value })); S.profil.nom = e.target.nom.value.trim(); toast('Nom enregistré'); paramCompte(zone); }
     catch (err) { erreur(err); }
   });
-  $('#f-mdp2', zone).addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try { await q(sb.auth.updateUser({ password: e.target.mdp.value })); e.target.reset(); toast('Mot de passe modifié'); }
-    catch (err) { erreur(err); }
-  });
-  $('#b-deconnexion', zone).addEventListener('click', () => sb.auth.signOut());
   $('#b-ma-fiche', zone)?.addEventListener('click', () => feuilleMembre(fiche, { apres: () => router() }));
-  $('#b-creer-fiche', zone)?.addEventListener('click', () => feuilleMembre(null, { lierAMoi: true, apres: () => router() }));
+  $('#b-remplir-fiche', zone)?.addEventListener('click', () => feuilleMaFiche());
   $('#s-rattacher', zone)?.addEventListener('change', async (e) => {
     if (!e.target.value) return;
     try { await lierProfil(S.profil.id, e.target.value); toast('Fiche rattachée'); router(); } catch (err) { erreur(err); }
@@ -1825,11 +2199,70 @@ async function lierProfil(profilId, memberId) {
   await chargerAcces();
 }
 
+// Mot de passe et session
+async function paramSecurite(zone) {
+  const email = S.session?.user?.email || '';
+  zone.innerHTML = `<div class="grille grille-2">
+    <form id="f-mdp2" class="carte champs" autocomplete="on"><h3>Changer le mot de passe</h3>
+      <input type="email" name="email" value="${esc(email)}" autocomplete="username" hidden>
+      ${champMotDePasse('mdp', 'Nouveau mot de passe (8 caractères minimum)', 'new-password')}
+      ${champMotDePasse('mdp2', 'Confirmez', 'new-password')}
+      <button class="btn-primaire" style="align-self:flex-end">Enregistrer</button></form>
+    <section class="carte carte-sortie"><h3>Session</h3>
+      <p class="muted" style="margin:0">Connecté avec <b>${esc(email)}</b>${resterConnecte() ? ', session gardée sur cet appareil' : ', session fermée à la fermeture du navigateur'}.</p>
+      <button class="btn-sortie" id="b-deconnexion">Se déconnecter</button></section></div>`;
+  brancherYeux(zone);
+  const f = $('#f-mdp2', zone);
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (f.mdp.value !== f.mdp2.value) return toast('Les deux mots de passe sont différents');
+    try { await q(sb.auth.updateUser({ password: f.mdp.value })); await memoriserIdentifiants(f); f.reset(); toast('Mot de passe modifié'); } catch (err) { erreur(err); }
+  });
+  $('#b-deconnexion', zone).addEventListener('click', () => sb.auth.signOut());
+}
+
+// Notifications : pastilles sur les onglets (toujours) et alertes du navigateur (sur demande)
+async function paramNotifications(zone) {
+  const n = window.Notification;
+  const etat = !n ? 'non prises en charge par ce navigateur' : n.permission === 'granted' ? 'activées' : n.permission === 'denied' ? 'bloquées (à autoriser dans les réglages du navigateur)' : 'désactivées';
+  zone.innerHTML = `<div class="grille grille-2">
+    <section class="carte"><h3>Pastilles</h3><p class="muted" style="margin:0">Un chiffre apparaît sur un onglet quand quelque chose vous attend ou est nouveau depuis votre dernière visite : demande à valider ou à payer, opération saisie par un autre, rendez-vous ajouté, participation demandée, nouveau membre. La cloche les rassemble.</p>
+      <button class="btn-tonal btn-petit b-cloche-param" style="align-self:flex-start">Voir les nouveautés</button></section>
+    <section class="carte"><h3>Alertes du navigateur</h3><p class="muted" style="margin:0">Une alerte s’affiche quand une nouveauté arrive alors que la page est ouverte en arrière-plan. Actuellement&nbsp;: <b>${etat}</b>.</p>
+      ${n && n.permission === 'default' ? '<button class="btn-primaire btn-petit" id="b-notif" style="align-self:flex-start">Activer les alertes</button>' : ''}
+      <p class="muted" style="margin:0">Sur Android, l’application affiche les mêmes pastilles et une notification du téléphone.</p></section></div>`;
+  $('.b-cloche-param', zone).addEventListener('click', feuilleNouveautes);
+  $('#b-notif', zone)?.addEventListener('click', async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Alertes activées' : 'Alertes refusées'); paramNotifications(zone); });
+}
+
+// Identité et coordonnées de l'association (reprises sur les documents)
 async function paramAssociation(zone) {
+  const o = S.org || {};
+  const champ = (k, l, attrs = '') => `<label class="champ">${l}<input name="${k}" value="${esc(o[k] || '')}" ${attrs}></label>`;
+  zone.innerHTML = `<form class="carte champs" id="f-ident">
+    <div class="champs champs-2">${champ('nom', '<span class="obligatoire">Nom</span>', 'required maxlength="80"')}${champ('sigle', 'Sigle', 'maxlength="20"')}</div>
+    <label class="champ">Objet<textarea name="objet" rows="2" maxlength="300">${esc(o.objet || '')}</textarea></label>
+    <div class="champs champs-2">${champ('date_creation', 'Date de création', 'type="date"')}${champ('rna', 'N° RNA', 'maxlength="12" placeholder="W381000000"')}
+      ${champ('siret', 'SIRET', 'inputmode="numeric" maxlength="17"')}${champ('site_web', 'Site internet', 'type="url" placeholder="https://"')}</div>
+    <h3>Coordonnées</h3>
+    ${champ('adresse', 'Adresse', 'autocomplete="street-address"')}
+    <div class="champs champs-2">${champ('code_postal', 'Code postal', 'inputmode="numeric" maxlength="10"')}${champ('ville', 'Ville')}
+      ${champ('email', 'E-mail', 'type="email"')}${champ('telephone', 'Téléphone', 'type="tel"')}</div>
+    <button class="btn-primaire" style="align-self:flex-end">Enregistrer</button></form>`;
+  const f = $('#f-ident', zone);
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const maj = Object.fromEntries(['nom', 'sigle', 'objet', 'date_creation', 'rna', 'siret', 'site_web', 'adresse', 'code_postal', 'ville', 'email', 'telephone'].map((k) => [k, f[k].value.trim() || null]));
+      await q(sb.from('organisation').update(maj).eq('id', 1)); await chargerOrganisation(); toast('Association enregistrée'); router();
+    } catch (err) { erreur(err); }
+  });
+}
+
+async function paramApparence(zone) {
   zone.innerHTML = `<form class="carte" id="f-org" style="max-width:560px">
     <div style="display:flex;align-items:center;gap:16px"><img id="apercu-logo" src="${esc(S.logoUrl)}" alt="Logo" style="width:72px;height:72px;border-radius:50%;object-fit:cover">
       <label class="btn btn-tonal btn-petit">Changer le logo<input type="file" name="logo" accept="image/*" hidden></label></div>
-    <label class="champ"><span class="obligatoire">Nom</span><input name="nom" value="${esc(S.org?.nom)}" required maxlength="80"></label>
     <div class="champ"><span>Photo de la bannière d’accueil</span>
       <div id="apercu-banniere" class="apercu-banniere" style="${S.banniereUrl ? `background-image:url('${esc(S.banniereUrl)}')` : ''}">${S.banniereUrl ? '' : '<span class="muted">Aucune photo. Format paysage conseillé, au moins 1600&nbsp;pixels de large.</span>'}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><label class="btn btn-tonal btn-petit">${S.banniereUrl ? 'Changer la photo' : 'Choisir une photo'}<input type="file" name="banniere" accept="image/*" hidden></label>
@@ -1853,7 +2286,7 @@ async function paramAssociation(zone) {
   fo.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const maj = { nom: fo.nom.value.trim() };
+      const maj = {};
       if (logoBlob) {
         const chemin = `logo-${Date.now()}.jpg`;
         await q(sb.storage.from('logos').upload(chemin, logoBlob, { contentType: 'image/jpeg' }));
@@ -1864,51 +2297,51 @@ async function paramAssociation(zone) {
         await q(sb.storage.from('logos').upload(chemin, banniereBlob, { contentType: 'image/jpeg' }));
         maj.banniere_path = chemin;
       } else if (retirerBanniere) maj.banniere_path = null;
+      if (!Object.keys(maj).length) return toast('Choisissez d’abord un logo ou une photo');
       await q(sb.from('organisation').update(maj).eq('id', 1));
       await chargerOrganisation(); toast('Association enregistrée'); router();
     } catch (err) { erreur(err); }
   });
 }
 
-async function paramFinances(zone) {
-  const comptes = await q(sb.from('accounts').select('*').order('nom'));
-  zone.innerHTML = `<div class="grille grille-2">
-    <form class="carte" id="f-montants"><h2>Montants et délais</h2>
-      <div class="champs champs-2"><label class="champ">Cotisation (€ par période)<input name="cotisation_montant" type="number" step="0.01" min="0" value="${esc(S.settings.cotisation_montant)}"></label>
+// Cotisations et dépenses : montants, délais, seuils, informations de paiement
+async function paramMontants(zone) {
+  zone.innerHTML = `<form class="carte champs" id="f-montants">
+      <h3>Cotisation</h3>
+      <div class="champs champs-2"><label class="champ">Montant (€ par période)<input name="cotisation_montant" type="number" step="0.01" min="0" value="${esc(S.settings.cotisation_montant)}"></label>
       <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
-      <label class="champ">Délai du justificatif (jours après paiement)<input name="delai_justificatif_jours" type="number" min="1" max="90" value="${esc(S.settings.delai_justificatif_jours)}"></label>
-      <label class="champ">Justification obligatoire à partir de (€)<input name="seuil_justification" type="number" min="0" step="1" value="${esc(S.settings.seuil_justification ?? 100)}"></label>
-      <label class="champ">Alerte budget (%)<input name="seuil_alerte_budget_pct" type="number" min="1" max="200" value="${esc(S.settings.seuil_alerte_budget_pct ?? 90)}"></label>
       <label class="champ">Comment régler (affiché aux membres)<textarea name="infos_paiement" rows="3" maxlength="400" placeholder="Virement : IBAN FR76…&#10;Espèces : auprès du trésorier après le culte">${esc(S.textes?.infos_paiement || '')}</textarea></label>
-      <button class="btn-primaire" style="align-self:flex-end">Enregistrer</button></form>
-    <form class="carte" id="f-soldes"><h2>Comptes et soldes de départ</h2>
-      ${comptes.map((c) => `<div class="ligne-compte"><label class="champ" style="flex:1">${esc(c.nom)} (€)<input type="number" step="0.01" name="c-${c.id}" value="${Number(c.solde_initial || 0).toFixed(2)}"></label>
-        <label class="case"><input type="checkbox" name="a-${c.id}" ${c.actif ? 'checked' : ''}> Actif</label></div>`).join('')}
-      <div class="actions"><button type="button" class="btn-texte" id="b-compte">Ajouter un compte</button><button class="btn-primaire">Enregistrer</button></div></form>
-    <section class="carte" style="grid-column:1/-1"><h2>Catégories</h2>
-      <div class="grille grille-2">${['recette', 'depense'].map((sens) => `<div><h3>${sens === 'recette' ? 'Recettes' : 'Dépenses'}</h3>
-        <div class="filtres">${S.categories.filter((c) => c.sens === sens).map((c) => `<span class="puce puce-neutre">${esc(c.nom)}</span>`).join('')}</div></div>`).join('')}</div>
-      <form id="f-cat" class="filtres">
-        <input name="nom" required maxlength="60" placeholder="Nouvelle catégorie" aria-label="Nom de la catégorie">
-        <select name="sens" aria-label="Type"><option value="depense">Dépense</option><option value="recette">Recette</option></select>
-        <button class="btn-tonal btn-petit">Ajouter</button></form></section></div>`;
+      <h3>Demandes de dépense et budget</h3>
+      <div class="champs champs-2"><label class="champ">Délai du justificatif (jours après paiement)<input name="delai_justificatif_jours" type="number" min="1" max="90" value="${esc(S.settings.delai_justificatif_jours)}"></label>
+      <label class="champ">Justification obligatoire à partir de (€)<input name="seuil_justification" type="number" min="0" step="1" value="${esc(S.settings.seuil_justification ?? 100)}"></label>
+      <label class="champ">Alerte budget (% du prévu)<input name="seuil_alerte_budget_pct" type="number" min="1" max="200" value="${esc(S.settings.seuil_alerte_budget_pct ?? 90)}"></label></div>
+      <button class="btn-primaire" style="align-self:flex-end">Enregistrer</button></form>`;
   const fm = $('#f-montants', zone);
   fm.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
       for (const cle of ['cotisation_montant', 'cotisation_periode_mois', 'delai_justificatif_jours', 'seuil_alerte_budget_pct', 'seuil_justification']) {
-        await q(sb.from('settings').update({ valeur: Number(fm[cle].value) }).eq('cle', cle));
+        if (Number(fm[cle].value) === Number(S.settings[cle])) continue;
+        const n = await q(sb.from('settings').update({ valeur: Number(fm[cle].value) }).eq('cle', cle).select());
+        if (!n?.length) await q(sb.from('settings').insert({ cle, valeur: Number(fm[cle].value) }));
         S.settings[cle] = Number(fm[cle].value);
       }
-      const infos = fm.infos_paiement.value.trim() || null;
-      if (infos !== (S.textes?.infos_paiement || null)) {
-        const n = await q(sb.from('settings').update({ texte: infos }).eq('cle', 'infos_paiement').select());
-        if (!n?.length) await q(sb.from('settings').insert({ cle: 'infos_paiement', texte: infos, description: 'Comment régler sa cotisation' }));
-        S.textes = { ...S.textes, infos_paiement: infos };
-      }
+      await enregistrerTexteReglage('infos_paiement', fm.infos_paiement.value.trim() || null, 'Comment régler sa cotisation');
       toast('Paramètres enregistrés');
     } catch (err) { erreur(err); }
   });
+}
+
+// Comptes : solde de départ, actif ; ajout ; suppression réversible d'un compte jamais utilisé
+async function paramComptes(zone) {
+  const comptes = await q(sb.from('accounts').select('*').order('nom'));
+  zone.innerHTML = `<form class="carte champs" id="f-soldes">
+      ${comptes.map((c) => `<div class="ligne-compte"><span class="param-icone">${icone(c.type === 'caisse' ? 'caisse' : 'banque')}</span>
+        <label class="champ" style="flex:1">${esc(c.nom)} · solde de départ (€)<input type="number" step="0.01" name="c-${c.id}" value="${Number(c.solde_initial || 0).toFixed(2)}"></label>
+        <label class="case"><input type="checkbox" name="a-${c.id}" ${c.actif ? 'checked' : ''}> Actif</label>
+        <button type="button" class="btn-icone" data-suppr-compte="${c.id}" aria-label="Supprimer ${esc(c.nom)}" title="Supprimer">${icone('corbeille')}</button></div>`).join('')}
+      <div class="actions"><button type="button" class="btn-texte" id="b-compte">Ajouter un compte</button><button class="btn-primaire">Enregistrer</button></div></form>
+    <p class="muted">Un compte déjà utilisé ne se supprime pas : décochez «&nbsp;Actif&nbsp;» pour le masquer.</p>`;
   const fs = $('#f-soldes', zone);
   fs.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1921,6 +2354,10 @@ async function paramFinances(zone) {
       toast('Comptes enregistrés');
     } catch (err) { erreur(err); }
   });
+  zone.querySelectorAll('[data-suppr-compte]').forEach((b) => b.addEventListener('click', () => {
+    const c = comptes.find((x) => x.id === b.dataset.supprCompte);
+    supprimerAvecConfirmation('accounts', c.id, c.nom, async () => { S.comptes = await q(sb.from('accounts').select('*').eq('actif', true).order('nom')); paramComptes(zone); });
+  }));
   $('#b-compte', zone).addEventListener('click', () => ouvrirFeuille(`<form id="f-cpt" class="champs"><h2>Nouveau compte</h2>
     <label class="champ"><span class="obligatoire">Nom</span><input name="nom" required maxlength="60" placeholder="Livret A"></label>
     <div class="champs champs-2"><label class="champ">Type<select name="type"><option value="banque">Banque</option><option value="caisse">Caisse</option></select></label>
@@ -1933,20 +2370,178 @@ async function paramFinances(zone) {
       try {
         await q(sb.from('accounts').insert({ nom: f.nom.value.trim(), type: f.type.value, solde_initial: Number(f.solde.value || 0) }));
         S.comptes = await q(sb.from('accounts').select('*').eq('actif', true).order('nom'));
-        fermerFeuille(); toast('Compte ajouté'); pageParametres();
+        fermerFeuille(); toast('Compte ajouté'); paramComptes(zone);
       } catch (err) { erreur(err); }
     });
   }));
-  const fc = $('#f-cat', zone);
-  fc.addEventListener('submit', async (e) => {
+}
+
+// Catégories : ajout, renommage, suppression réversible si jamais utilisée (les catégories internes de virement sont fixes)
+async function paramCategories(zone) {
+  zone.innerHTML = `<div class="grille grille-2">${['recette', 'depense'].map((sens) => `<section class="carte"><h3>${sens === 'recette' ? 'Recettes (ressources)' : 'Dépenses (emplois)'}</h3>
+      <ul class="liste liste-compacte">${S.categories.filter((c) => c.sens === sens).map((c) => `<li><div class="corps"><b>${esc(c.nom)}</b></div>
+        <button class="btn-icone" data-renommer-cat="${c.id}" aria-label="Renommer ${esc(c.nom)}" title="Renommer">${icone('ecritures')}</button>
+        <button class="btn-icone" data-suppr-cat="${c.id}" aria-label="Supprimer ${esc(c.nom)}" title="Supprimer">${icone('corbeille')}</button></li>`).join('')}</ul>
+      <form class="filtres f-cat" data-sens="${sens}"><input name="nom" required maxlength="60" placeholder="Nouvelle catégorie" aria-label="Nouvelle catégorie de ${sens === 'recette' ? 'recette' : 'dépense'}">
+        <button class="btn-tonal btn-petit">Ajouter</button></form></section>`).join('')}</div>
+    <p class="muted">Une catégorie déjà utilisée par une opération ou une demande ne se supprime pas ; renommez-la si besoin.</p>`;
+  const recharger = async () => { S.categoriesToutes = await q(sb.from('categories').select('*').order('nom')); S.categories = S.categoriesToutes.filter((c) => !c.interne); paramCategories(zone); };
+  zone.querySelectorAll('.f-cat').forEach((fc) => fc.addEventListener('submit', async (e) => {
     e.preventDefault();
-    try {
-      await q(sb.from('categories').insert({ nom: fc.nom.value.trim(), sens: fc.sens.value }));
-      S.categoriesToutes = await q(sb.from('categories').select('*').order('nom'));
-      S.categories = S.categoriesToutes.filter((c) => !c.interne);
-      toast('Catégorie ajoutée'); pageParametres();
-    } catch (err) { erreur(err); }
+    try { await q(sb.from('categories').insert({ nom: fc.nom.value.trim(), sens: fc.dataset.sens })); toast('Catégorie ajoutée'); recharger(); } catch (err) { erreur(err); }
+  }));
+  zone.querySelectorAll('[data-suppr-cat]').forEach((b) => b.addEventListener('click', () => {
+    const c = S.categories.find((x) => x.id === b.dataset.supprCat); supprimerAvecConfirmation('categories', c.id, c.nom, recharger);
+  }));
+  zone.querySelectorAll('[data-renommer-cat]').forEach((b) => b.addEventListener('click', () => {
+    const c = S.categories.find((x) => x.id === b.dataset.renommerCat);
+    ouvrirFeuille(`<form id="f-ren" class="champs"><h2>Renommer la catégorie</h2><label class="champ">Nom<input name="nom" value="${esc(c.nom)}" required maxlength="60"></label>
+      <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div></form>`, (root) => {
+      $('#b-annuler', root).addEventListener('click', fermerFeuille);
+      $('#f-ren', root).addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { await q(sb.from('categories').update({ nom: e.target.nom.value.trim() }).eq('id', c.id)); fermerFeuille(); toast('Catégorie renommée'); recharger(); } catch (err) { erreur(err); }
+      });
+    });
+  }));
+}
+
+// ---------- Exercices ----------
+// Statut : en cours (contient aujourd'hui), à venir, terminé (à clôturer), clôturé (verrouillé)
+const exerciceClos = (d) => (S.exercices || []).some((e) => e.cloture && d >= e.debut && d <= e.fin);
+const statutExercice = (e) => (e.cloture ? ['puce-neutre', 'Clôturé'] : e.debut > aujourdhui() ? ['puce-neutre', 'À venir'] : e.fin < aujourdhui() ? ['puce-partiel', 'À clôturer'] : ['puce-ok', 'En cours']);
+const exerciceCourant = () => (S.exercices || []).find((e) => e.debut <= aujourdhui() && e.fin >= aujourdhui()) || null;
+async function paramExercices(zone) {
+  S.exercices = await q(sb.from('exercices').select('*').order('debut', { ascending: false }));
+  zone.innerHTML = `<section class="carte">
+    <div class="page-titre" style="margin:0"><p class="muted" style="flex:1;margin:0">L’exercice regroupe 12 mois de comptes. Une fois clôturé, ses opérations ne peuvent plus être ajoutées, modifiées ni supprimées (il peut être rouvert).</p>
+      <button class="btn-primaire btn-petit" id="b-exercice">Nouvel exercice</button></div>
+    <ul class="liste">${S.exercices.map((e) => { const [c, l] = statutExercice(e); return `<li><span class="param-icone">${icone('exercice')}</span>
+      <div class="corps"><b>${esc(e.libelle)}</b><span>${dateFr(e.debut)} au ${dateFr(e.fin)}${e.cloture_le ? ' · clôturé le ' + dateFr(String(e.cloture_le).slice(0, 10)) : ''}</span></div>
+      <span class="puce ${c}">${l}</span>
+      <div class="actions-ligne">${e.cloture ? `<button class="btn-texte btn-petit" data-rouvrir="${e.id}">Rouvrir</button>`
+        : `<button class="btn-texte btn-petit" data-modifier-ex="${e.id}">Modifier</button><button class="btn-tonal btn-petit" data-cloturer="${e.id}">Clôturer</button>
+           <button class="btn-icone" data-suppr-ex="${e.id}" aria-label="Supprimer ${esc(e.libelle)}" title="Supprimer">${icone('corbeille')}</button>`}</div></li>`; }).join('')
+      || '<li class="muted">Aucun exercice. Créez le premier.</li>'}</ul></section>`;
+  const recharger = async () => { S.exercices = await q(sb.from('exercices').select('*').order('debut', { ascending: false })); paramExercices(zone); };
+  $('#b-exercice', zone).addEventListener('click', () => feuilleExercice(null, recharger));
+  zone.querySelectorAll('[data-modifier-ex]').forEach((b) => b.addEventListener('click', () => feuilleExercice(S.exercices.find((e) => e.id === b.dataset.modifierEx), recharger)));
+  zone.querySelectorAll('[data-suppr-ex]').forEach((b) => b.addEventListener('click', () => {
+    const e = S.exercices.find((x) => x.id === b.dataset.supprEx); supprimerAvecConfirmation('exercices', e.id, e.libelle, recharger);
+  }));
+  zone.querySelectorAll('[data-rouvrir]').forEach((b) => b.addEventListener('click', () => {
+    const e = S.exercices.find((x) => x.id === b.dataset.rouvrir);
+    confirmer(`Rouvrir ${esc(e.libelle)}&#8239;?`, 'Les opérations de la période pourront de nouveau être modifiées. La réouverture est tracée.', 'Rouvrir', async () => {
+      await q(sb.from('exercices').update({ cloture: false }).eq('id', e.id)); toast('Exercice rouvert'); recharger();
+    });
+  }));
+  zone.querySelectorAll('[data-cloturer]').forEach((b) => b.addEventListener('click', async () => {
+    const e = S.exercices.find((x) => x.id === b.dataset.cloturer);
+    // Points de contrôle avant clôture : opérations bancaires non rapprochées, demandes non soldées
+    const [txs, dem] = await Promise.all([
+      q(sb.from('transactions').select('*').gte('date_op', e.debut).lte('date_op', e.fin)), q(sb.from('expense_requests').select('*')),
+    ]);
+    const banques = new Set((S.comptes || []).filter((c) => c.type === 'banque').map((c) => c.id));
+    const nonRappr = txs.filter((t) => banques.has(t.account_id) && !t.reconciliation_id).length;
+    const ouvertes = dem.filter((d) => ['soumise', 'validee', 'payee'].includes(d.statut) && String(d.created_at).slice(0, 10) <= e.fin).length;
+    const points = [[nonRappr === 0, nonRappr ? `${nonRappr} opération${nonRappr > 1 ? 's' : ''} bancaire${nonRappr > 1 ? 's' : ''} non rapprochée${nonRappr > 1 ? 's' : ''}` : 'Opérations bancaires rapprochées'],
+      [ouvertes === 0, ouvertes ? `${ouvertes} demande${ouvertes > 1 ? 's' : ''} de dépense non soldée${ouvertes > 1 ? 's' : ''} (à valider, à payer ou sans justificatif)` : 'Demandes de dépense soldées'],
+      [e.fin < aujourdhui(), e.fin < aujourdhui() ? 'Période terminée' : `L’exercice n’est pas terminé (fin le ${dateFr(e.fin)})`]];
+    confirmer(`Clôturer ${esc(e.libelle)}&#8239;?`, `<ul class="liste liste-compacte">${points.map(([ok, t]) => `<li><span class="puce ${ok ? 'puce-ok' : 'puce-partiel'}">${ok ? 'OK' : 'À voir'}</span><div class="corps">${t}</div></li>`).join('')}</ul>
+      <p class="muted">Pensez à imprimer le rapport annuel (Rapports) avant de clôturer. L’exercice pourra être rouvert si besoin.</p>`, 'Clôturer', async () => {
+      await q(sb.from('exercices').update({ cloture: true }).eq('id', e.id)); toast('Exercice clôturé'); recharger();
+    });
+  }));
+}
+function feuilleExercice(e, apres) {
+  const dernier = (S.exercices || [])[0];
+  const suivant = dernier ? exerciceDe(isoLocal(new Date(new Date(dernier.fin + 'T12:00:00').getTime() + 864e5))) : exerciceDe(`${new Date().getFullYear()}-01-01`);
+  const v = e || suivant;
+  ouvrirFeuille(`<form id="f-ex" class="champs"><h2>${e ? 'Modifier l’exercice' : 'Nouvel exercice'}</h2>
+    <div class="champs champs-2"><label class="champ"><span class="obligatoire">Début</span><input type="date" name="debut" value="${esc(v.debut)}" required></label>
+      <label class="champ"><span class="obligatoire">Fin</span><input type="date" name="fin" value="${esc(v.fin)}" required></label></div>
+    <label class="champ"><span class="obligatoire">Nom</span><input name="libelle" value="${esc(v.libelle)}" required maxlength="40"></label>
+    <p class="muted">En général 12 mois ; le premier exercice peut être plus court ou plus long.</p>
+    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div></form>`, (root) => {
+    const f = $('#f-ex', root);
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    if (!e) f.debut.addEventListener('change', () => { if (!f.debut.value) return; const x = exerciceDe(f.debut.value); f.fin.value = x.fin; f.libelle.value = x.libelle; });
+    f.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const d = { libelle: f.libelle.value.trim(), debut: f.debut.value, fin: f.fin.value };
+      if (d.fin <= d.debut) return toast('La fin doit être après le début');
+      try { if (e) await q(sb.from('exercices').update(d).eq('id', e.id)); else await q(sb.from('exercices').insert(d)); fermerFeuille(); toast(e ? 'Exercice modifié' : 'Exercice créé'); apres(); }
+      catch (err) { erreur(err); }
+    });
   });
+}
+
+// ---------- Corbeille : tout ce qui a été supprimé, restaurable ----------
+const TYPES_CORBEILLE = { transactions: 'Opération', members: 'Membre', tiers: 'Tiers', projects: 'Rendez-vous', collectes: 'Collecte', materiel: 'Matériel',
+  categories: 'Catégorie', accounts: 'Compte', budgets: 'Ligne de budget', expense_requests: 'Demande', exercices: 'Exercice' };
+async function paramCorbeille(zone) {
+  const l = await q(sb.from('corbeille').select('*').order('supprime_le', { ascending: false }));
+  const nom = (id) => (S.profils || []).find((p) => p.id === id)?.nom || (id === S.profil.id ? S.profil.nom : 'un membre du bureau');
+  const enAttente = l.filter((x) => !x.restaure_le), restaures = l.filter((x) => x.restaure_le);
+  const ligne = (x) => `<li><span class="puce puce-neutre">${TYPES_CORBEILLE[x.table_nom] || x.table_nom}</span>
+    <div class="corps"><b>${esc(x.libelle)}</b><span>Supprimé le ${dateFr(String(x.supprime_le).slice(0, 10))} par ${esc(nom(x.supprime_par))}${x.motif ? ' · ' + esc(x.motif) : ''}${x.restaure_le ? ` · restauré le ${dateFr(String(x.restaure_le).slice(0, 10))}` : ''}</span></div>
+    ${x.restaure_le ? '<span class="puce puce-ok">Restauré</span>' : `<button class="btn-tonal btn-petit" data-restaurer="${x.id}">${icone('restaurer', 16)} Restaurer</button>`}</li>`;
+  zone.innerHTML = `<section class="carte"><p class="muted" style="margin:0">Un élément supprimé n’est jamais perdu : il reste ici avec ses pièces jointes et ses liens, et «&nbsp;Restaurer&nbsp;» le remet exactement en place. Chaque suppression et chaque restauration est tracée.</p>
+    ${enAttente.length ? `<ul class="liste">${enAttente.map(ligne).join('')}</ul>` : `<div class="vide">${icone('corbeille', 32)}<p>La corbeille est vide.</p></div>`}</section>
+    ${restaures.length ? `<details class="carte"><summary>Déjà restaurés (${restaures.length})</summary><ul class="liste">${restaures.map(ligne).join('')}</ul></details>` : ''}`;
+  zone.querySelectorAll('[data-restaurer]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await q(sb.rpc('restaurer', { p_id: b.dataset.restaurer })); await chargerReferentiels(); toast('Élément restauré'); paramCorbeille(zone); chargerNouveautes(); }
+    catch (err) { b.disabled = false; erreur(err); }
+  }));
+}
+
+async function paramSauvegarde(zone) {
+  zone.innerHTML = `<section class="carte"><p class="muted" style="margin:0">Toutes les données (association, membres, opérations, demandes, budget, matériel, exercices, corbeille) dans un fichier à conserver hors ligne, au moins à chaque clôture d’exercice. Les pièces jointes s’archivent depuis Rapports (archive des pièces).</p>
+    <button class="btn-primaire" id="b-sauvegarde" style="align-self:flex-start">${icone('donnees')} Télécharger la sauvegarde</button></section>`;
+  $('#b-sauvegarde', zone).addEventListener('click', () => sauvegarder().catch(erreur));
+}
+async function paramAssistant(zone) {
+  zone.innerHTML = `<section class="carte"><p class="muted" style="margin:0">L’assistant reprend pas à pas : identité de l’association, coordonnées, exercice, comptes et soldes de départ, cotisation. Les informations déjà saisies sont conservées.</p>
+    <button class="btn-primaire" id="b-assistant" style="align-self:flex-start">${icone('assistant')} Lancer l’assistant</button></section>`;
+  $('#b-assistant', zone).addEventListener('click', () => assistantConfiguration(0).catch(erreur));
+}
+
+// ---------- Suppression réversible (corbeille) ----------
+function confirmer(titre, texte, bouton, action, { danger = false } = {}) {
+  ouvrirFeuille(`<h2>${titre}</h2><div>${texte}</div>
+    <div class="actions"><button class="btn-texte" id="b-non">Annuler</button><button class="${danger ? 'btn-danger' : 'btn-primaire'}" id="b-oui">${bouton}</button></div>`, (root) => {
+    $('#b-non', root).addEventListener('click', fermerFeuille);
+    $('#b-oui', root).addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await action(); fermerFeuille(); } catch (err) { e.target.disabled = false; erreur(err); }
+    });
+  });
+}
+// Demande le motif, supprime (copie dans la corbeille), propose « Annuler » aussitôt
+function supprimerAvecConfirmation(table, id, libelle, apres = () => router()) {
+  ouvrirFeuille(`<form id="f-suppr" class="champs"><h2>Supprimer «&nbsp;${esc(libelle)}&nbsp;»&#8239;?</h2>
+    <p class="muted" style="margin:0">L’élément part dans la corbeille (Paramètres, Corbeille) avec ses pièces jointes ; il peut être restauré à tout moment.</p>
+    <label class="champ">Motif (facultatif)<input name="motif" maxlength="120" placeholder="Doublon, erreur de saisie…"></label>
+    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-danger">${icone('corbeille', 16)} Supprimer</button></div></form>`, (root) => {
+    const f = $('#f-suppr', root);
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const b = f.querySelector('.btn-danger'); b.disabled = true;
+      try {
+        const idCorbeille = await q(sb.rpc('supprimer', { p_table: table, p_id: id, p_motif: f.motif.value || null }));
+        fermerFeuille(); await apres();
+        toastAnnuler('Supprimé, placé dans la corbeille', async () => { await q(sb.rpc('restaurer', { p_id: idCorbeille })); await apres(); toast('Restauré'); });
+      } catch (err) { b.disabled = false; erreur(err); }
+    });
+  });
+}
+// Message avec bouton « Annuler » pendant quelques secondes
+function toastAnnuler(msg, annuler) {
+  const t = $('#toast'); t.innerHTML = `<span>${esc(msg)}</span><button class="btn-texte btn-petit" id="b-toast-annuler">Annuler</button>`; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 7000);
+  $('#b-toast-annuler').addEventListener('click', async () => { t.hidden = true; try { await annuler(); } catch (e) { erreur(e); } }, { once: true });
 }
 
 // Matrice rôles × droits : chaque case active ou retire un droit pour tout le rôle
@@ -2280,6 +2875,7 @@ async function pageDepenses() {
     if (aRegulariser(d) && peut('saisir_ecritures') && !op.rapproche) actions.push(`<button class="btn-primaire" data-regulariser="${d.id}">Régulariser</button>`);
     if (d.statut === 'payee' && !annul && (peut('payer_depenses', 'saisir_ecritures') || d.demandeur === S.profil.id)) actions.push(`<button class="btn-tonal" data-justifier="${d.id}">Joindre le justificatif</button>`);
     if (d.statut === 'soumise' && d.demandeur === S.profil.id) actions.push(`<button class="btn-texte" data-annuler="${d.id}">Annuler la demande</button>`);
+    if (['annulee', 'refusee', 'brouillon'].includes(d.statut) && !op && (d.demandeur === S.profil.id || peut('administrer'))) actions.push(`<button class="btn-texte btn-texte-danger" data-suppr-dem="${d.id}">${icone('corbeille', 16)} Supprimer</button>`);
     return `<article class="carte">
       <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
         <div style="flex:1;min-width:180px"><h3 style="font-size:18px">${esc(d.objet)}</h3>
@@ -2323,6 +2919,7 @@ async function pageDepenses() {
   document.querySelectorAll('[data-justifier]').forEach((b) => b.addEventListener('click', () => feuilleJustifier(trouver(b.dataset.justifier), recharger)));
   document.querySelectorAll('[data-regulariser]').forEach((b) => b.addEventListener('click', () => { const d = trouver(b.dataset.regulariser); feuilleRegulariser(d, opDe[d.id], recharger); }));
   document.querySelectorAll('[data-voir-op]').forEach((b) => b.addEventListener('click', () => { S.ouvrirOperation = b.dataset.voirOp; location.hash = '#ecritures'; }));
+  document.querySelectorAll('[data-suppr-dem]').forEach((b) => b.addEventListener('click', () => { const d = trouver(b.dataset.supprDem); supprimerAvecConfirmation('expense_requests', d.id, d.objet, recharger); }));
   document.querySelectorAll('[data-annuler]').forEach((b) => b.addEventListener('click', () => {
     const d = trouver(b.dataset.annuler);
     ouvrirFeuille(`<h2>Annuler cette demande&#8239;?</h2><p>«&nbsp;${esc(d.objet)}&nbsp;», ${eur(d.montant)}</p>
@@ -2522,9 +3119,12 @@ async function detailEvenement(e, recharger) {
       ${e.collecte_id && peut('consulter_finances', 'gerer_cotisations') ? '<button class="btn-texte" id="b-part">Voir les participations</button>' : ''}
       ${e.type === 'activite' && peut('consulter_finances', 'gerer_budget') ? '<a class="btn btn-texte" href="#budget">Voir le budget</a>' : ''}
       ${!e.collecte_id && peut('gerer_activites') ? '<button class="btn-texte" id="b-demander">Demander une participation</button>' : ''}
-      ${peut('gerer_activites') ? '<button class="btn-tonal" id="b-modif">Modifier</button>' : ''}
+      ${peut('gerer_activites') ? `<button class="btn-texte btn-texte-danger" id="b-suppr-evt">${icone('corbeille', 16)} Supprimer</button><button class="btn-tonal" id="b-modif">Modifier</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#b-suppr-evt', root)?.addEventListener('click', () => supprimerAvecConfirmation('projects', e.id, e.nom, async () => {
+      S.projets = await q(sb.from('projects').select('*').order('date_debut', { ascending: false })); recharger();
+    }));
     $('#b-modif', root)?.addEventListener('click', async () => {
       const p = (await q(sb.from('projects').select('*').eq('id', e.id)))[0] || e;
       feuilleActivite(p, recharger);
@@ -2697,14 +3297,16 @@ async function pageRapports() {
   const an = new Date().getFullYear(), moisCourant = new Date().getMonth();
   const DOCS = documentsExport();
   const options = (l, choisi) => l.map(([v, t]) => `<option value="${v}" ${String(v) === String(choisi) ? 'selected' : ''}>${t}</option>`).join('');
-  const annees = [an, an - 1, an - 2].map((a2) => [a2, a2]);
+  // Exercices déclarés (Paramètres, Exercices) : intitulé et dates exactes ; sinon l'année civile
+  const exDe = (a2) => (S.exercices || []).find((e) => Number(e.debut.slice(0, 4)) === Number(a2));
+  const annees = [an, an - 1, an - 2].map((a2) => [a2, exDe(a2) ? `${exDe(a2).libelle} (${dateFr(exDe(a2).debut)} – ${dateFr(exDe(a2).fin)})` : a2]);
   rendre(`<div class="page"><h1>Rapports et exports</h1>
     <section class="carte export-carte">
       <form id="f-export" class="champs">
         <label class="champ">Document<select name="doc">${options(DOCS.map(([k, l]) => [k, l]), 'rapport')}</select></label>
         <div class="champs champs-2" id="z-periode">
           <label class="champ" id="l-type">Période<select name="type">${options([['annee', 'Exercice complet'], ['mois', 'Un mois'], ['trimestre', 'Un trimestre'], ['libre', 'Du… au…']], 'annee')}</select></label>
-          <label class="champ" id="l-annee">Année<select name="annee">${options(annees, an)}</select></label>
+          <label class="champ" id="l-annee">Exercice<select name="annee">${options(annees, an)}</select></label>
           <label class="champ" id="l-mois" hidden>Mois<select name="mois">${options(MOIS_LONGS.map((m, i) => [i, majuscule(m)]), moisCourant)}</select></label>
           <label class="champ" id="l-trim" hidden>Trimestre<select name="trim">${options([[0, '1er trimestre (janv. à mars)'], [1, '2e trimestre (avr. à juin)'], [2, '3e trimestre (juil. à sept.)'], [3, '4e trimestre (oct. à déc.)']], Math.floor(moisCourant / 3))}</select></label>
           <label class="champ" id="l-du" hidden>Du<input type="date" name="du" value="${aujourdhui().slice(0, 8)}01"></label>
@@ -2723,7 +3325,7 @@ async function pageRapports() {
   // Période choisie : [début, fin, intitulé]
   const periode = () => {
     const a2 = Number(fo.annee.value), t = fo.type.value, doc = DOCS.find((d) => d[0] === fo.doc.value);
-    if (doc[3] !== 'libre' || t === 'annee') return [`${a2}-01-01`, `${a2}-12-31`, `exercice ${a2}`];
+    if (doc[3] !== 'libre' || t === 'annee') { const ex = exDe(a2); return ex ? [ex.debut, ex.fin, ex.libelle.replace(/^E/, 'e')] : [`${a2}-01-01`, `${a2}-12-31`, `exercice ${a2}`]; }
     if (t === 'mois') { const m = Number(fo.mois.value); return [isoLocal(new Date(a2, m, 1, 12)), isoLocal(new Date(a2, m + 1, 0, 12)), `${MOIS_LONGS[m]} ${a2}`]; }
     if (t === 'trimestre') { const tr = Number(fo.trim.value); return [isoLocal(new Date(a2, tr * 3, 1, 12)), isoLocal(new Date(a2, tr * 3 + 3, 0, 12)), `${tr === 0 ? '1er' : tr + 1 + 'e'} trimestre ${a2}`]; }
     return [fo.du.value, fo.au.value, `période du ${dateFr(fo.du.value)} au ${dateFr(fo.au.value)}`];
@@ -2802,7 +3404,7 @@ async function exporter(type, an, du = `${an}-01-01`, au = `${an}-12-31`) {
 }
 
 async function sauvegarder() {
-  const tables = ['organisation', 'settings', 'accounts', 'categories', 'projects', 'budgets', 'members', 'cotisations', 'tiers', 'collectes', 'collecte_membres', 'transactions', 'expense_requests', 'attachments', 'reconciliations', 'profiles', 'invitations', 'materiel', 'materiel_mouvements'];
+  const tables = ['organisation', 'settings', 'exercices', 'accounts', 'categories', 'projects', 'budgets', 'members', 'cotisations', 'tiers', 'collectes', 'collecte_membres', 'transactions', 'expense_requests', 'attachments', 'reconciliations', 'profiles', 'invitations', 'materiel', 'materiel_mouvements', 'corbeille'];
   const donnees = { format: 'tresorerie-jp-v1', exporte_le: new Date().toISOString() };
   for (const t of tables) donnees[t] = await q(sb.from(t).select('*'));
   const a = document.createElement('a');
@@ -3353,7 +3955,7 @@ async function pageBudget() {
   document.querySelectorAll('[data-cat]').forEach((i) => i.addEventListener('change', async () => {
     const v = Number(String(i.value).replace(',', '.')) || 0;
     try {
-      if (i.dataset.ligne && v === 0) await q(sb.from('budgets').delete().eq('id', i.dataset.ligne));
+      if (i.dataset.ligne && v === 0) await q(sb.rpc('supprimer', { p_table: 'budgets', p_id: i.dataset.ligne, p_motif: 'Prévu remis à zéro' }));
       else if (i.dataset.ligne) await q(sb.from('budgets').update({ montant_prevu: v }).eq('id', i.dataset.ligne));
       else if (v > 0) await q(sb.from('budgets').insert({ annee: an, category_id: i.dataset.cat, project_id: null, montant_prevu: v, seuil_alerte_pct: Number(S.settings.seuil_alerte_budget_pct ?? 90) }));
       toast('Budget enregistré'); recharger();
@@ -3369,7 +3971,10 @@ async function pageBudget() {
   $('#b-ligne-act')?.addEventListener('click', () => feuilleLigneBudget(an, recharger));
   document.querySelectorAll('[data-prevoir]').forEach((b) => b.addEventListener('click', () => feuilleLigneBudget(an, recharger, b.dataset.prevoir)));
   document.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', async () => {
-    try { await q(sb.from('budgets').delete().eq('id', b.dataset.retirer)); toast('Ligne retirée'); recharger(); } catch (e) { erreur(e); }
+    try {
+      const id = await q(sb.rpc('supprimer', { p_table: 'budgets', p_id: b.dataset.retirer, p_motif: 'Retirée du budget' })); recharger();
+      toastAnnuler('Ligne retirée', async () => { await q(sb.rpc('restaurer', { p_id: id })); recharger(); });
+    } catch (e) { erreur(e); }
   }));
 }
 
@@ -3434,6 +4039,13 @@ const filigrane = () => `<img class="filigrane" src="${esc(S.logoUrl)}" alt="" a
 const preferencePlanning = (cle, def) => { try { return localStorage.getItem(cle) || def; } catch { return def; } };
 const garderPreference = (cle, v) => { try { localStorage.setItem(cle, v); } catch { /* stockage indisponible */ } };
 
+// Couleurs des rendez-vous : chaque rendez-vous garde sa couleur (même calcul sur Android : somme des codes de l'identifiant)
+const EVT_PALETTE = [['#FFE1D6', '#8A2A06', '#C23E10'], ['#D7ECFA', '#0B4A73', '#1B77B0'], ['#DDF3E2', '#145C2C', '#2E8B4E'], ['#EBE3FA', '#4A2C86', '#7048B8'],
+  ['#FCE0EC', '#86184A', '#C2367A'], ['#D4F1F0', '#0D5653', '#1B8A85'], ['#FFF0C7', '#6B4A00', '#C58A00']];
+const couleurEvt = (e) => EVT_PALETTE[[...String(e?.id || '')].reduce((t, c) => t + c.charCodeAt(0), 0) % EVT_PALETTE.length];
+const styleEvt = (e) => { const [f, t, a] = couleurEvt(e); return `--evt-fond:${f};--evt-texte:${t};--evt-accent:${a}`; };
+const dansJours = (d) => { const j = Math.round((dateDe(d) - dateDe(aujourdhui())) / 864e5); return j < 0 ? 'En cours' : j === 0 ? 'Aujourd’hui' : j === 1 ? 'Demain' : `Dans ${j} jours`; };
+
 async function pageActivites() {
   const P = (S.planning = S.planning || { vue: preferencePlanning('vuePlanning2', 'calendrier'), affichage: preferencePlanning('affichagePlanning', 'mois'), ref: isoLocal(new Date()) });
   if (!['calendrier', 'avenir'].includes(P.vue)) P.vue = 'calendrier';
@@ -3458,31 +4070,33 @@ async function pageActivites() {
   });
   const annivDe = (s) => { const d = dateDe(s); return anniv.flat().filter((a) => a.mois === d.getMonth() + 1 && a.jour === d.getDate()); };
   const auj = isoLocal(new Date());
-  const puce = (e) => `<button class="evt" data-evt="${e.id}">${e.heure_debut ? `<small>${String(e.heure_debut).slice(0, 5)}</small> ` : ''}${esc(e.nom)}</button>`;
-  const ligneEvt = (e) => `<button class="agenda-evt" data-evt="${e.id}"><b>${esc(e.nom)}</b><span>${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Toute la journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}</span>${e.participation ? `<span class="puce puce-partiel">Participation ${eur(e.participation)}</span>` : ''}</button>`;
+  const puce = (e) => `<button class="evt" data-evt="${e.id}" style="${styleEvt(e)}">${e.heure_debut ? `<small>${String(e.heure_debut).slice(0, 5)}</small> ` : ''}${esc(e.nom)}</button>`;
+  const ligneEvt = (e) => `<button class="agenda-evt" data-evt="${e.id}" style="${styleEvt(e)}"><b>${esc(e.nom)}</b><span>${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Toute la journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}</span>${e.participation ? `<span class="puce puce-partiel">Participation ${eur(e.participation)}</span>` : ''}</button>`;
   let corps = '';
   if (P.vue === 'avenir') {
     const groupes = {};
     evts.filter((e) => (e.date_fin || e.date_debut) >= auj).forEach((e) => { (groupes[e.date_debut.slice(0, 7)] = groupes[e.date_debut.slice(0, 7)] || []).push(e); });
-    corps = Object.keys(groupes).length ? Object.entries(groupes).map(([m, l]) => `<section class="carte"><h2>${majuscule(MOIS[Number(m.slice(5, 7)) - 1])} ${m.slice(0, 4)}</h2>
-      <ul class="liste agenda">${l.map((e) => `<li class="agenda-jour ${e.date_debut === auj ? 'auj' : ''}"><span class="agenda-date"><b>${Number(e.date_debut.slice(8))}</b><span>${JOURS_COURTS[(dateDe(e.date_debut).getDay() + 6) % 7]}</span></span>
+    corps = Object.keys(groupes).length ? Object.entries(groupes).map(([m, l]) => `<section class="carte carte-mois" style="--mois:${EVT_PALETTE[(Number(m.slice(5, 7)) - 1) % EVT_PALETTE.length][2]}"><h2>${majuscule(MOIS[Number(m.slice(5, 7)) - 1])} ${m.slice(0, 4)}</h2>
+      <ul class="liste agenda">${l.map((e) => `<li class="agenda-jour ${e.date_debut === auj ? 'auj' : ''}" style="${styleEvt(e)}"><span class="agenda-date"><b>${Number(e.date_debut.slice(8))}</b><span>${JOURS_COURTS[(dateDe(e.date_debut).getDay() + 6) % 7]}</span></span>
         <div class="corps">${ligneEvt(e)}${e.date_fin && e.date_fin !== e.date_debut ? `<span class="muted">Jusqu’au ${esc(jourLong(e.date_fin))}</span>` : ''}</div></li>`).join('')}</ul></section>`).join('')
       : `<div class="carte vide">Aucun rendez-vous prévu.${peut('gerer_activites') ? '<button class="btn-primaire" id="b-evt-vide">Ajouter un rendez-vous</button>' : ''}</div>`;
   } else if (P.affichage === 'mois') {
     const cases = [];
     for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) cases.push(isoLocal(d));
-    corps = `<div class="cal">${filigrane()}<div class="cal-tete">${JOURS_COURTS.map((j) => `<span>${j}</span>`).join('')}</div>
-      <div class="cal-grille">${cases.map((s) => {
+    const nbMois = evts.filter((e) => dateDe(e.date_debut).getMonth() === ref.getMonth()).length;
+    corps = `<div class="cal cal-anime ${P.sens || ''}">${filigrane()}<div class="cal-resume"><b>${nbMois}</b> rendez-vous ce mois${anniv.flat().filter((a) => a.mois === ref.getMonth() + 1).length ? ` · <b>${anniv.flat().filter((a) => a.mois === ref.getMonth() + 1).length}</b> anniversaire${anniv.flat().filter((a) => a.mois === ref.getMonth() + 1).length > 1 ? 's' : ''}` : ''}</div>
+      <div class="cal-tete">${JOURS_COURTS.map((j, i) => `<span class="${i > 4 ? 'we' : ''}">${j}</span>`).join('')}</div>
+      <div class="cal-grille">${cases.map((s, i) => {
         const e = parJour[s] || [], a = annivDe(s), horsMois = dateDe(s).getMonth() !== ref.getMonth();
-        return `<div class="cal-jour ${horsMois ? 'hors' : ''} ${s === auj ? 'auj' : ''}" data-jour="${s}" tabindex="0" role="button" aria-label="${jourLong(s)}${e.length ? ', ' + e.length + ' rendez-vous' : ''}">
+        return `<div class="cal-jour ${horsMois ? 'hors' : ''} ${s === auj ? 'auj' : ''} ${i % 7 > 4 ? 'we' : ''} ${e.length ? 'occupe' : ''} ${a.length ? 'avec-anniv' : ''}" data-jour="${s}" tabindex="0" role="button" style="--i:${i}" aria-label="${jourLong(s)}${e.length ? ', ' + e.length + ' rendez-vous' : ''}">
           <span class="num-jour">${Number(s.slice(8))}</span>${e.slice(0, 3).map(puce).join('')}${e.length > 3 ? `<small class="muted">+${e.length - 3}</small>` : ''}
           ${a.length ? `<small class="anniv" title="Anniversaire : ${esc(a.map((x) => x.prenom).join(', '))}">${esc(a.map((x) => x.prenom).join(', '))}</small>` : ''}</div>`;
       }).join('')}</div></div>
-      <div class="legende muted"><span><i class="pastille-legende leg-evt"></i>Rendez-vous</span><span><i class="pastille-legende leg-anniv"></i>Anniversaire</span><span>Touchez un jour pour le détail</span></div>`;
+      <div class="legende muted"><span><i class="pastille-legende leg-evt"></i>Rendez-vous (une couleur chacun)</span><span><i class="pastille-legende leg-anniv"></i>Anniversaire</span><span><i class="pastille-legende leg-auj"></i>Aujourd’hui</span><span>Touchez un jour pour le détail</span></div>`;
   } else {
     const jours = [];
     for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) jours.push(isoLocal(d));
-    corps = `<section class="carte cal-semaine">${filigrane()}<ul class="liste agenda">${jours.map((s) => `<li class="agenda-jour ${s === auj ? 'auj' : ''}">
+    corps = `<section class="carte cal-semaine cal-anime ${P.sens || ''}">${filigrane()}<ul class="liste agenda">${jours.map((s, i) => `<li class="agenda-jour ${s === auj ? 'auj' : ''} ${i > 4 ? 'we' : ''}">
       <button class="agenda-date" data-jour="${s}"><b>${Number(s.slice(8))}</b><span>${JOURS_COURTS[(dateDe(s).getDay() + 6) % 7]}</span></button>
       <div class="corps">${(parJour[s] || []).map(ligneEvt).join('')}
         ${annivDe(s).map((a) => `<span class="anniv">Anniversaire de ${esc(a.prenom)} ${esc(a.nom)}</span>`).join('')}
@@ -3491,21 +4105,32 @@ async function pageActivites() {
   rendre(`<div class="page">
     <div class="page-titre"><h1>Planning</h1></div>
     <div class="onglets" role="tablist">${[['calendrier', 'Calendrier'], ['avenir', 'À venir']].map(([k, l]) => `<button role="tab" aria-selected="${P.vue === k}" data-vue="${k}">${l}</button>`).join('')}</div>
-    ${P.vue === 'calendrier' ? `<div class="filtres cal-nav">
-      <div class="groupe groupe-compact" role="group" aria-label="Affichage">${[['mois', 'Mois'], ['semaine', 'Semaine']].map(([k, l]) => `<button type="button" data-affichage="${k}" aria-pressed="${P.affichage === k}">${l}</button>`).join('')}</div>
-      <button class="btn-texte btn-petit" id="b-prec" aria-label="Précédent" title="Précédent">${icone('precedent')}</button><h2 style="margin:0;flex:1;text-align:center">${esc(titre)}</h2><button class="btn-texte btn-petit" id="b-suiv" aria-label="Suivant" title="Suivant">${icone('suivant')}</button>
-      <button class="btn-tonal btn-petit" id="b-auj">Aujourd’hui</button></div>` : '<p class="muted" style="margin:0">Les rendez-vous des douze prochains mois.</p>'}
+    ${P.vue === 'calendrier' ? `<div class="cal-bandeau" style="--mois:${EVT_PALETTE[ref.getMonth() % EVT_PALETTE.length][2]}">
+      <button class="cal-fleche" id="b-prec" aria-label="Précédent" title="Précédent">${icone('precedent')}</button>
+      <div class="cal-titre"><h2>${esc(titre)}</h2></div>
+      <button class="cal-fleche" id="b-suiv" aria-label="Suivant" title="Suivant">${icone('suivant')}</button></div>
+      <div class="filtres cal-nav"><div class="groupe groupe-compact" role="group" aria-label="Affichage">${[['mois', 'Mois'], ['semaine', 'Semaine']].map(([k, l]) => `<button type="button" data-affichage="${k}" aria-pressed="${P.affichage === k}">${l}</button>`).join('')}</div>
+      <span style="flex:1"></span><button class="btn-tonal btn-petit" id="b-auj">Aujourd’hui</button></div>` : '<p class="muted" style="margin:0">Les rendez-vous des douze prochains mois.</p>'}
     ${corps}
     ${peut('gerer_activites') ? `<button class="fab" id="b-evt" aria-label="Nouveau rendez-vous" title="Nouveau rendez-vous"></button>` : ''}
   </div>`);
   const recharger = () => pageActivites().catch(erreur);
+  // Glisser à gauche ou à droite sur le calendrier pour changer de mois (téléphone)
+  const zoneCal = $('.cal, .cal-semaine');
+  if (zoneCal) {
+    let x0 = null;
+    zoneCal.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+    zoneCal.addEventListener('touchend', (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 60) decalerPlanning(dx < 0 ? 1 : -1); }, { passive: true });
+  }
   document.querySelectorAll('[data-vue]').forEach((b) => b.addEventListener('click', () => { P.vue = b.dataset.vue; garderPreference('vuePlanning2', P.vue); recharger(); }));
   document.querySelectorAll('[data-affichage]').forEach((b) => b.addEventListener('click', () => { P.affichage = b.dataset.affichage; garderPreference('affichagePlanning', P.affichage); recharger(); }));
-  const decaler = (n) => {
+  const decaler = decalerPlanning;
+  function decalerPlanning(n) {
     const d = dateDe(P.ref);
     P.ref = P.affichage === 'mois' ? isoLocal(new Date(d.getFullYear(), d.getMonth() + n, 1, 12)) : isoLocal(ajouterJours(d, n * 7));
-    recharger();
-  };
+    P.sens = n > 0 ? 'vers-gauche' : 'vers-droite';   // le mois suivant arrive par la droite
+    recharger().then(() => { P.sens = ''; });
+  }
   $('#b-prec')?.addEventListener('click', () => decaler(-1));
   $('#b-suiv')?.addEventListener('click', () => decaler(1));
   $('#b-auj')?.addEventListener('click', () => { P.ref = isoLocal(new Date()); recharger(); });
@@ -3617,10 +4242,12 @@ async function ficheMateriel(x, apres) {
       ${gere && !x.sorti_le ? `${x.detenteur_id ? '<button class="btn-tonal" id="b-retour">Récupéré</button>' : '<button class="btn-tonal" id="b-preter">Confier à un membre</button>'}
         <button class="btn-tonal" id="b-verifie">Vérifié</button>
         <button class="btn-texte" id="b-modifier">Modifier</button><button class="btn-texte" id="b-sortir">Sortir</button>` : ''}
+      ${gere ? `<button class="btn-texte btn-texte-danger" id="b-suppr-mat" title="Saisi par erreur : le retirer de la liste (réversible)">${icone('corbeille', 16)} Supprimer</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     const fin = (msg) => { toast(msg); fermerFeuille(); apres(); };
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-modifier', root)?.addEventListener('click', () => feuilleMateriel(x, apres));
+    $('#b-suppr-mat', root)?.addEventListener('click', () => supprimerAvecConfirmation('materiel', x.id, x.designation, apres));
     $('#b-verifie', root)?.addEventListener('click', async () => {
       try { await q(sb.from('materiel').update({ verifie_le: aujourdhui() }).eq('id', x.id)); await mouvement(x.id, 'inventaire'); fin('Vérification enregistrée'); } catch (e) { erreur(e); }
     });

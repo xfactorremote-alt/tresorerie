@@ -3,7 +3,7 @@
 // Les règles de la vraie base (rôles, circuit, rapprochement) sont reproduites pour que
 // la démonstration se comporte comme la version en ligne.
 export const MOT_DE_PASSE = 'Demo2026';
-export const COMPTES_DEMO = [['Trésorier', 'tresorier@demo.jp'], ['Président', 'president@demo.jp'], ['Bureau', 'bureau@demo.jp'], ['Adhérent', 'adherent@demo.jp']];
+export const COMPTES_DEMO = [['Trésorier', 'tresorier@demo.jp'], ['Président', 'president@demo.jp'], ['Bureau', 'bureau@demo.jp'], ['Adhérent', 'adherent@demo.jp'], ['Nouveau membre (sans fiche)', 'nouveau@demo.jp']];
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
 const an = new Date().getFullYear();
 const moisCourant = new Date().getMonth() + 1;
@@ -17,7 +17,7 @@ const DOC_DEMO = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#fff"/><rect x="40" y="40" width="520" height="720" fill="none" stroke="#C23E10" stroke-width="4" rx="24"/><text x="300" y="380" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#1C1B1A">Document de démonstration</text><text x="300" y="420" font-family="sans-serif" font-size="18" text-anchor="middle" fill="#5A5350">Facture, relevé ou signature fictive</text></svg>');
 
 function seed() {
-  const ids = { t: 'u-tresorier', p: 'u-president', b: 'u-bureau', a: 'u-adherent' };
+  const ids = { t: 'u-tresorier', p: 'u-president', b: 'u-bureau', a: 'u-adherent', n: 'u-nouveau' };
   const cat = (nom, sens) => ({ id: uid(), nom, sens, parent_id: null });
   const categories = [
     cat('Cotisations', 'recette'), cat('Dons', 'recette'), cat('Offrandes dédiées', 'recette'), cat('Activités / événements', 'recette'), cat('Autres recettes', 'recette'),
@@ -36,10 +36,11 @@ function seed() {
     ['Déborah', 'Tshibangu', 30, 4, 'Aide-soignante', true], ['Élie', 'Bamba', 14, 9, 'Chauffeur', false],
     ['Naomie', 'Kabongo', 22, 1, null, true], ['Josué', 'Mensah', 1, 6, 'Ingénieur', true],
     ['Jean-Marc', 'Ilunga', 17, 3, 'Enseignant', true], ['Marthe', 'Kalala', 9, 12, 'Secrétaire médicale', true],
+    ['Paul', 'Ndongo', 25, 5, 'Gestionnaire de paie', true],
   ];
   const members = noms.map(([prenom, nom, j, m, profession, consent], i) => ({
     id: 'm' + i, prenom, nom, naissance_jour: j, naissance_mois: m, profession, whatsapp: i % 3 ? '06 12 34 56 7' + i : null,
-    email: null, photo_path: null, consent_anniversaire: consent, date_adhesion: `${an - 1}-09-01`, actif: true, created_at: new Date().toISOString(),
+    email: null, photo_path: null, consent_anniversaire: consent, date_adhesion: `${an - 1}-09-01`, actif: true, created_at: ilYa(i === 8 ? 2 : 300).toISOString(),
   }));
   members[9].date_adhesion = `${an}-03-15`;   // adhésion en cours d'année : cotisations à partir de mars
   // Cotisation mensuelle : une ligne par membre et par mois
@@ -56,7 +57,7 @@ function seed() {
     { id: 'ti3', nom: 'Paroisse Saint-Bruno', type: 'partenaire' }, { id: 'ti4', nom: 'M. et Mme Lefèvre', type: 'donateur' },
   ].map((x) => ({ telephone: null, email: null, notes: null, actif: true, created_at: new Date().toISOString(), ...x }));
   const P = (id, nom, type, debut, heure_debut, heure_fin, lieu, visible, description, fin = debut) =>
-    ({ id, nom, type, date_debut: debut, date_fin: fin, heure_debut, heure_fin, lieu, visible_adherents: visible, description });
+    ({ id, nom, type, date_debut: debut, date_fin: fin, heure_debut, heure_fin, lieu, visible_adherents: visible, description, created_at: ilYa(60).toISOString() });
   const projects = [
     P('p1', 'Sortie des jeunes', 'activite', dansJours(12), '09:00', '18:00', 'Lac de Paladru', true, 'Journée au lac, pique-nique partagé'),
     P('p2', 'Fête de Noël', 'activite', `${an}-12-20`, '17:00', '22:00', 'Salle paroissiale', true, 'Repas partagé et spectacle des enfants'),
@@ -65,6 +66,8 @@ function seed() {
     P('p5', 'Culte des jeunes', 'evenement', dansJours(9), '15:00', '17:00', 'Église', true, null),
     P('p6', 'Répétition de la chorale', 'evenement', dansJours(2), '18:30', '20:00', 'Église', true, null),
   ];
+  projects.find((x) => x.id === 'p6').created_at = ilYa(1).toISOString();   // ajoutés récemment : apparaissent dans « Nouveautés »
+  projects.find((x) => x.id === 'p5').created_at = ilYa(2).toISOString();
   const collectes = [
     { id: 'co1', nom: 'Participation à la sortie des jeunes', project_id: 'p1', montant_attendu: 15, objectif: 300, date_limite: dansJours(10), tous_membres: true, cloturee: false, created_at: ilYa(20).toISOString() },
     { id: 'co2', nom: 'Repas de Noël', project_id: 'p2', montant_attendu: null, objectif: 500, date_limite: `${an}-12-15`, tous_membres: true, cloturee: false, created_at: ilYa(6).toISOString() },
@@ -105,11 +108,14 @@ function seed() {
     if (don) transactions.push(tx(j + 8, 'recette', don, 'Dons', 'Don', 'acc-banque', { tiers_id: 'ti4' }));
     if (k % 3 === 1) transactions.push(tx(j + 10, 'depense', 45 + k * 5, 'Aides et solidarité', 'Aide à une famille', 'acc-caisse'));
   });
+  // vus : dernière visite de chaque onglet (pastilles « nouveau ») ; le compte « nouveau » n'a pas encore de fiche
+  const vu = ilYa(3).toISOString();
   const profiles = [
-    { id: ids.t, nom: 'Paul Ndongo', role: 'tresorier', member_id: null, actif: true },
-    { id: ids.p, nom: 'Jean-Marc Ilunga', role: 'president', member_id: 'm10', actif: true },
-    { id: ids.b, nom: 'Marthe Kalala', role: 'bureau', member_id: 'm11', actif: true },
-    { id: ids.a, nom: 'Grâce Mbala', role: 'adherent', member_id: 'm0', actif: true },
+    { id: ids.t, nom: 'Paul Ndongo', role: 'tresorier', member_id: 'm12', actif: true, created_at: ilYa(400).toISOString(), vus: { ecritures: vu, depenses: vu, activites: vu, membres: vu, cotisations: vu } },
+    { id: ids.p, nom: 'Jean-Marc Ilunga', role: 'president', member_id: 'm10', actif: true, created_at: ilYa(400).toISOString(), vus: { ecritures: vu, depenses: vu, activites: vu, membres: vu, cotisations: vu } },
+    { id: ids.b, nom: 'Marthe Kalala', role: 'bureau', member_id: 'm11', actif: true, created_at: ilYa(400).toISOString(), vus: { ecritures: vu, depenses: vu, activites: ilYa(30).toISOString(), membres: vu, cotisations: vu } },
+    { id: ids.a, nom: 'Grâce Mbala', role: 'adherent', member_id: 'm0', actif: true, created_at: ilYa(400).toISOString(), vus: { activites: ilYa(30).toISOString(), cotisations: ilYa(30).toISOString() } },
+    { id: ids.n, nom: 'nouveau@demo.jp', role: 'adherent', member_id: null, actif: true, created_at: new Date().toISOString(), vus: {} },
   ];
   const dem = (id, demandeur, objet, montant, nomCat, statut, extra = {}) => ({
     id, demandeur, objet, montant, category_id: C(nomCat, 'depense'), project_id: null, account_id: null, statut,
@@ -172,7 +178,14 @@ function seed() {
     ids,
     tables: {
       permissions, roles, role_permissions,
-      organisation: [{ id: 1, nom: 'JP Grenoble', logo_path: null, banniere_path: null, devise: 'EUR' }],
+      organisation: [{ id: 1, nom: 'JP Grenoble', logo_path: null, banniere_path: null, devise: 'EUR', exercice_debut: `${an}-01-01`,
+        sigle: 'JP', objet: 'Rassembler et accompagner les jeunes de tous pays à Grenoble', adresse: '12 rue de la Paix', code_postal: '38000', ville: 'Grenoble',
+        email: 'contact@jp-grenoble.fr', telephone: '06 12 34 56 78', site_web: null, rna: 'W381000000', siret: null, date_creation: '2015-09-01', configuree: true }],
+      exercices: [
+        { id: 'ex1', libelle: `Exercice ${an - 1}`, debut: `${an - 1}-01-01`, fin: `${an - 1}-12-31`, cloture: true, cloture_le: `${an}-02-15T10:00:00Z`, cloture_par: ids.t, created_at: `${an - 1}-01-02T10:00:00Z` },
+        { id: 'ex2', libelle: `Exercice ${an}`, debut: `${an}-01-01`, fin: `${an}-12-31`, cloture: false, cloture_le: null, cloture_par: null, created_at: `${an}-01-02T10:00:00Z` },
+      ],
+      corbeille: [],
       settings: [
         { cle: 'cotisation_montant', valeur: 20 }, { cle: 'cotisation_periode_mois', valeur: 1 },
         { cle: 'delai_justificatif_jours', valeur: 7 }, { cle: 'seuil_alerte_budget_pct', valeur: 90 }, { cle: 'seuil_justification', valeur: 100 },
@@ -188,7 +201,7 @@ function seed() {
 // Droit exigé pour modifier chaque table (comme les règles RLS de la base)
 const DROIT_ECRITURE = {
   members: ['gerer_membres'], budgets: ['gerer_budget'], projects: ['gerer_activites'], cotisations: ['gerer_cotisations'], reconciliations: ['rapprocher'],
-  categories: ['administrer'], accounts: ['administrer'], settings: ['administrer'], organisation: ['administrer'], invitations: ['administrer'],
+  categories: ['administrer'], accounts: ['administrer'], settings: ['administrer'], organisation: ['administrer'], invitations: ['administrer'], exercices: ['administrer'], corbeille: ['__aucun'],
   profiles: ['administrer'], roles: ['administrer'], role_permissions: ['administrer'],
   materiel: ['gerer_materiel'], materiel_mouvements: ['gerer_materiel'], liens_membres: ['gerer_membres', 'gerer_cotisations'],
   tiers: ['saisir_ecritures', 'gerer_cotisations'], collectes: ['gerer_activites', 'gerer_cotisations'], collecte_membres: ['gerer_activites', 'gerer_cotisations'],
@@ -249,6 +262,21 @@ class Requete {
           if (v.est_cotisation && (!v.member_id || v.sens !== 'recette' || v.collecte_id)) throw new Error('violates check constraint "cotisation_d_un_membre"');
           if (v.collecte_id && v.sens !== 'recette') throw new Error('violates check constraint "participation_en_recette"');
         });
+      }
+      // Exercice clôturé : opérations verrouillées (comme le déclencheur lock_exercice)
+      const clos = (dt) => dt && db.tables.exercices.some((e) => e.cloture && dt >= e.debut && dt <= e.fin);
+      if (this.table === 'transactions' && this.op === 'insert' && this.valeur.some((v) => clos(v.date_op))) throw new Error('Exercice clôturé : impossible d’enregistrer à cette date');
+      if (this.table === 'transactions' && ['update', 'delete'].includes(this.op)) {
+        const vis = db.tables.transactions.filter((r) => this.filtres.every((f) => f(r)));
+        if (vis.some((r) => clos(r.date_op)) || (this.op === 'update' && clos(this.valeur.date_op))) throw new Error('Exercice clôturé : opération verrouillée');
+      }
+      if (this.table === 'exercices' && this.op !== 'delete' && this.op !== 'select') {
+        const cibles = this.op === 'insert' ? this.valeur : db.tables.exercices.filter((r) => this.filtres.every((f) => f(r))).map((r) => ({ ...r, ...this.valeur }));
+        cibles.forEach((e) => {
+          if (!(e.fin > e.debut)) throw new Error('violates check constraint exercices_check');
+          if (db.tables.exercices.some((x) => x.id !== e.id && x.debut <= e.fin && x.fin >= e.debut)) throw new Error('Cet exercice chevauche un exercice existant');
+        });
+        if (this.op === 'update' && 'cloture' in this.valeur) Object.assign(this.valeur, this.valeur.cloture ? { cloture_le: new Date().toISOString(), cloture_par: db.moi() } : { cloture_le: null, cloture_par: null });
       }
       if (this.op === 'insert' && this.table === 'tiers' && this.valeur.some((v) => db.tables.tiers.some((x) => x.nom.toLowerCase() === String(v.nom).toLowerCase()))) throw new Error('duplicate key tiers_nom_key');
       let lignes;
@@ -377,6 +405,7 @@ export function createMockClient() {
         materiel: finances || d.has('gerer_materiel') || d.has('voir_membres'), materiel_mouvements: finances || d.has('gerer_materiel') || d.has('voir_membres'),
         liens_membres: d.has('gerer_membres') || d.has('gerer_cotisations'),
       };
+      if (nom === 'corbeille') return t.corbeille.filter((c) => c.supprime_par === db.moi() || d.has('administrer') || finances);
       if (nom in regles && !regles[nom]) return [];
       if (nom === 'members' && !(d.has('voir_membres') || d.has('gerer_membres') || d.has('gerer_cotisations'))) return t.members.filter((m) => m.id === moi?.member_id);
       if (nom === 'cotisations' && !(finances || d.has('gerer_cotisations'))) return t.cotisations.filter((c) => c.member_id === moi?.member_id);
@@ -396,7 +425,7 @@ export function createMockClient() {
   };
 
   return {
-    __setRole(r) { db.session = session(ids[{ tresorier: 't', president: 'p', bureau: 'b', adherent: 'a' }[r]]); },
+    __setRole(r) { db.session = session(ids[{ tresorier: 't', president: 'p', bureau: 'b', adherent: 'a', nouveau: 'n' }[r]]); },
     from: (table) => new Requete(db, table),
     async rpc(nom, args = {}) {
       const t = tables;
@@ -554,6 +583,150 @@ export function createMockClient() {
             return { ...p, participation: c?.montant_attendu ?? null, collecte_id: c?.id ?? null }; })
           .sort((a, b) => ((a.date_debut + (a.heure_debut || '')) > (b.date_debut + (b.heure_debut || '')) ? 1 : -1)));
       }
+      // Corbeille : copie complète puis effacement ; restauration à l'identique (comme supprimer() et restaurer() de la base)
+      if (nom === 'supprimer' || nom === 'restaurer') {
+        const DROITS = { transactions: ['saisir_ecritures'], members: ['gerer_membres'], tiers: ['saisir_ecritures', 'gerer_cotisations'], projects: ['gerer_activites'],
+          collectes: ['gerer_activites', 'gerer_cotisations'], materiel: ['gerer_materiel'], categories: ['administrer'], accounts: ['administrer'], budgets: ['gerer_budget'],
+          expense_requests: null, exercices: ['administrer'] };
+        const peutTable = (tb) => tb in DROITS && (DROITS[tb] === null || DROITS[tb].some((x) => d.has(x)));
+        const clos = (dt) => t.exercices.some((e) => e.cloture && dt >= e.debut && dt <= e.fin);
+        const eur = (m) => Number(m).toFixed(2).replace('.', ',') + ' €';
+        if (nom === 'restaurer') {
+          const c = t.corbeille.find((x) => x.id === args.p_id);
+          if (!c) return ko('Élément introuvable dans la corbeille');
+          if (c.restaure_le) return ko('Élément déjà restauré');
+          if (!peutTable(c.table_nom)) return ko('Droit insuffisant pour restaurer');
+          if (c.table_nom === 'expense_requests' && c.donnees.demandeur !== db.moi() && !d.has('administrer')) return ko('Seul le demandeur restaure sa demande');
+          if (t[c.table_nom].some((x) => x.id === c.ligne_id)) return ko('Restauration impossible : un élément identique existe déjà');
+          t[c.table_nom].push({ ...c.donnees });
+          c.dependances.forEach((x) => t[x.table].push({ ...x.donnees }));
+          c.liens.forEach((l) => { const r = t[l.table].find((x) => x.id === l.id); if (r && r[l.colonne] == null) r[l.colonne] = l.valeur; });
+          Object.assign(c, { restaure_le: new Date().toISOString(), restaure_par: db.moi() });
+          return ok(null);
+        }
+        const tb = args.p_table, id = args.p_id;
+        if (!peutTable(tb)) return ko('Droit insuffisant pour supprimer');
+        const v = t[tb]?.find((x) => x.id === id);
+        if (!v) return ko('Élément introuvable');
+        let lib = tb, dep = [], liens = [];
+        const avec = (table, lignes) => lignes.forEach((x) => dep.push({ table, donnees: { ...x } }));
+        if (tb === 'transactions') {
+          if (v.reconciliation_id) return ko('Opération rapprochée : utilisez la contre-passation');
+          if (clos(v.date_op)) return ko('Exercice clôturé : opération verrouillée');
+          if (t.transactions.some((x) => x.contrepasse_de === id)) return ko('Cette opération a été corrigée : supprimez d’abord la correction');
+          if (v.request_id && !v.contrepasse_de) return ko('Cette opération paie une demande de dépense : utilisez « Régulariser » ou la contre-passation');
+          lib = `${v.libelle} · ${eur(v.montant)}`;
+          if (v.virement) {
+            const autres = t.transactions.filter((x) => x.virement === v.virement && x.id !== id);
+            if (autres.some((x) => x.reconciliation_id)) return ko('Virement rapproché : utilisez « Annuler le virement »');
+            if (autres.some((x) => t.transactions.some((y) => y.contrepasse_de === x.id))) return ko('Virement déjà annulé');
+            avec('transactions', autres); lib = 'Virement interne · ' + lib;
+          }
+          const txIds = [id, ...dep.map((x) => x.donnees.id)];
+          avec('attachments', t.attachments.filter((a) => txIds.includes(a.transaction_id)));
+          t.materiel.filter((x) => x.transaction_id === id).forEach((x) => liens.push({ table: 'materiel', id: x.id, colonne: 'transaction_id', valeur: id }));
+        } else if (tb === 'members') {
+          if (t.transactions.some((x) => x.member_id === id)) return ko('Ce membre a des opérations enregistrées : désactivez-le plutôt (fiche, case Actif)');
+          if (t.profiles.some((p) => p.member_id === id) || t.invitations.some((i) => i.member_id === id)) return ko('Ce membre a un accès ou une invitation à la plateforme : retirez d’abord son accès');
+          lib = `${v.prenom} ${v.nom}`;
+          avec('cotisations', t.cotisations.filter((x) => x.member_id === id)); avec('collecte_membres', t.collecte_membres.filter((x) => x.member_id === id));
+          avec('liens_membres', t.liens_membres.filter((x) => x.member_id === id));
+          t.materiel.filter((x) => x.detenteur_id === id).forEach((x) => liens.push({ table: 'materiel', id: x.id, colonne: 'detenteur_id', valeur: id }));
+        } else if (tb === 'tiers') {
+          if (t.transactions.some((x) => x.tiers_id === id)) return ko('Ce tiers a des opérations enregistrées : désactivez-le plutôt');
+          lib = v.nom;
+        } else if (tb === 'projects') {
+          if (t.transactions.some((x) => x.project_id === id) || t.expense_requests.some((x) => x.project_id === id)) return ko('Des opérations ou des demandes sont rattachées à ce rendez-vous : impossible de le supprimer');
+          lib = v.nom + (v.date_debut ? ' · ' + v.date_debut.split('-').reverse().join('/') : '');
+          avec('budgets', t.budgets.filter((x) => x.project_id === id));
+          t.collectes.filter((x) => x.project_id === id).forEach((x) => liens.push({ table: 'collectes', id: x.id, colonne: 'project_id', valeur: id }));
+        } else if (tb === 'collectes') {
+          if (t.transactions.some((x) => x.collecte_id === id)) return ko('Des participations sont déjà encaissées : clôturez la collecte plutôt');
+          lib = v.nom; avec('collecte_membres', t.collecte_membres.filter((x) => x.collecte_id === id));
+        } else if (tb === 'materiel') {
+          lib = v.designation; avec('materiel_mouvements', t.materiel_mouvements.filter((x) => x.materiel_id === id));
+        } else if (tb === 'categories') {
+          if (v.interne) return ko('Catégorie interne : nécessaire aux virements');
+          if (t.transactions.some((x) => x.category_id === id) || t.expense_requests.some((x) => x.category_id === id)) return ko('Catégorie utilisée : impossible de la supprimer');
+          lib = v.nom; avec('budgets', t.budgets.filter((x) => x.category_id === id));
+        } else if (tb === 'accounts') {
+          if (t.transactions.some((x) => x.account_id === id) || t.reconciliations.some((x) => x.account_id === id)) return ko('Compte utilisé : désactivez-le plutôt');
+          lib = v.nom;
+        } else if (tb === 'budgets') {
+          lib = `Ligne de budget ${v.annee} · ${t.categories.find((c) => c.id === v.category_id)?.nom || ''}`;
+        } else if (tb === 'expense_requests') {
+          if (v.demandeur !== db.moi() && !d.has('administrer')) return ko('Seul le demandeur supprime sa demande');
+          if (t.transactions.some((x) => x.request_id === id)) return ko('Cette demande a été payée : utilisez « Régulariser »');
+          lib = `${v.objet} · ${eur(v.montant)}`; avec('attachments', t.attachments.filter((a) => a.request_id === id));
+        } else if (tb === 'exercices') {
+          if (v.cloture) return ko('Exercice clôturé : rouvrez-le d’abord');
+          lib = v.libelle;
+        }
+        const entree = { id: uid(), table_nom: tb, ligne_id: id, libelle: lib, donnees: { ...v }, dependances: dep, liens, motif: (args.p_motif || '').trim() || null,
+          supprime_par: db.moi(), supprime_le: new Date().toISOString(), restaure_par: null, restaure_le: null };
+        t.corbeille.push(entree);
+        liens.forEach((l) => { const r = t[l.table].find((x) => x.id === l.id); if (r) r[l.colonne] = null; });
+        dep.forEach((x) => { t[x.table] = t[x.table].filter((r) => !(x.table === 'transactions' ? r.id === x.donnees.id : JSON.stringify(r) === JSON.stringify(x.donnees))); });
+        t[tb] = t[tb].filter((x) => x.id !== id);
+        return ok(entree.id);
+      }
+      // Nouveautés : à traiter + nouveau depuis la dernière visite de chaque onglet (comme mes_nouveautes() de la base)
+      if (nom === 'mes_nouveautes') {
+        const p = t.profiles.find((x) => x.id === db.moi() && x.actif);
+        if (!p) return ok({ compteurs: {}, elements: [] });
+        const depuis = (sec) => p.vus?.[sec] || p.created_at || '1970-01-01';
+        const eur = (m) => Number(m).toFixed(2).replace('.', ',') + ' €';
+        const compteurs = {}, elements = [];
+        const maj = (r) => [r.validee_le, r.payee_le].filter(Boolean).sort().pop();
+        const aTraiter = t.expense_requests.filter((r) => (r.statut === 'soumise' && r.demandeur !== p.id && d.has('valider_depenses'))
+          || (r.statut === 'validee' && r.validee_par !== p.id && d.has('payer_depenses')) || (r.demandeur === p.id && (maj(r) || '') > depuis('depenses')));
+        compteurs.depenses = aTraiter.length;
+        aTraiter.forEach((r) => elements.push({ section: 'depenses', titre: r.statut === 'soumise' ? 'À valider' : r.statut === 'validee' ? 'À payer' : 'Demande mise à jour', detail: `${r.objet} · ${eur(r.montant)}`, quand: maj(r) || r.created_at }));
+        if (d.has('consulter_finances') || d.has('saisir_ecritures')) {
+          const l = t.transactions.filter((x) => x.created_at > depuis('ecritures') && x.created_by !== p.id);
+          compteurs.ecritures = l.length;
+          l.forEach((x) => elements.push({ section: 'ecritures', titre: x.sens === 'recette' ? 'Nouvelle recette' : 'Nouvelle dépense', detail: `${x.libelle} · ${eur(x.montant)}`, quand: x.created_at }));
+        }
+        const voitProjet = (x) => x.visible_adherents || d.has('gerer_activites') || d.has('consulter_finances') || d.has('demander_depenses');
+        const pl = t.projects.filter((x) => (x.created_at || '') > depuis('activites') && voitProjet(x));
+        compteurs.activites = pl.length;
+        pl.forEach((x) => elements.push({ section: 'activites', titre: 'Nouveau rendez-vous', detail: x.nom + (x.date_debut ? ' · ' + x.date_debut.slice(8, 10) + '/' + x.date_debut.slice(5, 7) : ''), quand: x.created_at }));
+        if (d.has('voir_membres') || d.has('gerer_membres')) {
+          const ms = t.members.filter((x) => x.created_at > depuis('membres'));
+          compteurs.membres = ms.length;
+          ms.forEach((x) => elements.push({ section: 'membres', titre: 'Nouveau membre', detail: `${x.prenom} ${x.nom}`, quand: x.created_at }));
+        }
+        const gere = d.has('gerer_cotisations') || d.has('consulter_finances');
+        const co = t.collectes.filter((c) => c.created_at > depuis('cotisations') && (gere || (p.member_id && !c.cloturee
+          && (c.tous_membres || t.collecte_membres.some((x) => x.collecte_id === c.id && x.member_id === p.member_id)))));
+        compteurs.cotisations = co.length;
+        co.forEach((c) => elements.push({ section: 'cotisations', titre: 'Participation demandée', detail: c.nom + (c.montant_attendu ? ' · ' + eur(c.montant_attendu) : ''), quand: c.created_at }));
+        return ok({ compteurs, elements: elements.sort((a, b) => (a.quand < b.quand ? 1 : -1)) });
+      }
+      if (nom === 'marquer_vu') {
+        const p = t.profiles.find((x) => x.id === db.moi());
+        if (p) p.vus = { ...(p.vus || {}), [args.p_section]: new Date().toISOString() };
+        return ok(null);
+      }
+      // Le nouveau membre remplit sa fiche : rattachée si elle existe (même e-mail), créée sinon
+      if (nom === 'enregistrer_ma_fiche') {
+        const p = t.profiles.find((x) => x.id === db.moi());
+        if (!p) return ko('Connexion requise');
+        if (!String(args.p_prenom || '').trim() || !String(args.p_nom || '').trim()) return ko('Prénom et nom obligatoires');
+        if (!(args.p_jour >= 1 && args.p_jour <= 31 && args.p_mois >= 1 && args.p_mois <= 12)) return ko('Date de naissance invalide');
+        const email = db.session.user.email;
+        let m = t.members.find((x) => x.id === p.member_id)
+          || t.members.find((x) => x.email && x.email.toLowerCase() === email.toLowerCase() && !t.profiles.some((q) => q.member_id === x.id));
+        const champs = { prenom: args.p_prenom.trim(), nom: args.p_nom.trim(), naissance_jour: args.p_jour, naissance_mois: args.p_mois };
+        if (m) Object.assign(m, champs, { whatsapp: args.p_whatsapp?.trim() || m.whatsapp, profession: args.p_profession?.trim() || m.profession, email: m.email || email, consent_anniversaire: args.p_consent ?? m.consent_anniversaire });
+        else {
+          m = { id: uid(), ...champs, whatsapp: args.p_whatsapp?.trim() || null, profession: args.p_profession?.trim() || null, email, photo_path: null,
+            consent_anniversaire: args.p_consent ?? true, date_adhesion: iso(new Date()), actif: true, created_at: new Date().toISOString() };
+          t.members.push(m);
+        }
+        Object.assign(p, { member_id: m.id, nom: `${m.prenom} ${m.nom}` });
+        return ok(m.id);
+      }
       return ko('Fonction inconnue : ' + nom);
     },
     storage: {
@@ -568,7 +741,7 @@ export function createMockClient() {
     auth: {
       async getSession() { return ok({ session: db.session }); },
       async signInWithPassword({ email, password }) {
-        const cle = { 'tresorier@demo.jp': 't', 'president@demo.jp': 'p', 'bureau@demo.jp': 'b', 'adherent@demo.jp': 'a' }[String(email).toLowerCase()];
+        const cle = { 'tresorier@demo.jp': 't', 'president@demo.jp': 'p', 'bureau@demo.jp': 'b', 'adherent@demo.jp': 'a', 'nouveau@demo.jp': 'n' }[String(email).toLowerCase()];
         if (!cle || password !== MOT_DE_PASSE) return { data: { session: null }, error: { message: 'Invalid login credentials' } };
         db.session = session(ids[cle]); return ok({ session: db.session });
       },
