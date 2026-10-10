@@ -30,6 +30,16 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Cake
+import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.EditCalendar
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.graphics.Brush
+import kotlinx.datetime.daysUntil
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.animation.togetherWith
@@ -58,7 +68,7 @@ private fun nombre(s: String) = s.replace(',', '.').replace(" ", "").replace(NBS
 // deux volets sur tablette, menu puis section sur téléphone (comme le site)
 // =====================================================================
 @Composable
-fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit, onCloche: () -> Unit = {}, onAssistant: () -> Unit = {}) {
+fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit, onAssistant: () -> Unit = {}, onFermer: () -> Unit = {}) {
     var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val toutes = sectionsParametres(d).flatMap { it.second }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -67,7 +77,7 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
         @Composable fun Contenu(c: SectionParam) = when (c.cle) {
             "compte" -> ParamCompte(d, message, recharger)
             "securite" -> ParamSecurite(message)
-            "notifications" -> ParamNotifications(onCloche)
+            "notifications" -> ParamNotifications()
             "association" -> ParamIdentite(d, message, recharger)
             "apparence" -> ParamAssociation(d, message, recharger)
             "exercices" -> ParamExercices(d, message)
@@ -81,22 +91,24 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
             else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
                 item {
                     CarteBlanche {
-                        Text("L’assistant reprend pas à pas : identité de l’association, coordonnées, exercice, comptes et soldes de départ, cotisation. Les informations déjà saisies sont conservées.", color = Couleurs.Texte2)
+                        Text("L’assistant guide pas à pas : identité de l’association, coordonnées, exercice, comptes et soldes de départ, cotisation. Les informations déjà saisies sont conservées.", color = Couleurs.Texte2)
                         Button(onClick = onAssistant) { Text("Lancer l’assistant") }
                     }
                 }
             }
         }
-        if (large) Row(Modifier.fillMaxSize()) {
-            MenuParametres(d, choisie?.cle, { section = it }, Modifier.width(320.dp).fillMaxHeight())
-            VerticalDivider()
-            Column(Modifier.weight(1f)) { choisie?.let { c -> EnteteSection(c, null); Box(Modifier.weight(1f)) { Contenu(c) } } }
-        } else androidx.compose.animation.AnimatedContent(choisie, transitionSpec = {
-            if (targetState != null) (androidx.compose.animation.slideInHorizontally { it / 2 } + androidx.compose.animation.fadeIn()) togetherWith androidx.compose.animation.fadeOut()
-            else (androidx.compose.animation.slideInHorizontally { -it / 2 } + androidx.compose.animation.fadeIn()) togetherWith androidx.compose.animation.fadeOut()
-        }) { c ->
-            if (c == null) MenuParametres(d, null, { section = it }, Modifier.fillMaxSize())
-            else Column(Modifier.fillMaxSize()) { EnteteSection(c) { section = null }; Box(Modifier.weight(1f)) { Contenu(c) } }
+        Column(Modifier.fillMaxSize().background(Color(0xFFEEF1F6))) {
+            BarreParametres(d, if (!large && choisie != null) choisie.titre else "Paramètres", if (!large && choisie != null) ({ section = null }) else null, onFermer)
+            if (large) Row(Modifier.fillMaxSize()) {
+                MenuParametres(d, choisie?.cle, { section = it }, Modifier.width(340.dp).fillMaxHeight())
+                Column(Modifier.weight(1f)) { choisie?.let { c -> EnteteSection(c); Box(Modifier.weight(1f)) { Contenu(c) } } }
+            } else androidx.compose.animation.AnimatedContent(choisie, transitionSpec = {
+                if (targetState != null) (androidx.compose.animation.slideInHorizontally { it / 2 } + androidx.compose.animation.fadeIn()) togetherWith androidx.compose.animation.fadeOut()
+                else (androidx.compose.animation.slideInHorizontally { -it / 2 } + androidx.compose.animation.fadeIn()) togetherWith androidx.compose.animation.fadeOut()
+            }) { c ->
+                if (c == null) MenuParametres(d, null, { section = it }, Modifier.fillMaxSize())
+                else Box(Modifier.fillMaxSize()) { Contenu(c) }
+            }
         }
         RetourSysteme(!large && section != null) { section = null }
     }
@@ -464,6 +476,10 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit) {
     fun nomRole(c: String) = roles.firstOrNull { it.code == c }?.nom ?: c
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            item {
+                Text("Vue d’ensemble des comptes. Pour donner un accès à quelqu’un, ouvrez sa fiche dans Membres, puis « Fonction » : on est d’abord membre, puis on reçoit une fonction.",
+                    color = Couleurs.Texte2, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+            }
             items(profils, key = { it.id }) { p ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Avatar(p.nom.substringBefore(' '), p.nom.substringAfter(' ', ""), taille = 40)
@@ -492,9 +508,6 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit) {
                 }
             }
         }
-        ExtendedFloatingActionButton(onClick = { inviter = true }, containerColor = Couleurs.Jaune, contentColor = Couleurs.SurJaune,
-            icon = { Icon(Icons.Filled.Add, contentDescription = null) }, text = { Text("Inviter") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp))
     }
     if (inviter) {
         var email by remember { mutableStateOf("") }
@@ -694,15 +707,6 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                 }
             }
             item { Text("${membres.count { it.actif }} actifs", color = Couleurs.Texte2, modifier = Modifier.padding(bottom = 8.dp)) }
-            if (sansFiche) item {
-                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Vous n’êtes pas encore dans la liste.", fontWeight = FontWeight.Bold)
-                        Text("On est d’abord membre, puis on reçoit une fonction.", fontSize = 14.sp)
-                        Button(onClick = { maFiche = true }) { Text("Créer ma fiche") }
-                    }
-                }
-            }
             item {
                 OutlinedTextField(recherche, { recherche = it }, label = { Text("Rechercher") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
@@ -1001,14 +1005,9 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
     val docs = buildList {
         add(Quadruple("rapport", "Rapport financier (assemblée générale ou période)", listOf("pdf"), "libre"))
         add(Quadruple("journal", "Journal des opérations", listOf("pdf", "excel"), "libre"))
-        add(Quadruple("cotisations", "État des cotisations", listOf("pdf", "excel"), "annee"))
         add(Quadruple("participations", "Participations aux activités", listOf("excel"), ""))
-        add(Quadruple("budget", "Budget prévu et réalisé", listOf("pdf", "excel"), "annee"))
         add(Quadruple("demandes", "Registre des demandes de dépense", listOf("pdf"), "annee"))
-        if (d.peut("voir_membres", "gerer_membres")) add(Quadruple("membres", "Liste des membres", listOf("pdf", "excel"), ""))
-        add(Quadruple("inventaire", "Inventaire du matériel", listOf("pdf", "excel"), ""))
         add(Quadruple("pieces", "Pièces justificatives (fichier ZIP)", listOf("zip"), "annee"))
-        if (d.peut("administrer")) add(Quadruple("sauvegarde", "Sauvegarde complète des données", listOf("json"), ""))
     }
     var doc by remember { mutableStateOf(docs.first()) }
     var type by remember { mutableStateOf("annee") }
@@ -1238,9 +1237,11 @@ ${if (budgetL.isNotEmpty()) "<h2>Budget $an : réalisé sur prévu</h2><div clas
 // Adhérent : sa cotisation, les anniversaires, le planning
 // =====================================================================
 @Composable
-fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() -> Unit)? = null, onCloche: (() -> Unit)? = null, onPlanning: (() -> Unit)? = null) {
-    // Même accueil que pageTableauAdherent() du site, par ordre d'importance : le prochain rendez-vous (grand, en tête),
-    // ce que je dois (cotisation, participations), puis la suite du planning et les anniversaires. Deux colonnes sur tablette.
+fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() -> Unit)? = null, onCloche: (() -> Unit)? = null) {
+    // Même vue que vueMembre() du site (accueil connecté et lien personnel), par ordre d'importance :
+    // le prochain rendez-vous en grand et en couleur (compte à rebours, « Ajouter à mon agenda »), une alerte seulement
+    // si quelque chose est dû, la suite du planning, puis ma cotisation, comment régler, mes participations, les anniversaires.
+    // Deux colonnes sur tablette et en paysage.
     var cotis by remember { mutableStateOf<List<PeriodeCotisation>>(emptyList()) }
     var parts by remember { mutableStateOf<List<Participation>>(emptyList()) }
     var anniv by remember { mutableStateOf<List<Anniversaire>>(emptyList()) }
@@ -1254,49 +1255,63 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
         try { parts = Repo.mesParticipations() } catch (_: Exception) { }
         try { anniv = Repo.anniversaires(); planning = Repo.planning(aujourdhui().toString()) } catch (_: Exception) { }
         try { pas = (Repo.reglages()["cotisation_periode_mois"] ?: 1.0).toInt(); infos = Repo.texteReglage("infos_paiement") } catch (_: Exception) { }
+        EtatNouveautes.vu("cotisations")
     }
     val mois = aujourdhui().monthNumber
     val prochain = planning.firstOrNull()
-    val suite = planning.drop(1).take(5)
+    val suite = planning.drop(1).take(6)
     val retard = retardDe(cotis)
     val resteParts = parts.filter { (it.montantAttendu ?: 0.0) > 0 && it.donne < it.montantAttendu!! && !it.cloturee }.sumOf { it.montantAttendu!! - it.donne }
-    val jour = aujourdhui().dayOfMonth
-    val prochainAnniv = anniv.filter { it.jour >= jour }.minByOrNull { it.jour }
+    val agenda = { p: Projet -> if (!ajouterAgenda(p.nom, p.debut ?: "", p.heureDebut, p.fin, p.heureFin, p.lieu, p.description)) message("Aucune application d’agenda sur ce téléphone") }
+    val liste = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val du = retard > 0.005 || resteParts > 0.005
 
-    @Composable fun Hero() = HeroRendezVous(prochain, parts.firstOrNull { it.collecteId == prochain?.collecteId }) { prochain?.let { detail = it } }
-    @Composable fun Tuiles() = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Tuile("Ma cotisation", if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour",
-            if (retard > 0.005) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle,
-            if (retard > 0.005) Couleurs.ErreurClair to Couleurs.Erreur else Color(0xFFDDF3E2) to Color(0xFF2E8B4E), alerte = retard > 0.005, modifier = Modifier.weight(1f))
-        Tuile("Participations", if (resteParts > 0) "${euros(resteParts)} à régler" else if (parts.isNotEmpty()) "Rien à régler" else "Aucune demandée",
-            Icons.Outlined.Payments, if (resteParts > 0) Couleurs.OrangeClair to Couleurs.Orange else Color(0xFFEFEDEC) to Couleurs.Texte2, modifier = Modifier.weight(1f))
-        Tuile("Anniversaires", prochainAnniv?.let { "${it.prenom} le ${it.jour}" } ?: if (anniv.isNotEmpty()) "${anniv.size} ce mois" else "Aucun",
-            Icons.Outlined.Cake, Couleurs.JauneClair to Color(0xFF9A6B00), modifier = Modifier.weight(1f))
+    @Composable fun Hero() = Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        HeroRendezVous(prochain, parts.firstOrNull { it.collecteId != null && it.collecteId == prochain?.collecteId }, onAgenda = { prochain?.let(agenda) }) { prochain?.let { detail = it } }
+        if (du) AlerteMembre(listOfNotNull(if (retard > 0.005) "Cotisation : ${euros(retard)} en retard" else null, if (resteParts > 0.005) "Participations : ${euros(resteParts)} à régler" else null).joinToString(" · ")) {
+            scope.launch { liste.animateScrollToItem(4) }   // « Comment régler »
+        }
     }
-    @Composable fun Regler() { if (retard > 0.005 || resteParts > 0) CarteBlanche { Text("Comment régler", fontWeight = FontWeight.Bold); Text(infos ?: "Adressez-vous au trésorier.", fontSize = 14.sp) } }
-    @Composable fun Suite() = Rubrique("avenir", "Ensuite au planning", if (suite.isEmpty()) "" else "${suite.size} rendez-vous") {
-        if (suite.isEmpty()) Text("Rien d’autre de prévu.", color = Couleurs.Texte2)
+    @Composable fun Suite() = CarteBlanche {
+        Text("Ensuite au planning", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (suite.isEmpty()) Text("Rien d’autre d’annoncé pour l’instant.", color = Couleurs.Texte2)
         suite.forEach { p -> LigneRendezVous(p) { detail = p } }
-        onPlanning?.let { TextButton(onClick = it) { Text("Ouvrir le planning") } }
     }
-    @Composable fun Cotisation() = Rubrique("macotisation", "Ma cotisation", if (retard > 0.005) "${euros(retard)} en retard" else "À jour", alerte = retard > 0.005) { BlocMaCotisation(cotis, pas) }
-    @Composable fun Participations() { if (parts.isNotEmpty()) Rubrique("participations", "Mes participations", if (resteParts > 0) "${euros(resteParts)} à régler" else "") { ListeParticipations(parts) } }
-    @Composable fun Anniversaires() = Rubrique("anniversaires", "Anniversaires ${deMois(mois)}", if (anniv.isEmpty()) "Aucun" else "${anniv.size} personne${if (anniv.size > 1) "s" else ""}") { ListeAnniversaires(anniv, mois) }
+    @Composable fun Cotisation() = CarteStatut(retard > 0.005, cotis.isNotEmpty(), "Ma cotisation ${aujourdhui().year}",
+        if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour",
+        if (retard > 0.005) "Périodes commencées et non réglées" else cotis.filter { it.statut == "regle" || it.statut == "dispense" }.maxOfOrNull { it.periode }?.let { "réglée jusqu’à ${nomPeriode(it, pas)}" } ?: "") {
+        val l = cotis.filter { it.annee == aujourdhui().year }.sortedBy { it.periode }
+        if (l.isNotEmpty()) GrillePeriodes(l.map { it.periode to it.statut }, pas)
+    }
+    @Composable fun Regler() { if (du) CarteBlanche { Text("Comment régler", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text(infos ?: "Adressez-vous au trésorier.", fontSize = 14.sp) } }
+    @Composable fun Participations() { if (parts.isNotEmpty()) CarteBlanche {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Mes participations", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (resteParts > 0.005) Puce("${euros(resteParts)} à régler", Couleurs.JauneClair, Couleurs.SurJaune)
+        }
+        ListeParticipations(parts)
+    } }
+    @Composable fun Anniversaires() = CarteBlanche {
+        Text("Anniversaires ${deMois(mois)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        ListeAnniversaires(anniv, mois)
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        if (maxWidth >= 840.dp) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        val large = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxWidth > maxHeight)
+        if (large) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (onReglages != null) Banniere(d, onReglages, onCloche, compacte = true) { }
+            Apparition(0) { Hero() }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1.6f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Hero(); Tuiles(); Regler(); Suite() }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Cotisation(); Participations(); Anniversaires() }
+                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(1) { Suite() } }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(2) { Cotisation() }; Regler(); Participations(); Anniversaires() }
             }
-        } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (onReglages != null) item { Banniere(d, onReglages, onCloche, compacte = true) { } }
+        } else LazyColumn(Modifier.fillMaxSize(), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (onReglages != null) item { Banniere(d, onReglages, onCloche, compacte = true) { } } else item { }
             item { Apparition(0) { Hero() } }
-            item { Apparition(1) { Tuiles() } }
+            item { Apparition(1) { Suite() } }
+            item { Apparition(2) { Cotisation() } }
             item { Regler() }
-            item { Apparition(2) { Suite() } }
-            item { Cotisation() }
             item { Participations() }
             item { Anniversaires() }
         }
@@ -1309,74 +1324,125 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     }
 }
 
-// Prochain rendez-vous en grand : date colorée, « Dans 2 jours », lieu, participation
+// Prochain rendez-vous : grand, en couleur (couleurEvt), compte à rebours, « Ajouter à mon agenda » et « Voir le détail »
 @Composable
-fun HeroRendezVous(p: Projet?, part: Participation?, onClick: () -> Unit) {
+fun HeroRendezVous(p: Projet?, part: Participation?, onAgenda: () -> Unit = {}, onClick: () -> Unit) {
     if (p == null || p.debut == null) {
         CarteBlanche {
-            Text("Prochain rendez-vous", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+            Text("PROCHAIN RENDEZ-VOUS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Couleurs.Texte2, letterSpacing = 0.6.sp)
             Text("Rien de prévu pour l’instant", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Le planning s’affichera ici dès qu’un rendez-vous sera ajouté.", color = Couleurs.Texte2, fontSize = 14.sp)
+            Text("Le prochain rendez-vous s’affichera ici dès qu’il sera annoncé.", color = Couleurs.Texte2, fontSize = 14.sp)
         }
         return
     }
-    val (fond, encre, accent) = couleurEvt(p.id)
+    val (_, encre, accent) = couleurEvt(p.id)
     val j = LocalDate.parse(p.debut.take(10))
-    Surface(onClick = onClick, shape = RoundedCornerShape(24.dp), color = fond, contentColor = encre, shadowElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(6.dp.toPx(), size.height)) }.padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Surface(color = accent, contentColor = Color.White, shape = RoundedCornerShape(16.dp), shadowElevation = 2.dp) {
-                Column(Modifier.width(70.dp).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(JOURS_COURTS[j.dayOfWeek.ordinal].uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("${j.dayOfMonth}", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
-                    Text(MOIS_COURTS[j.monthNumber - 1].uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    val ecart = aujourdhui().daysUntil(j)
+    val pulsation = rememberInfiniteTransition(label = "imminent")
+    val halo by pulsation.animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Restart), label = "halo")
+    Surface(shape = RoundedCornerShape(24.dp), color = Color.Transparent, contentColor = Color.White, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.background(Brush.linearGradient(listOf(encre, accent))).drawBehind {
+                drawCircle(Color.White.copy(alpha = 0.18f), radius = 90.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width - 30.dp.toPx(), 10.dp.toPx()))
+                drawCircle(Color.White.copy(alpha = 0.10f), radius = 140.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.75f, size.height + 40.dp.toPx()))
+            }.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Outlined.Event, null, modifier = Modifier.size(16.dp))
+                    Text("PROCHAIN RENDEZ-VOUS", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp, maxLines = 1)
+                }
+                Spacer(Modifier.weight(1f))
+                Surface(color = Color.White, contentColor = encre, shape = RoundedCornerShape(50), shadowElevation = 3.dp,
+                    modifier = if (ecart <= 1) Modifier.drawBehind { drawRoundRect(Color.White.copy(alpha = 0.6f * (1 - halo)), topLeft = androidx.compose.ui.geometry.Offset(-10.dp.toPx() * halo, -10.dp.toPx() * halo),
+                        size = androidx.compose.ui.geometry.Size(size.width + 20.dp.toPx() * halo, size.height + 20.dp.toPx() * halo), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height)) } else Modifier) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 4.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        when {
+                            ecart <= 0 -> Text("Aujourd’hui", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                            ecart == 1 -> Text("Demain", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                            else -> { Text("Dans", fontSize = 13.sp, fontWeight = FontWeight.Bold); Text("$ecart", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, lineHeight = 24.sp); Text("jours", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                        }
+                    }
                 }
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Prochain rendez-vous", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text(dansJours(p.debut), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                        modifier = Modifier.background(accent, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Surface(color = Color.White, contentColor = encre, shape = RoundedCornerShape(16.dp), shadowElevation = 4.dp) {
+                    Column(Modifier.width(76.dp).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(JOURS_COURTS[j.dayOfWeek.ordinal].uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("${j.dayOfMonth}", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 38.sp)
+                        Text(MOIS_COURTS[j.monthNumber - 1].uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
-                Text(p.nom, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(listOfNotNull(if (p.heureDebut != null) heureFr(p.heureDebut) + (p.heureFin?.let { " – " + heureFr(it) } ?: "") else "Toute la journée", p.lieu).joinToString(" · "), fontSize = 15.sp)
-                p.participation?.let { m -> Text("Participation ${euros(m)}" + (part?.let { " · vous avez donné ${euros(it.donne)}" } ?: ""), fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 4.dp).background(Color.White.copy(alpha = 0.75f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp)) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(p.nom, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(jourLong(p.debut) + " · " + (if (p.heureDebut != null) heureFr(p.heureDebut) + (p.heureFin?.let { " – " + heureFr(it) } ?: "") else "toute la journée"), fontSize = 15.sp)
+                    p.lieu?.let { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { Icon(Icons.Outlined.Place, null, modifier = Modifier.size(16.dp)); Text(it, fontSize = 15.sp) } }
+                    p.description?.let { Text(it, fontSize = 13.sp, color = Color.White.copy(alpha = 0.85f), maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    p.participation?.let { m -> Text("Participation ${euros(m)}" + (part?.let { " · vous avez donné ${euros(it.donne)}" } ?: ""), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = encre,
+                        modifier = Modifier.padding(top = 4.dp).background(Color.White.copy(alpha = 0.95f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp)) }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onAgenda, border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.7f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White), modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Outlined.EditCalendar, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Mon agenda", maxLines = 1)
+                }
+                Button(onClick = onClick, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = encre), modifier = Modifier.weight(1f)) { Text("Voir le détail", maxLines = 1) }
             }
         }
     }
 }
 
+// Alerte seulement si quelque chose est dû (même texte que .alerte-membre du site)
 @Composable
-fun Tuile(titre: String, valeur: String, icone: androidx.compose.ui.graphics.vector.ImageVector, couleurs: Pair<Color, Color>, modifier: Modifier = Modifier, alerte: Boolean = false) =
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp, modifier = modifier,
-        border = if (alerte) androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Erreur.copy(alpha = 0.4f)) else null) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.size(36.dp).background(couleurs.first, CircleShape), contentAlignment = Alignment.Center) { Icon(icone, null, tint = couleurs.second, modifier = Modifier.size(20.dp)) }
-            Text(titre, fontSize = 11.sp, color = Couleurs.Texte2, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(valeur, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (alerte) Couleurs.Erreur else Couleurs.Texte, lineHeight = 18.sp)
+fun AlerteMembre(texte: String, onClick: () -> Unit) =
+    Surface(onClick = onClick, color = Couleurs.ErreurClair, contentColor = Color(0xFF410002), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.drawBehind { drawRect(Couleurs.Erreur, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Outlined.ErrorOutline, null, tint = Couleurs.Erreur)
+            Column(Modifier.weight(1f)) { Text(texte, fontWeight = FontWeight.Bold); Text("Voir comment régler", fontSize = 13.sp, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline) }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
         }
     }
 
-// Rendez-vous dans une liste, avec sa couleur
+// Carte de situation : l'état en tête et en couleur (vert à jour, rouge en retard)
+@Composable
+fun CarteStatut(alerte: Boolean, commencee: Boolean, titre: String, valeur: String, detail: String, content: @Composable ColumnScope.() -> Unit) {
+    val (clair, fort) = when { alerte -> Couleurs.ErreurClair to Couleurs.Erreur; commencee -> Color(0xFFDDF3E2) to Color(0xFF2E8B4E); else -> Color(0xFFEFEDEC) to Couleurs.Texte2 }
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.drawBehind { drawRect(fort, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(44.dp).background(clair, CircleShape), contentAlignment = Alignment.Center) { Icon(if (alerte) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle, null, tint = fort) }
+                Column {
+                    Text(titre, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+                    Text(valeur, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = if (alerte) Couleurs.Erreur else Couleurs.Texte)
+                    if (detail.isNotEmpty()) Text(detail, fontSize = 13.sp, color = Couleurs.Texte2)
+                }
+            }
+            content()
+        }
+    }
+}
+
+// Rendez-vous dans une liste, avec sa couleur (filet, date pleine, « Dans N jours »)
 @Composable
 fun LigneRendezVous(p: Projet, onClick: () -> Unit) {
     val (fond, encre, accent) = couleurEvt(p.id)
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 6.dp),
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick)
+        .drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         p.debut?.let { dt ->
             val j = LocalDate.parse(dt.take(10))
-            Column(Modifier.width(48.dp).clip(RoundedCornerShape(12.dp)).background(fond).drawBehind { drawRect(accent, topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 3.dp.toPx())) }
-                .padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("${j.dayOfMonth}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = encre)
-                Text(MOIS_COURTS[j.monthNumber - 1], fontSize = 11.sp, color = encre)
+            Column(Modifier.width(48.dp).clip(RoundedCornerShape(12.dp)).background(accent).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("${j.dayOfMonth}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = Color.White)
+                Text(MOIS_COURTS[j.monthNumber - 1], fontSize = 11.sp, color = Color.White)
             }
         }
         Column(Modifier.weight(1f)) {
             Text(p.nom, fontWeight = FontWeight.SemiBold)
-            Text(listOfNotNull(p.heureDebut?.let { heureFr(it) }, p.lieu).joinToString(" · ").ifEmpty { "Journée" }, fontSize = 13.sp, color = Couleurs.Texte2)
+            Text(listOfNotNull(p.debut?.let { jourLong(it) }, p.heureDebut?.let { heureFr(it) }, p.lieu).joinToString(" · ").ifEmpty { "Date à fixer" }, fontSize = 13.sp, color = Couleurs.Texte2)
         }
-        p.participation?.let { Puce(euros(it), Couleurs.JauneClair, Couleurs.SurJaune) } ?: p.debut?.let { Text(dansJours(it), fontSize = 12.sp, color = Couleurs.Texte2) }
+        p.participation?.let { Puce(euros(it), Couleurs.JauneClair, Couleurs.SurJaune) }
+            ?: p.debut?.let { Text(dansJours(it), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = encre, modifier = Modifier.background(fond, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 2.dp)) }
     }
 }
 
@@ -1402,7 +1468,6 @@ fun EcranPlus(d: Donnees, onChoix: (String) -> Unit) {
         if (d.peut("gerer_materiel", "consulter_finances", "voir_membres")) add(Triple("materiel", "Matériel", Icons.Outlined.Inventory2))
         if (d.peut("rapprocher", "consulter_finances")) add(Triple("rapprochement", "Rapprochement", Icons.Outlined.AccountBalance))
         if (d.peut("consulter_finances")) add(Triple("rapports", "Rapports et exports", Icons.Outlined.Description))
-        if (d.profil.memberId != null) add(Triple("moi", "Ma cotisation", Icons.Outlined.Person))
         // Paramètres : roue dentée en haut de chaque écran (et sur la bannière de l'accueil), pas de doublon ici
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

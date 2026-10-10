@@ -327,6 +327,11 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
     var onglet by rememberSaveable { mutableStateOf(Onglet.Accueil) }
     var sousEcran by rememberSaveable { mutableStateOf<String?>(null) }
     var compteFiltre by remember { mutableStateOf<String?>(null) }
+    // Paramètres : un espace à part (plus de barre d'onglets ni de barre du haut de l'application) ; « Fermer » ramène où l'on était
+    var avantParam by remember { mutableStateOf<Pair<Onglet, String?>?>(null) }
+    val enParametres = sousEcran == "parametres"
+    val ouvrirParametres = { if (sousEcran != "parametres") avantParam = onglet to sousEcran; if (!d.droits.isEmpty()) onglet = Onglet.Plus; sousEcran = "parametres" }
+    val fermerParametres = { val a = avantParam; if (a != null) { onglet = a.first; sousEcran = a.second } else sousEcran = null; avantParam = null }
     val snackbar = remember { SnackbarHostState() }
     Annulation.hote = snackbar
     val scope = rememberCoroutineScope()
@@ -339,6 +344,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
     val adherentSeul = d.droits.isEmpty()
     var vueAdherent by rememberSaveable { mutableStateOf(0) }   // 0 : accueil, 1 : planning
     val retour: (() -> Unit)? = when {
+        enParametres -> fermerParametres
         onglet == Onglet.Plus && sousEcran != null && !adherentSeul -> { { sousEcran = null } }
         adherentSeul && sousEcran != null -> { { sousEcran = null } }
         else -> null
@@ -366,10 +372,11 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
     val c = EtatNouveautes.n.value.compteurs
     Scaffold(
         // Accueil : pas de barre du haut, la bannière porte déjà le logo, le nom et la roue dentée
-        topBar = { if (if (adherentSeul) (vueAdherent != 0 || sousEcran != null) else onglet != Onglet.Accueil) BarreHaut(d, retour, sousEcran == "parametres", onCloche = { nouveautesOuvertes = true }) { if (!adherentSeul) onglet = Onglet.Plus; sousEcran = "parametres" } },
+        topBar = { if (!enParametres && (if (adherentSeul) (vueAdherent != 0 || sousEcran != null) else onglet != Onglet.Accueil)) BarreHaut(d, retour, false, onCloche = { nouveautesOuvertes = true }) { ouvrirParametres() } },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (adherentSeul) NavigationBar {
+            if (enParametres) Unit
+            else if (adherentSeul) NavigationBar {
                 listOf(Triple("Accueil", Icons.Outlined.Home, "cotisations"), Triple("Planning", Icons.Outlined.Event, "activites")).forEachIndexed { i, (l, ic, sec) ->
                     NavigationBarItem(selected = vueAdherent == i && sousEcran == null, onClick = { vueAdherent = i; sousEcran = null },
                         icon = { IconeAvecPastille(ic, c[sec] ?: 0, null) }, label = { Text(l) })
@@ -402,13 +409,14 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
             label = "ecran") { (ongletVu, sousEcranVu, vueVu) ->
         Box(Modifier.fillMaxSize()) {
             if (adherentSeul) {
-                if (sousEcranVu == "parametres") EcranParametres(d, message, recharger, onCloche = { nouveautesOuvertes = true })
-                else if (vueVu == 1) EcranPlanning(d, message) else EcranAdherent(d, message, onReglages = { sousEcran = "parametres" }, onCloche = { nouveautesOuvertes = true }) { vueAdherent = 1 }
+                if (sousEcranVu == "parametres") EcranParametres(d, message, recharger, onFermer = fermerParametres)
+                else if (vueVu == 1) EcranPlanning(d, message) else EcranAdherent(d, message, onReglages = ouvrirParametres, onCloche = { nouveautesOuvertes = true })
             }
             else when (ongletVu) {
                 Onglet.Accueil -> EcranAccueil(d, onAller = { cible ->
                     when {
                         cible == "nouveautes" -> nouveautesOuvertes = true
+                        cible == "parametres" -> ouvrirParametres()
                         cible == "depenses" -> onglet = Onglet.Depenses
                         cible.startsWith("operations:") -> { compteFiltre = cible.substringAfter(':'); onglet = Onglet.Operations }
                         cible == "cotisations" -> onglet = Onglet.Cotisations
@@ -426,8 +434,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
                     "rapprochement" -> EcranRapprochement(d, message)
                     "materiel" -> EcranMateriel(d, message)
                     "rapports" -> EcranRapports(d, message)
-                    "parametres" -> EcranParametres(d, message, recharger, onCloche = { nouveautesOuvertes = true }, onAssistant = onAssistant)
-                    "moi" -> EcranAdherent(d, message)
+                    "parametres" -> EcranParametres(d, message, recharger, onAssistant = onAssistant, onFermer = fermerParametres)
                     else -> EcranPlus(d) { sousEcran = it }
                 }
             }

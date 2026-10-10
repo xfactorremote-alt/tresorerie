@@ -933,7 +933,7 @@ begin
         where c.tous_membres or exists (select 1 from collecte_membres cm where cm.collecte_id = c.id and cm.member_id = mid)
         group by c.id
         having not c.cloturee or coalesce(sum(t.montant), 0) <> 0) s), '[]'::jsonb),
-    'a_venir', coalesce((select jsonb_agg(jsonb_build_object('nom', p.nom, 'date_debut', p.date_debut, 'date_fin', p.date_fin,
+    'a_venir', coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'nom', p.nom, 'date_debut', p.date_debut, 'date_fin', p.date_fin,
                    'heure_debut', p.heure_debut, 'heure_fin', p.heure_fin, 'lieu', p.lieu, 'description', p.description)
                    order by p.date_debut, p.heure_debut nulls first)
                  from (select * from projects p where p.visible_adherents and p.date_debut is not null

@@ -1,5 +1,6 @@
 package org.jpgrenoble.tresorerie
 
+import kotlinx.datetime.toInstant
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -189,3 +190,26 @@ actual fun rememberDemandeNotifications(quandFini: (Boolean) -> Unit): () -> Uni
     val lanceur = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { quandFini(it) }
     return { if (android.os.Build.VERSION.SDK_INT >= 33) lanceur.launch(android.Manifest.permission.POST_NOTIFICATIONS) else quandFini(notificationsPermises()) }
 }
+
+actual fun ajouterAgenda(nom: String, date: String, heureDebut: String?, dateFin: String?, heureFin: String?, lieu: String?, description: String?): Boolean = try {
+    val zone = kotlinx.datetime.TimeZone.of("Europe/Paris")
+    val jour = kotlinx.datetime.LocalDate.parse(date.take(10))
+    val fin = dateFin?.let { kotlinx.datetime.LocalDate.parse(it.take(10)) } ?: jour
+    fun instant(j: kotlinx.datetime.LocalDate, h: String) = kotlinx.datetime.LocalDateTime(j.year, j.monthNumber, j.dayOfMonth, h.take(2).toInt(), h.drop(3).take(2).toInt())
+        .toInstant(zone).toEpochMilliseconds()
+    val debutMs = if (heureDebut != null) instant(jour, heureDebut) else kotlinx.datetime.LocalDateTime(jour.year, jour.monthNumber, jour.dayOfMonth, 0, 0).toInstant(kotlinx.datetime.TimeZone.UTC).toEpochMilliseconds()
+    val finMs = when {
+        heureDebut != null && heureFin != null -> instant(fin, heureFin)
+        heureDebut != null -> debutMs + 2 * 3600_000L
+        else -> kotlinx.datetime.LocalDateTime(fin.year, fin.monthNumber, fin.dayOfMonth, 0, 0).toInstant(kotlinx.datetime.TimeZone.UTC).toEpochMilliseconds() + 86_400_000L
+    }
+    val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).setData(android.provider.CalendarContract.Events.CONTENT_URI)
+        .putExtra(android.provider.CalendarContract.Events.TITLE, nom)
+        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, debutMs)
+        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, finMs)
+        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_ALL_DAY, heureDebut == null)
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    lieu?.let { intent.putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, it) }
+    description?.let { intent.putExtra(android.provider.CalendarContract.Events.DESCRIPTION, it) }
+    ContexteApp.contexte.startActivity(intent); true
+} catch (_: android.content.ActivityNotFoundException) { false } catch (_: Exception) { false }

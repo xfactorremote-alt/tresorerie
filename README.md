@@ -12,7 +12,7 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 | Fonctionnalité | Site | Application Android |
 |---|---|---|
 | Accueil : bannière tout en haut (photo, logo, nom, roue dentée des paramètres) avec la trésorerie, comptes (touchez pour voir les opérations), rubriques dépliables mémorisées ; **Ma situation** (cotisation et participations) pour chaque membre du bureau | Oui | Oui |
-| **Lien personnel** des membres : chaque membre ouvre sa page (cotisation, participations, rendez-vous, comment régler) d’un geste, sans compte, sans mot de passe, sans installation ; envoi par WhatsApp ou e-mail, un par un ou pour tous ; lien renouvelable ou coupé à tout moment | Oui | Oui (envoi ; la page s’ouvre dans le navigateur) |
+| **Lien personnel** des membres : chaque membre ouvre sa page (prochain rendez-vous en grand avec compte à rebours et « Ajouter à mon agenda », cotisation, participations, comment régler ; deux colonnes sur ordinateur) d’un geste, sans compte, sans mot de passe, sans installation ; envoi par WhatsApp ou e-mail, un par un ou pour tous ; lien renouvelable ou coupé à tout moment | Oui | Oui (envoi ; la page s’ouvre dans le navigateur) |
 | Opérations : recherche et un bouton **Filtres** (type, période, compte, catégorie, rubrique, sans pièce), filtres actifs en pastilles ; totaux et solde | Oui | Oui |
 | **Virement interne** : dépôt d’espèces à la banque, retrait pour la caisse, virement entre comptes ; ni recette ni dépense, annulable avec motif | Oui | Oui |
 | Historique de chaque opération (référence, auteur, demande, annulation et motif) ; contre-passation avec motif ; alerte compte/mode inhabituel | Oui | Oui |
@@ -33,7 +33,7 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 | Documents PDF mis en page (en-tête avec logo, synthèse, totaux, pages numérotées, signatures) : journal des opérations, état des cotisations, budget, registre des demandes, liste des membres ; export PDF ou Excel depuis Opérations et Membres | Oui | Oui |
 | Archive ZIP des pièces justificatives d’un exercice, classées par mois, avec inventaire et dépenses sans pièce ; relevés de rapprochement inclus | Oui | Oui |
 | Rapports PDF, exports Excel, sauvegarde | Oui | Oui |
-| Paramètres (roue dentée, en bas du menu ou en haut à droite sur téléphone) : **Mon compte** pour tous (nom, fiche de membre, mot de passe, déconnexion) ; pour l’administrateur : association, comptes, catégories, **rôles et droits**, accès | Oui | Oui |
+| Paramètres (roue dentée, en bas du menu ou en haut à droite sur téléphone ; espace à part avec son propre menu coloré et « Fermer ») : **Mon compte** pour tous (nom, fiche de membre, mot de passe, déconnexion) ; pour l’administrateur : association, comptes, catégories, **rôles et droits**, accès | Oui | Oui |
 | Membre d’abord, fonction ensuite : groupe Bureau en tête de la liste des membres, bouton « Fonction » pour donner un accès et désigner président, trésorier, bureau… | Oui | Oui |
 | Accueil : « Bien démarrer » coche les étapes de mise en route au fur et à mesure | Oui | Oui |
 

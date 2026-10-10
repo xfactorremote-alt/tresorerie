@@ -193,7 +193,7 @@ function seed() {
       ],
       categories, accounts, members, cotisations, transactions, profiles, expense_requests, invitations: [],
       projects, budgets, attachments, reconciliations: [rec0], tiers, collectes, collecte_membres: [],
-      liens_membres: [], materiel, materiel_mouvements,
+      liens_membres: [{ member_id: 'm0', jeton: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', cree_par: ids.t, cree_le: ilYa(2).toISOString(), nb_consultations: 3, derniere_consultation: null }], materiel, materiel_mouvements,
     },
   };
 }

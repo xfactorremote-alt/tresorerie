@@ -1020,7 +1020,7 @@ fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: 
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             Text(e.nom, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (budgetSuivi) Box(Modifier.clip(RoundedCornerShape(50)).clickable(enabled = onBudget != null) { onFermer(); onBudget?.invoke() }) { Puce("Budget suivi", Color(0xFFEFEDEC), Couleurs.Texte2) }
+            if (budgetSuivi) Puce("Budget suivi", Color(0xFFEFEDEC), Couleurs.Texte2)
         }
         LigneInfo("Date", e.debut?.let { jourLong(it) + if (e.fin != null && e.fin != e.debut) " au " + jourLong(e.fin) else "" } ?: "Date à fixer")
         LigneInfo("Heure", e.heureDebut?.let { heureFr(it) + (e.heureFin?.let { f -> " – " + heureFr(f) } ?: "") })

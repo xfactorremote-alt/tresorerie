@@ -108,7 +108,6 @@ fun EcranMateriel(d: Donnees, message: (String) -> Unit, pre: NouveauMateriel? =
                         Text("Aucun matériel inscrit.", fontWeight = FontWeight.Bold)
                         if (gere) {
                             Text("Instruments, sonorisation, informatique, tenues : inscrivez chaque bien de l’association, avec sa valeur et son lieu de rangement.", color = Couleurs.Texte2)
-                            Button(onClick = { formulaire = null to null }) { Text("Ajouter un article") }
                         }
                     } else Text("Aucun article dans cette vue.", color = Couleurs.Texte2)
                 }

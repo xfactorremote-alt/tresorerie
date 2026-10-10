@@ -196,7 +196,6 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                 if (vus.isEmpty()) item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Aucune demande" + (if (filtre == "toutes") "" else " " + (filtres.firstOrNull { it.first == filtre }?.second ?: "").lowercase()) + ".", color = Couleurs.Texte2)
-                        if (d.peut("demander_depenses") && filtre == "toutes") Button(onClick = { nouvelle = true }) { Text("Nouvelle demande") }
                     }
                 }
                 items(vus, key = { it.id }) { x ->

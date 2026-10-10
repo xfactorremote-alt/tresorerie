@@ -55,3 +55,6 @@ expect fun notificationsPermises(): Boolean
 /** Demande l'autorisation d'afficher des notifications (Android 13 et plus). */
 @Composable
 expect fun rememberDemandeNotifications(quandFini: (Boolean) -> Unit): () -> Unit
+
+/** Ajoute un rendez-vous à l'agenda du téléphone (Google Agenda…) ; faux si aucune application d'agenda. */
+expect fun ajouterAgenda(nom: String, date: String, heureDebut: String?, dateFin: String?, heureFin: String?, lieu: String?, description: String?): Boolean

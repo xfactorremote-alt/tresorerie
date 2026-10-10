@@ -14,6 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -127,12 +131,7 @@ fun FeuilleNouveautes(onAller: (String) -> Unit, onFermer: () -> Unit) {
                     Text(ilYaTexte(e.quand), fontSize = 12.sp, color = Couleurs.Texte2)
                 }
             }
-            if (!autorise) Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(14.dp)) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Recevez une notification du téléphone quand quelque chose arrive.", Modifier.weight(1f), fontSize = 14.sp)
-                    FilledTonalButton(onClick = demander) { Text("Activer") }
-                }
-            }
+            if (!autorise) Text("Pour recevoir une notification du téléphone : Paramètres › Notifications.", fontSize = 13.sp, color = Couleurs.Texte2)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 if (els.isNotEmpty()) TextButton(onClick = { scope.launch { SECTIONS_NOUVEAUTES.forEach { try { Repo.marquerVu(it) } catch (_: Exception) { } }; EtatNouveautes.charger(); onFermer() } }) { Text("Tout marquer comme vu") }
                 Button(onClick = onFermer) { Text("Fermer") }
@@ -693,7 +692,7 @@ fun ParamSecurite(message: (String) -> Unit) {
 }
 
 @Composable
-fun ParamNotifications(onCloche: () -> Unit) {
+fun ParamNotifications() {
     var autorise by remember { mutableStateOf(notificationsPermises()) }
     val demander = rememberDemandeNotifications { autorise = it }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -701,7 +700,6 @@ fun ParamNotifications(onCloche: () -> Unit) {
             CarteBlanche {
                 Text("Pastilles", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("Un chiffre apparaît sur un onglet quand quelque chose vous attend ou est nouveau depuis votre dernière visite : demande à valider ou à payer, opération saisie par un autre, rendez-vous ajouté, participation demandée, nouveau membre. La cloche les rassemble.", color = Couleurs.Texte2, fontSize = 14.sp)
-                FilledTonalButton(onClick = onCloche) { Text("Voir les nouveautés") }
             }
         }
         item {
@@ -721,7 +719,7 @@ fun sectionsParametres(d: Donnees): List<Pair<String, List<SectionParam>>> {
     val admin = d.peut("administrer")
     val corbeille = admin || d.peut("consulter_finances", "saisir_ecritures", "gerer_membres", "gerer_activites", "gerer_materiel", "demander_depenses")
     return listOf(
-        "Mon compte" to listOf(SectionParam("compte", "Profil et fiche de membre", "Nom affiché, ma fiche, ma cotisation", Icons.Outlined.Person),
+        "Mon compte" to listOf(SectionParam("compte", "Profil et fiche de membre", "Nom affiché, ma fiche de membre", Icons.Outlined.Person),
             SectionParam("securite", "Mot de passe et session", "Changer le mot de passe, se déconnecter", Icons.Outlined.Lock),
             SectionParam("notifications", "Notifications", "Pastilles et notifications du téléphone", Icons.Outlined.Notifications)),
         "Association" to if (admin) listOf(SectionParam("association", "Identité et coordonnées", "Nom, sigle, objet, adresse, RNA, SIRET", Icons.Outlined.Business),
@@ -730,43 +728,82 @@ fun sectionsParametres(d: Donnees): List<Pair<String, List<SectionParam>>> {
         "Finances" to if (admin) listOf(SectionParam("comptes", "Comptes et soldes de départ", "Banque, caisse, livret", Icons.Outlined.AccountBalanceWallet),
             SectionParam("categories", "Catégories", "Recettes et dépenses", Icons.Outlined.Sell),
             SectionParam("regles", "Cotisations et dépenses", "Montant, périodicité, délais, seuils", Icons.Outlined.Payments)) else emptyList(),
-        "Accès" to if (admin) listOf(SectionParam("personnes", "Personnes et invitations", "Qui a accès, avec quel rôle", Icons.Outlined.Groups),
+        "Accès" to if (admin) listOf(SectionParam("personnes", "Comptes et accès", "Vue d’ensemble : qui a un compte, actif ou non", Icons.Outlined.Groups),
             SectionParam("roles", "Rôles et droits", "Ce que chaque rôle peut faire", Icons.Outlined.Shield)) else emptyList(),
         "Données" to listOfNotNull(if (corbeille) SectionParam("corbeille", "Corbeille", "Éléments supprimés, à restaurer", Icons.Outlined.Delete) else null,
             if (admin) SectionParam("sauvegarde", "Sauvegarde", "Télécharger toutes les données", Icons.Outlined.Storage) else null,
-            if (admin) SectionParam("assistant", "Assistant de configuration", "Reprendre la configuration pas à pas", Icons.Outlined.AutoFixHigh) else null),
+            if (admin && !d.organisation.configuree) SectionParam("assistant", "Assistant de configuration", "Terminer la configuration pas à pas", Icons.Outlined.AutoFixHigh) else null),
     ).filter { it.second.isNotEmpty() }
 }
 
+// Couleur de chaque groupe du menu (mêmes valeurs que .c-bleu, .c-orange… du site)
+private val COULEURS_GROUPES = mapOf("Mon compte" to (Color(0xFF1B77B0) to Color(0xFFE3F1FB)), "Association" to (Color(0xFFC23E10) to Color(0xFFFFEDE5)),
+    "Finances" to (Color(0xFF2E8B4E) to Color(0xFFE4F5E8)), "Accès" to (Color(0xFF7048B8) to Color(0xFFEFE9FA)), "Données" to (Color(0xFF5A5350) to Color(0xFFEEECEB)))
+
 @Composable
 fun MenuParametres(d: Donnees, choisie: String?, onChoix: (String) -> Unit, modifier: Modifier = Modifier) {
-    LazyColumn(modifier, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        item { Text("Paramètres", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(8.dp, 4.dp, 8.dp, 8.dp)) }
+    // Menu en cartes groupées et colorées, distinct de la navigation de l'application (comme le site)
+    LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(Couleurs.Orange, Color(0xFFE8743B)))).padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(44.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                    Text(d.profil.nom.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }, fontWeight = FontWeight.Bold, color = Couleurs.Orange)
+                }
+                Column { Text(d.profil.nom, fontWeight = FontWeight.Bold, color = Color.White); Text(d.roles.firstOrNull { it.code == d.profil.role }?.nom ?: d.profil.role, fontSize = 13.sp, color = Color.White.copy(alpha = 0.9f)) }
+            }
+        }
         sectionsParametres(d).forEach { (groupe, sections) ->
-            item(key = groupe) { Text(groupe.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Couleurs.Texte2, letterSpacing = 0.6.sp, modifier = Modifier.padding(8.dp, 12.dp, 8.dp, 4.dp)) }
-            items(sections, key = { it.cle }) { s ->
-                val active = s.cle == choisie
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (active) Couleurs.OrangeClair.copy(alpha = 0.6f) else Color.Transparent).clickable { onChoix(s.cle) }
-                    .padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(if (active) Couleurs.Orange else Color(0xFFEFEDEC)), contentAlignment = Alignment.Center) {
-                        Icon(s.icone, null, tint = if (active) Color.White else Couleurs.Orange)
+            val (fort, clair) = COULEURS_GROUPES[groupe] ?: (Couleurs.Orange to Couleurs.OrangeClair)
+            item(key = groupe) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    Text(groupe.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Couleurs.Texte2, letterSpacing = 0.8.sp, modifier = Modifier.padding(horizontal = 6.dp))
+                    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp) {
+                        Column {
+                            sections.forEachIndexed { i, sec ->
+                                if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
+                                val active = sec.cle == choisie
+                                Row(Modifier.fillMaxWidth().background(if (active) clair else Color.Transparent).clickable { onChoix(sec.cle) }
+                                    .drawBehind { if (active) drawRect(fort, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Box(Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(if (active) fort else clair), contentAlignment = Alignment.Center) {
+                                        Icon(sec.icone, null, tint = if (active) Color.White else fort, modifier = Modifier.size(20.dp))
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(sec.titre, fontWeight = FontWeight.SemiBold)
+                                        Text(sec.description, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
+                                }
+                            }
+                        }
                     }
-                    Column(Modifier.weight(1f)) {
-                        Text(s.titre, fontWeight = FontWeight.SemiBold)
-                        Text(s.description, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
                 }
             }
         }
     }
 }
 
+// Barre propre aux Paramètres : retour au menu (téléphone, dans une section), titre, « Fermer » pour revenir à l'application
 @Composable
-fun EnteteSection(s: SectionParam, retour: (() -> Unit)?) {
-    Column(Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 8.dp)) {
-        if (retour != null) TextButton(onClick = retour) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Paramètres") }
-        Text(s.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp))
-        Text(s.description, color = Couleurs.Texte2, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp))
+fun BarreParametres(d: Donnees, titre: String, retour: (() -> Unit)?, onFermer: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (retour != null) IconButton(onClick = retour) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour aux paramètres") }
+            else Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Couleurs.Orange), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Settings, null, tint = Color.White) }
+            Column(Modifier.weight(1f)) {
+                Text(titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(d.organisation.nom, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1)
+            }
+            OutlinedButton(onClick = onFermer, contentPadding = PaddingValues(horizontal = 12.dp)) { Icon(Icons.Outlined.Close, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Fermer") }
+        }
+    }
+}
+
+@Composable
+fun EnteteSection(s: SectionParam) {
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
+        Text(s.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(s.description, color = Couleurs.Texte2, fontSize = 14.sp)
     }
 }

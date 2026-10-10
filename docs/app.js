@@ -506,7 +506,7 @@ function pagesAutorisees() {
     ['tableau', 'Accueil', true],
     ['ecritures', 'Opérations', peut('consulter_finances', 'saisir_ecritures')],
     ['depenses', 'Demandes', peut('demander_depenses', 'valider_depenses', 'payer_depenses', 'consulter_finances')],
-    ['cotisations', peut('consulter_finances', 'gerer_cotisations') ? 'Cotisations' : 'Ma cotisation', true],
+    ['cotisations', 'Cotisations', peut('consulter_finances', 'gerer_cotisations')],
     ['budget', 'Budget', peut('consulter_finances', 'gerer_budget')],
     ['activites', 'Planning', true],
     ['materiel', 'Matériel', peut('gerer_materiel', 'consulter_finances', 'voir_membres')],
@@ -520,22 +520,22 @@ function pagesAutorisees() {
 
 // Structure Fluent : volet de navigation à gauche (déplié sur grand écran, icônes seules sur tablette),
 // barre d'onglets en bas sur téléphone. Paramètres toujours accessibles.
-const voletReduit = () => { try { return localStorage.getItem('voletReduit') === '1'; } catch { return false; } };
 function coquille(page, contenu) {
   const pages = pagesAutorisees();
   const lien = ([k, l]) => `<a href="#${k}" class="nav-item" title="${esc(l)}" ${k === page ? 'aria-current="page"' : ''}><span class="nav-icone">${iconeNav(k)}</span><span class="nav-texte">${l}</span></a>`;
   const principales = pages.filter(([k]) => k !== 'parametres');
   // Téléphone : 4 entrées + « Plus » si la liste est longue
-  const courtes = pages.length > 5 ? pages.slice(0, 4) : pages;
-  const autres = pages.length > 5 ? pages.slice(4) : [];
+  // (Paramètres n'y figure pas : la roue dentée de l'en-tête et de la bannière y mène, sans doublon)
+  const courtes = principales.length > 5 ? principales.slice(0, 4) : principales;
+  const autres = principales.length > 5 ? principales.slice(4) : [];
   const enPlus = autres.some(([k]) => k === page);
   const onglet = ([k, l]) => `<a href="#${k}" ${k === page ? 'aria-current="page"' : ''}><span class="nav-icone">${iconeNav(k)}</span><span>${l}</span></a>`;
   const navMobile = courtes.map(onglet).join('') + (autres.length ? `<a href="#" id="b-plus" ${enPlus ? 'aria-current="page"' : ''}><span class="nav-icone">${iconeNav('plus')}</span><span>Plus</span></a>` : '');
   $('#app').innerHTML = `
-  <div class="shell ${page === 'tableau' ? 'shell-accueil' : ''} ${voletReduit() ? 'volet-reduit' : ''}">
+  <div class="shell ${page === 'tableau' ? 'shell-accueil' : ''} ${page === 'parametres' ? 'mode-parametres' : ''}">
     <nav class="rail" aria-label="Navigation principale">
       <div class="rail-tete">
-        <button class="nav-bascule" id="b-volet" type="button" aria-label="Afficher ou masquer les libellés du menu" title="Menu">${icone('menu')}</button>
+        <button class="nav-bascule" id="b-volet" type="button" aria-label="Ouvrir le menu" title="Menu">${icone('menu')}</button>
         <a href="#tableau" class="rail-logo" aria-label="Accueil"><img src="${esc(S.logoUrl)}" alt=""><span class="nav-texte">${esc(S.org?.nom || 'Trésorerie')}</span></a>
       </div>
       <div class="rail-liens">${principales.map(lien).join('')}</div>
@@ -553,15 +553,19 @@ function coquille(page, contenu) {
     </div>
     <nav class="barre-nav" aria-label="Navigation">${navMobile}</nav>
   </div>`;
-  // Volet : sur grand écran, réduit ou déplié (mémorisé) ; sur tablette, s'ouvre par-dessus le contenu
+  // Volet : toujours déplié sur grand écran (rien à ouvrir ni fermer) ; sur tablette, il s'ouvre par-dessus le contenu
+  // et se referme tout seul : clic à côté, touche Échap, choix d'une page.
   const shell = $('.shell');
   const fermerVolet = () => { shell.classList.remove('volet-ouvert'); $('#volet-voile').hidden = true; };
-  $('#b-volet').addEventListener('click', () => {
-    if (window.innerWidth >= 1200) {
-      const r = !shell.classList.contains('volet-reduit'); shell.classList.toggle('volet-reduit', r);
-      try { localStorage.setItem('voletReduit', r ? '1' : '0'); } catch { /* stockage indisponible */ }
-    } else { const o = !shell.classList.contains('volet-ouvert'); shell.classList.toggle('volet-ouvert', o); $('#volet-voile').hidden = !o; }
+  $('#b-volet').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const o = !shell.classList.contains('volet-ouvert'); shell.classList.toggle('volet-ouvert', o); $('#volet-voile').hidden = !o;
   });
+  if (!S.voletEcoute) {
+    S.voletEcoute = true;
+    document.addEventListener('pointerdown', (e) => { const sh = $('.shell.volet-ouvert'); if (sh && !e.target.closest('.rail')) { sh.classList.remove('volet-ouvert'); const v = $('#volet-voile'); if (v) v.hidden = true; } });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const sh = $('.shell.volet-ouvert'); if (sh) { sh.classList.remove('volet-ouvert'); const v = $('#volet-voile'); if (v) v.hidden = true; } } });
+  }
   $('#volet-voile').addEventListener('click', fermerVolet);
   shell.querySelectorAll('.rail a').forEach((a) => a.addEventListener('click', fermerVolet));
   $('#b-plus')?.addEventListener('click', (e) => {
@@ -599,7 +603,7 @@ function demarrerNouveautes() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) chargerNouveautes(); });
 }
 async function marquerVu(page) {
-  const sec = page === 'moi' ? 'cotisations' : page;
+  const sec = page;
   if (!SECTIONS_NOUVEAUTES.includes(sec) || !S.nouveautes) return;
   try { await q(sb.rpc('marquer_vu', { p_section: sec })); await chargerNouveautes(); } catch (e) { console.warn(e); }
 }
@@ -609,8 +613,8 @@ function afficherPastilles(racine = document) {
   const pastille = (n) => (n > 0 ? `<span class="pastille-nav" aria-label="${n} nouveauté${n > 1 ? 's' : ''}">${n > 99 ? '99+' : n}</span>` : '');
   racine.querySelectorAll('a[href^="#"]').forEach((a) => {
     const k = a.getAttribute('href').slice(1);
-    if (!SECTIONS_NOUVEAUTES.includes(k) && !(k === 'moi')) return;
-    const n = Number(c[k === 'moi' ? 'cotisations' : k]) || 0;
+    if (!SECTIONS_NOUVEAUTES.includes(k)) return;
+    const n = Number(c[k]) || 0;
     const cible = a.querySelector('.nav-icone') || a;
     cible.querySelector('.pastille-nav')?.remove();
     if (n) cible.insertAdjacentHTML('beforeend', pastille(n));
@@ -636,13 +640,11 @@ function feuilleNouveautes() {
       <span class="puce-section puce-${e.section}">${icone(e.section, 18)}</span>
       <div class="corps"><b>${esc(e.titre)}</b><span>${esc(e.detail)}</span></div><span class="muted">${quand(e.quand)}</span></a></li>`).join('')}</ul>`
       : `<div class="vide">${icone('valide', 32)}<p>Rien de nouveau. Vous êtes à jour.</p></div>`}
-    ${notif ? `<p class="info">Recevez une alerte quand quelque chose arrive pendant que la page est ouverte.<button class="btn-tonal btn-petit" id="b-notif">Activer les alertes</button></p>` : ''}
+    ${notif ? `<p class="muted" style="margin:0">Pour être alerté même quand la page est en arrière-plan : <a href="#parametres" id="l-notif">Paramètres › Notifications</a>.</p>` : ''}
     <div class="actions">${els.length ? '<button class="btn-texte" id="b-tout-vu">Tout marquer comme vu</button>' : ''}<button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     root.querySelectorAll('.lien-nouveaute').forEach((a) => a.addEventListener('click', fermerFeuille));
-    $('#b-notif', root)?.addEventListener('click', async () => {
-      const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Alertes activées' : 'Alertes refusées par le navigateur'); fermerFeuille();
-    });
+    $('#l-notif', root)?.addEventListener('click', () => { S.ongletParam = 'notifications'; S.sectionDemandee = true; fermerFeuille(); });
     $('#b-tout-vu', root)?.addEventListener('click', async () => {
       try { for (const k of SECTIONS_NOUVEAUTES) await q(sb.rpc('marquer_vu', { p_section: k })); await chargerNouveautes(); fermerFeuille(); toast('Tout est marqué comme vu'); } catch (e) { erreur(e); }
     });
@@ -651,14 +653,15 @@ function feuilleNouveautes() {
 
 const PAGES = { tableau: pageTableau, ecritures: pageEcritures, membres: pageMembres, cotisations: pageCotisations, parametres: pageParametres,
   depenses: pageDepenses, budget: pageBudget, activites: pageActivites, rapprochement: pageRapprochement, rapports: pageRapports,
-  tiers: pageTiers, materiel: pageMateriel, moi: () => pageCotisations(true) };
+  tiers: pageTiers, materiel: pageMateriel };
 async function router() {
   if (!S.profil) return;
   let page = location.hash.slice(1) || 'tableau';
-  if (!pagesAutorisees().some(([k]) => k === page) && !(page === 'moi' && S.profil.member_id)) page = 'tableau';
+  if (!pagesAutorisees().some(([k]) => k === page)) page = 'tableau';
   // Paramètres ouverts depuis un autre écran : sur téléphone, le menu d'abord (sauf lien direct vers une section)
   if (page === 'parametres' && S.pagePrecedente !== 'parametres' && !S.sectionDemandee && !window.matchMedia('(min-width: 900px)').matches) S.ongletParam = null;
   S.sectionDemandee = false; S.pagePrecedente = page;
+  if (page !== 'parametres') S.pageAvantParam = page;
   fermerFeuille();
   coquille(page, '<p class="chargement">Chargement…</p>');
   try { await PAGES[page](); } catch (e) { erreur(e); }
@@ -725,7 +728,7 @@ function banniere(contenu) {
   const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return `<section class="banniere ${S.banniereUrl ? 'avec-photo' : ''} ${contenu ? '' : 'banniere-compacte'}"${fond} aria-label="${esc(S.org?.nom || 'Association')}">
     <div class="banniere-tete"><img src="${esc(S.logoUrl)}" alt=""><div><b>${esc(S.org?.nom || '')}</b><span>Bonjour ${premier} · ${date}</span></div>
-      ${!S.banniereUrl && peut('administrer') ? '<a class="banniere-ajout" href="#parametres" aria-label="Ajouter une photo" title="Ajouter une photo">' + icone('camera') + '<span>Ajouter une photo</span></a>' : ''}</div>
+</div>
     <div class="banniere-outils"><button type="button" class="banniere-reglages b-cloche" aria-label="Nouveautés" title="Nouveautés">${icone('cloche')}</button>
       <a class="banniere-reglages" href="#parametres" aria-label="Paramètres" title="Paramètres">${icone('parametres')}</a></div>
     ${contenu}</section>`;
@@ -814,7 +817,7 @@ async function pageTableau() {
     </div>`;
   const operations = dernieres.length ? `<ul class="liste">${dernieres.map((t) => `<li><div class="corps"><b>${esc(t.libelle)}</b><span>${dateFr(t.date_op)} · ${esc(cat(t.category_id))}</span></div>${montantSigne(t)}</li>`).join('')}</ul>
       <a class="btn btn-texte" href="#ecritures" style="align-self:flex-start">Toutes les opérations</a>`
-    : `<div class="vide">Aucune opération.${peut('saisir_ecritures') ? '<a class="btn btn-primaire" href="#ecritures">Nouvelle opération</a>' : ''}</div>`;
+    : '<div class="vide">Aucune opération.</div>';
 
   // Bien démarrer : étapes de mise en route, cochées automatiquement
   const etapesDemarrage = peut('administrer') ? [
@@ -869,65 +872,117 @@ function listeAnniversaires(anniv, mois) {
   }).join('')}</ul>` : '<div class="vide">Aucun anniversaire ce mois-ci.</div>';
 }
 
-// Accueil d'un membre, par ordre d'importance : le prochain rendez-vous (grand, en tête), ce que je dois
-// (cotisation, participations), puis la suite du planning et les anniversaires. Deux colonnes sur ordinateur.
-async function pageTableauAdherent(anniv, mois) {
-  const [cot, planning, parts] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('planning_activites', { p_debut: isoLocal(new Date()) })), q(sb.rpc('mes_participations'))]);
-  const prochain = planning[0];
-  const suite = planning.slice(1, 6);
+// Vue du membre, partagée par l'accueil d'un membre connecté et la page du lien personnel (même rendu partout).
+// Ordre d'importance : le prochain rendez-vous en grand et en couleur (compte à rebours, « Ajouter à mon agenda »),
+// une alerte seulement si quelque chose est dû, la suite du planning, puis ma cotisation, mes participations,
+// les anniversaires et mes versements. Deux colonnes sur ordinateur et tablette en paysage.
+function vueMembre(o) {
+  const { planning = [], cot = [], parts = [], infos, anniv = null, mois, versements = null, avance = 0, montant = null, connecte = false } = o;
+  const prochain = planning[0], suite = planning.slice(1, 7);
   const retard = retardDe(cot);
   const aRegler = parts.filter((p) => Number(p.montant_attendu) > 0 && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
   const resteParts = aRegler.reduce((t, p) => t + Number(p.montant_attendu) - Number(p.donne), 0);
-  const jour = new Date().getDate();
-  const prochainAnniv = anniv.find((a) => a.jour >= jour);
-  const partDe = (e) => parts.find((x) => x.collecte_id === e?.collecte_id);
+  const partDe = (e) => parts.find((x) => e?.collecte_id && x.collecte_id === e.collecte_id);
   const hero = prochain ? (() => {
-    const d = dateDe(prochain.date_debut); const p = partDe(prochain);
-    return `<article class="hero-evt cliquable" data-evt="${prochain.id}" tabindex="0" role="button" style="${styleEvt(prochain)}">
-      <div class="hero-date"><span>${JOURS_COURTS[(d.getDay() + 6) % 7]}</span><b>${d.getDate()}</b><span>${MOIS_COURTS[d.getMonth()]}</span></div>
-      <div class="hero-corps"><span class="hero-sur">Prochain rendez-vous · <b>${dansJours(prochain.date_debut)}</b></span>
-        <h2>${esc(prochain.nom)}</h2>
-        <p>${[prochain.heure_debut ? heure(prochain.heure_debut) + (prochain.heure_fin ? ' – ' + heure(prochain.heure_fin) : '') : 'Toute la journée', prochain.lieu ? esc(prochain.lieu) : ''].filter(Boolean).join(' · ')}</p>
-        ${prochain.participation ? `<span class="hero-puce">Participation ${eur(prochain.participation)}${p ? ` · vous avez donné ${eur(p.donne)}` : ''}</span>` : ''}</div>
-      ${icone('suivant', 24)}</article>`;
-  })() : `<article class="hero-evt hero-vide"><div class="hero-corps"><span class="hero-sur">Prochain rendez-vous</span><h2>Rien de prévu pour l’instant</h2><p>Le planning s’affichera ici dès qu’un rendez-vous sera ajouté.</p></div></article>`;
-  const tuileCotis = `<a class="tuile ${retard > 0 ? 'tuile-alerte' : 'tuile-ok'}" href="#cotisations">
-      <span class="tuile-icone">${icone(retard > 0 ? 'attention' : 'valide', 24)}</span>
-      <span class="tuile-texte"><small>Ma cotisation</small><b>${!cot?.length ? 'Non commencée' : retard > 0 ? `${eur(retard)} en retard` : 'À jour'}</b></span></a>`;
-  const tuileParts = `<a class="tuile ${resteParts > 0 ? 'tuile-attention' : 'tuile-neutre'}" href="#cotisations">
-      <span class="tuile-icone">${icone('cotisations', 24)}</span>
-      <span class="tuile-texte"><small>Participations</small><b>${resteParts > 0 ? `${eur(resteParts)} à régler` : parts.length ? 'Rien à régler' : 'Aucune demandée'}</b></span></a>`;
-  const tuileAnniv = `<div class="tuile tuile-jaune"><span class="tuile-icone">${icone('nouveau', 24)}</span>
-      <span class="tuile-texte"><small>Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}</small><b>${prochainAnniv ? `${esc(prochainAnniv.prenom)} le ${prochainAnniv.jour}` : anniv.length ? `${anniv.length} ce mois` : 'Aucun'}</b></span></div>`;
-  const infos = S.textes?.infos_paiement;
-  rendre(`<div class="page accueil accueil-membre">
-    ${banniere('')}
-    <div class="membre-grille">
-      <div class="membre-principal">
-        ${hero}
-        <div class="tuiles">${tuileCotis}${tuileParts}${tuileAnniv}</div>
-        ${retard > 0 || resteParts > 0 ? `<div class="carte carte-regler"><h3>Comment régler</h3><p class="texte-libre" style="margin:0">${esc(infos || 'Adressez-vous au trésorier.')}</p></div>` : ''}
-        ${rubrique('avenir', 'Ensuite au planning', suite.length ? `${suite.length} rendez-vous` : '', `${suite.length ? listePlanningCouleur(suite) : '<p class="muted">Rien d’autre de prévu.</p>'}
-          <a class="btn btn-texte" href="#activites" style="align-self:flex-start">Ouvrir le planning</a>`)}
-      </div>
-      <div class="membre-cote">
-        ${rubrique('macotisation', 'Ma cotisation', retard > 0 ? `${eur(retard)} en retard` : 'À jour', blocMaCotisation(cot), { classe: retard > 0 ? 'rubrique-alerte' : '' })}
-        ${parts.length ? rubrique('participations', 'Mes participations', resteParts > 0 ? `${eur(resteParts)} à régler` : '', listeParticipations(parts)) : ''}
-        ${rubrique('anniversaires', `Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}`, anniv.length ? `${anniv.length} personne${anniv.length > 1 ? 's' : ''}` : 'Aucun', listeAnniversaires(anniv, mois))}
-      </div>
-    </div></div>`);
-  brancherRubriques();
-  document.querySelectorAll('[data-evt]').forEach((li) => {
-    const ouvrir = () => detailEvenement(planning.find((p) => p.id === li.dataset.evt), () => router());
-    li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+    const d = dateDe(prochain.date_debut), p = partDe(prochain);
+    const j = Math.round((d - dateDe(aujourdhui())) / 864e5);
+    const compte = j <= 0 ? '<b>Aujourd’hui</b>' : j === 1 ? '<b>Demain</b>' : `<span>Dans</span><b class="num">${j}</b><span>jours</span>`;
+    return `<article class="hero-evt hero-plein ${j <= 1 ? 'hero-imminent' : ''}" style="${styleEvt(prochain)}" aria-label="Prochain rendez-vous : ${esc(prochain.nom)}">
+      <div class="hero-haut"><span class="hero-etiquette">${icone('activites', 16)} Prochain rendez-vous</span><span class="hero-compte">${compte}</span></div>
+      <div class="hero-milieu">
+        <div class="hero-date"><span>${JOURS_COURTS[(d.getDay() + 6) % 7]}</span><b>${d.getDate()}</b><span>${MOIS_COURTS[d.getMonth()]}</span></div>
+        <div class="hero-corps"><h2>${esc(prochain.nom)}</h2>
+          <p>${[jourLong(prochain.date_debut), prochain.heure_debut ? heure(prochain.heure_debut) + (prochain.heure_fin ? ' – ' + heure(prochain.heure_fin) : '') : 'toute la journée'].join(' · ')}</p>
+          ${prochain.lieu ? `<p>${icone('lieu', 16)} ${esc(prochain.lieu)}</p>` : ''}
+          ${prochain.description ? `<p class="hero-descr">${esc(prochain.description)}</p>` : ''}
+          ${prochain.participation ? `<span class="hero-puce">Participation ${eur(prochain.participation)}${p ? ` · vous avez donné ${eur(p.donne)}` : ''}</span>` : ''}</div></div>
+      <div class="hero-actions"><button type="button" class="hero-btn" data-ics="${prochain.id}">${icone('agenda', 18)} Ajouter à mon agenda</button>
+        <button type="button" class="hero-btn hero-btn-plein" data-evt="${prochain.id}">Voir le détail</button></div></article>`;
+  })() : `<article class="hero-evt hero-vide"><div class="hero-corps"><span class="hero-etiquette">Prochain rendez-vous</span><h2>Rien de prévu pour l’instant</h2><p>Le prochain rendez-vous s’affichera ici dès qu’il sera annoncé.</p></div></article>`;
+  const alerte = retard > 0 || resteParts > 0 ? `<a class="alerte-membre" href="#m-regler">${icone('attention', 20)}<span><b>${[retard > 0 ? `Cotisation : ${eur(retard)} en retard` : '', resteParts > 0 ? `Participations : ${eur(resteParts)} à régler` : ''].filter(Boolean).join(' · ')}</b><small>Voir comment régler</small></span>${icone('suivant', 18)}</a>` : '';
+  const regles = cot.filter((p) => ['regle', 'dispense'].includes(p.statut)).map((p) => p.periode).sort();
+  const an = new Date().getFullYear();
+  const deLAnnee = cot.filter((p) => p.annee === an).sort((a, b) => (a.periode > b.periode ? 1 : -1));
+  const carteCotis = `<section class="carte carte-statut ${retard > 0 ? 'statut-alerte' : cot.length ? 'statut-ok' : ''}" id="m-cotis">
+      <div class="statut-tete"><span class="statut-icone">${icone(retard > 0 ? 'attention' : 'valide', 22)}</span>
+        <div><small>Ma cotisation ${an}</small><b>${!cot.length ? 'Non commencée' : retard > 0 ? `${eur(retard)} en retard` : 'À jour'}</b>
+        <span class="muted">${retard > 0 ? 'Périodes commencées et non réglées' : regles.length ? `réglée jusqu’à ${esc(nomPeriode(regles[regles.length - 1]))}` : ''}</span></div></div>
+      ${deLAnnee.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${deLAnnee.length},1fr)">${deLAnnee.map((p) => `<i class="case-p p-${p.statut}" role="img" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}" aria-label="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS_COURTS[Number(p.periode.slice(5, 7)) - 1] : ''}</small></i>`).join('')}</div>
+        <div class="legende muted">${Object.entries(STATUT_PERIODE).filter(([k]) => deLAnnee.some((p) => p.statut === k)).map(([k, [, l]]) => `<span><i class="case-p p-${k}"></i>${l}</span>`).join('')}</div>` : ''}
+      ${montant != null || avance > 0 ? `<p class="muted" style="margin:0">${montant != null ? `${eur(montant)} par ${{ 1: 'mois', 3: 'trimestre', 6: 'semestre', 12: 'an' }[pasCotis()] || 'période'}` : ''}${avance > 0 ? ` · avance ${eur(avance)}` : ''}</p>` : ''}</section>`;
+  const carteRegler = retard > 0 || resteParts > 0 || !connecte ? (infos ? `<section class="carte carte-regler" id="m-regler"><h2>Comment régler</h2><p class="texte-libre" style="margin:0">${esc(infos)}</p></section>`
+    : retard > 0 || resteParts > 0 ? '<section class="carte carte-regler" id="m-regler"><h2>Comment régler</h2><p style="margin:0">Adressez-vous au trésorier.</p></section>' : '') : '';
+  const carteParts = parts.length ? `<section class="carte"><h2>Mes participations${resteParts > 0 ? ` <span class="puce puce-partiel">${eur(resteParts)} à régler</span>` : ''}</h2>${listeParticipations(parts)}</section>` : '';
+  const carteAnniv = anniv ? `<section class="carte"><h2>Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}</h2>${listeAnniversaires(anniv, mois)}</section>` : '';
+  const carteVersements = versements?.length ? `<details class="carte rubrique"><summary><span class="rub-titre"><h2>Mes versements</h2><span class="rub-resume">${versements.length} dernier${versements.length > 1 ? 's' : ''}</span></span>${icone('chevron')}</summary>
+      <div class="rub-corps"><ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul></div></details>` : '';
+  return `<div class="vue-membre">
+    <div class="vm-hero">${hero}${alerte}</div>
+    <section class="carte vm-suite"><h2>Ensuite au planning</h2>
+      ${suite.length ? listePlanningCouleur(suite) : '<p class="muted">Rien d’autre d’annoncé pour l’instant.</p>'}
+</section>
+    <div class="vm-cote">${carteCotis}${carteRegler}${carteParts}${carteAnniv}${carteVersements}</div>
+  </div>`;
+}
+
+// Fichier .ics : le rendez-vous s'ajoute à l'agenda du téléphone ou de l'ordinateur (Google, Apple, Outlook)
+function telechargerIcs(e) {
+  const j = (d) => d.replace(/-/g, '');
+  const t = (d, h) => j(d) + 'T' + h.slice(0, 5).replace(':', '') + '00';
+  const lendemain = (d) => isoLocal(new Date(dateDe(d).getTime() + 864e5));
+  const echap = (x) => String(x || '').replace(/[\;,]/g, (c) => '\\' + c).replace(/\n/g, '\\n');
+  const debut = e.heure_debut ? `DTSTART;TZID=Europe/Paris:${t(e.date_debut, e.heure_debut)}` : `DTSTART;VALUE=DATE:${j(e.date_debut)}`;
+  const fin = e.heure_debut ? `DTEND;TZID=Europe/Paris:${t(e.date_fin || e.date_debut, e.heure_fin || (String(Number(e.heure_debut.slice(0, 2)) + 2).padStart(2, '0') + e.heure_debut.slice(2, 5)))}`
+    : `DTEND;VALUE=DATE:${j(lendemain(e.date_fin || e.date_debut))}`;
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Tresorerie//FR', 'BEGIN:VEVENT', `UID:${e.id || e.nom + e.date_debut}@tresorerie`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`, debut, fin, `SUMMARY:${echap(e.nom)}`,
+    e.lieu ? `LOCATION:${echap(e.lieu)}` : '', e.description ? `DESCRIPTION:${echap(e.description)}` : '',
+    'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY', `DESCRIPTION:${echap(e.nom)}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].filter(Boolean).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  a.download = (e.nom || 'rendez-vous').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.ics';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast('Rendez-vous ajouté : ouvrez le fichier pour l’enregistrer dans votre agenda (rappel la veille)');
+}
+
+// Détail d'un rendez-vous vu depuis le lien personnel (sans compte)
+function detailEvenementMembre(e) {
+  ouvrirFeuille(`<h2>${esc(e.nom)}</h2><div class="details">
+      <div class="ligne-detail"><span class="muted">Date</span><span>${esc(jourLong(e.date_debut))}${e.date_fin && e.date_fin !== e.date_debut ? ' au ' + esc(jourLong(e.date_fin)) : ''}</span></div>
+      ${e.heure_debut ? `<div class="ligne-detail"><span class="muted">Heure</span><span>${heure(e.heure_debut)}${e.heure_fin ? ' – ' + heure(e.heure_fin) : ''}</span></div>` : ''}
+      ${e.lieu ? `<div class="ligne-detail"><span class="muted">Lieu</span><span>${esc(e.lieu)}</span></div>` : ''}</div>
+    ${e.description ? `<p>${esc(e.description)}</p>` : ''}
+    <div class="actions"><button class="btn-tonal" id="b-ics">${icone('agenda', 16)} Ajouter à mon agenda</button><button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#b-ics', root).addEventListener('click', () => telechargerIcs(e));
   });
 }
-// Liste des rendez-vous avec la couleur de chacun (accueil des membres)
+
+function brancherVueMembre(planning, ouvrir) {
+  document.querySelectorAll('.vue-membre [data-evt]').forEach((li) => {
+    const go = (ev) => { ev.stopPropagation(); const e = planning.find((p) => String(p.id) === li.dataset.evt); if (e) ouvrir(e); };
+    li.addEventListener('click', go); li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(ev); });
+  });
+  document.querySelectorAll('.vue-membre [data-ics]').forEach((b) => b.addEventListener('click', (ev) => {
+    ev.stopPropagation(); const e = planning.find((p) => String(p.id) === b.dataset.ics); if (e) telechargerIcs(e);
+  }));
+  $('.alerte-membre')?.addEventListener('click', (ev) => { ev.preventDefault(); $('#m-regler')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+}
+
+async function pageTableauAdherent(anniv, mois) {
+  const [cot, planning, parts] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('planning_activites', { p_debut: isoLocal(new Date()) })), q(sb.rpc('mes_participations'))]);
+  rendre(`<div class="page accueil accueil-membre">${banniere('')}
+    ${vueMembre({ planning, cot, parts, infos: S.textes?.infos_paiement, anniv, mois, connecte: true })}</div>`);
+  brancherVueMembre(planning, (e) => detailEvenement(e, () => router()));
+  marquerVu('cotisations');
+}
+
+// Liste des rendez-vous avec la couleur de chacun (vue des membres)
 function listePlanningCouleur(l) {
   return `<ul class="liste liste-evt">${l.map((p) => `<li class="cliquable" data-evt="${p.id}" tabindex="0" role="button" style="${styleEvt(p)}">
     <span class="date-evt"><b>${p.date_debut ? Number(p.date_debut.slice(8, 10)) : '–'}</b>${p.date_debut ? MOIS_COURTS[Number(p.date_debut.slice(5, 7)) - 1] : ''}</span>
     <div class="corps"><b>${esc(p.nom)}</b><span>${p.date_debut ? jourLong(p.date_debut) : 'Date à fixer'}${p.heure_debut ? ' · ' + heure(p.heure_debut) : ''}${p.lieu ? ' · ' + esc(p.lieu) : ''}</span></div>
-    ${p.participation ? `<span class="puce puce-partiel">${eur(p.participation)}</span>` : `<span class="muted">${p.date_debut ? dansJours(p.date_debut) : ''}</span>`}</li>`).join('')}</ul>`;
+    ${p.participation ? `<span class="puce puce-partiel">${eur(p.participation)}</span>` : `<span class="dans-evt">${p.date_debut ? dansJours(p.date_debut) : ''}</span>`}</li>`).join('')}</ul>`;
 }
 
 // ---------- Opérations : recettes, dépenses et soldes, avec filtres ----------
@@ -1005,7 +1060,7 @@ async function pageEcritures() {
     ${lignes.length ? `<ul class="liste">${lignes.map((t) => `<li class="cliquable" data-detail="${t.id}" tabindex="0" role="button">
         <div class="corps"><b>${esc(t.libelle)}</b><span>${dateFr(t.date_op)} · ${nomTiers(t) ? esc(nomTiers(t)) + ' · ' : ''}${esc(nomRubrique(t) || cat(t.category_id))} · ${esc(cpt(t.account_id))}</span></div>
         ${puceEtat(t)} ${iconePiece(t)} ${montantSigne(t)}</li>`).join('')}</ul>`
-      : `<div class="vide">Aucune opération${filtresActifs ? ' pour ces filtres' : ''}.${peut('saisir_ecritures') && !filtresActifs ? '<button class="btn-primaire" id="b-nouvelle-vide">Nouvelle opération</button>' : ''}</div>`}
+      : `<div class="vide">Aucune opération${filtresActifs ? ' pour ces filtres' : ''}.</div>`}
     </section>
     ${peut('saisir_ecritures') ? `<button class="fab" id="b-nouvelle" aria-label="Nouvelle opération" title="Nouvelle opération"></button>` : ''}
   </div>`);
@@ -1021,7 +1076,7 @@ async function pageEcritures() {
   }));
   let minuteur; $('#f-texte').addEventListener('input', (e) => { clearTimeout(minuteur); minuteur = setTimeout(() => { f.texte = e.target.value; recharger().then?.(() => { const i = $('#f-texte'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); });
   $('#f-raz')?.addEventListener('click', () => { S.filtres = {}; recharger(); });
-  ['#b-nouvelle', '#b-nouvelle-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleEcriture()));
+  $('#b-nouvelle')?.addEventListener('click', () => feuilleEcriture());
   const exportCsv = () => telechargerCsv(`operations-${f.du || 'debut'}-${f.au || aujourdhui()}.csv`,
     ['Date', 'Sens', 'Libellé', 'Tiers', 'Rubrique', 'Catégorie', 'Activité', 'Compte', 'Mode', 'Montant', 'Pièce', 'Rapprochée'],
     lignes.map((t) => [dateFr(t.date_op), t.virement ? (t.sens === 'recette' ? 'Virement interne (entrée)' : 'Virement interne (sortie)') : t.sens === 'recette' ? 'Recette' : 'Dépense', t.libelle, nomTiers(t), nomRubrique(t), cat(t.category_id), nomProjet(t.project_id), cpt(t.account_id), MODES[t.mode], signe(t), pieces[t.id] ? 'Oui' : 'Non', t.rapproche ? 'Oui' : 'Non']));
@@ -1450,7 +1505,6 @@ async function pageMembres() {
             ${peut('gerer_membres') ? `<button class="btn-texte btn-petit" data-modif="${m.id}">Modifier</button>` : ''}
           </div>
         </li>`;
-  const moiSansFiche = !S.profil.member_id && peut('gerer_membres');
   rendre(`<div class="page">
     <div class="page-titre"><h1>Membres</h1>
       <span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? `, ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
@@ -1458,7 +1512,6 @@ async function pageMembres() {
       ${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-import">Importer (CSV, Excel)</button>' : ''}
       <button class="btn-bleu btn-petit" id="b-export-m">Exporter</button>
     </div>
-    ${moiSansFiche ? `<div class="info info-action"><span><b>Vous n’êtes pas encore dans la liste.</b> Créez votre fiche : on est d’abord membre, puis on reçoit une fonction.</span><button class="btn-primaire btn-petit" id="b-ma-fiche">Créer ma fiche</button></div>` : ''}
     ${S.membres.length ? '<input type="search" id="recherche" placeholder="Rechercher un membre" aria-label="Rechercher un membre">' : ''}
     ${bureau.length ? `<section class="carte"><h2>Bureau</h2><ul class="liste liste-membres">${bureau.map(ligne).join('')}</ul></section>` : ''}
     <section class="carte">
@@ -1475,7 +1528,6 @@ async function pageMembres() {
     document.querySelectorAll('.liste-membres li').forEach((li) => { li.hidden = v && !li.dataset.nom.includes(v); });
   });
   $('#b-ajout')?.addEventListener('click', () => feuilleMembre());
-  $('#b-ma-fiche')?.addEventListener('click', () => feuilleMembre(null, { lierAMoi: true }));
   $('#b-import')?.addEventListener('click', feuilleImport);
   document.querySelectorAll('[data-modif]').forEach((b) => b.addEventListener('click', () => feuilleMembre(S.membres.find((m) => m.id === b.dataset.modif))));
   document.querySelectorAll('[data-acces]').forEach((b) => b.addEventListener('click', () => feuilleAcces(S.membres.find((m) => m.id === b.dataset.acces))));
@@ -1728,8 +1780,7 @@ function feuilleImport() {
 
 // ---------- Cotisations ----------
 // ---------- Cotisations (par période) et participations aux activités ----------
-async function pageCotisations(moi = false) {
-  if (moi || !peut('consulter_finances', 'gerer_cotisations')) return pageMaCotisation();
+async function pageCotisations() {
   const onglet = S.ongletCotis || 'cotisations';
   rendre(`<div class="page">
     <div class="page-titre"><h1>Cotisations</h1></div>
@@ -1800,10 +1851,10 @@ async function ongletCotisations(zone) {
     const ouvrir = () => ficheCotisation(S.membres.find((m) => m.id === b.dataset.fiche));
     b.addEventListener('click', ouvrir); b.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
   });
-  $('#b-export-c', zone).addEventListener('click', () => telechargerCsv(`cotisations-${S.annee}.csv`,
+  $('#b-export-c', zone).addEventListener('click', () => choisirFormat(`Cotisations ${S.annee}`, () => pdfCotisations(S.annee), () => telechargerCsv(`cotisations-${S.annee}.csv`,
     ['Prénom', 'Nom', ...cases.map((p) => nomPeriode(p)), 'Dû', 'Réglé', 'Exigible', 'Retard', 'Réglé jusqu’à'],
     lignes.map(({ m, c }) => [m.prenom, m.nom, ...cases.map((p) => { const x = parCase[cle(m.id, p)]; return x ? STATUT_PERIODE[x.statut][1] : ''; }),
-      Number(c.montant_du), Number(c.montant_paye), Number(c.exigible || 0), Number(c.retard), c.regle_jusqu_a ? nomPeriode(c.regle_jusqu_a) : ''])));
+      Number(c.montant_du), Number(c.montant_paye), Number(c.exigible || 0), Number(c.retard), c.regle_jusqu_a ? nomPeriode(c.regle_jusqu_a) : '']))));
 }
 
 function lienRelance(m, objet) {
@@ -1852,14 +1903,6 @@ async function ficheCotisation(m) {
 }
 
 // Espace personnel : cotisation par période et participations demandées
-async function pageMaCotisation() {
-  const [periodes, parts] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('mes_participations'))]);
-  rendre(`<div class="page"><h1>Ma cotisation</h1>
-    <section class="carte">${blocMaCotisation(periodes)}</section>
-    <section class="carte"><h2>Mes participations</h2>${listeParticipations(parts)}</section>
-  </div>`);
-}
-
 function blocMaCotisation(periodes) {
   if (!periodes?.length) return '<p class="muted">Aucune cotisation enregistrée</p>';
   const an = new Date().getFullYear();
@@ -2111,7 +2154,7 @@ function sectionsParametres() {
   const corbeille = admin || peut('consulter_finances', 'saisir_ecritures', 'gerer_membres', 'gerer_activites', 'gerer_materiel', 'demander_depenses');
   return [
     ['Mon compte', [
-      ['compte', 'Profil et fiche de membre', 'personne', 'Nom affiché, ma fiche, ma cotisation', paramCompte, true],
+      ['compte', 'Profil et fiche de membre', 'personne', 'Nom affiché, ma fiche de membre', paramCompte, true],
       ['securite', 'Mot de passe et session', 'cadenas', 'Changer le mot de passe, se déconnecter', paramSecurite, true],
       ['notifications', 'Notifications', 'cloche', 'Pastilles et alertes du navigateur', paramNotifications, true]]],
     ['Association', [
@@ -2123,12 +2166,12 @@ function sectionsParametres() {
       ['categories', 'Catégories', 'categorie', 'Recettes et dépenses', paramCategories, admin],
       ['regles', 'Cotisations et dépenses', 'cotisations', 'Montant, périodicité, délais, seuils', paramMontants, admin]]],
     ['Accès', [
-      ['personnes', 'Personnes et invitations', 'acces', 'Qui a accès, avec quel rôle', paramPersonnes, admin],
+      ['personnes', 'Comptes et accès', 'acces', 'Vue d’ensemble : qui a un compte, actif ou non', paramPersonnes, admin],
       ['roles', 'Rôles et droits', 'roles', 'Ce que chaque rôle peut faire', paramRoles, admin]]],
     ['Données', [
       ['corbeille', 'Corbeille', 'corbeille', 'Éléments supprimés, à restaurer', paramCorbeille, corbeille],
       ['sauvegarde', 'Sauvegarde', 'donnees', 'Télécharger toutes les données', paramSauvegarde, admin],
-      ['assistant', 'Assistant de configuration', 'assistant', 'Reprendre la configuration pas à pas', paramAssistant, admin]]],
+      ['assistant', 'Assistant de configuration', 'assistant', 'Terminer la configuration pas à pas', paramAssistant, admin && S.org?.configuree === false]]],
   ].map(([g, l]) => [g, l.filter((x) => x[5])]).filter(([, l]) => l.length);
 }
 async function pageParametres() {
@@ -2138,20 +2181,32 @@ async function pageParametres() {
   if (S.ongletParam && !toutes.some((x) => x[0] === S.ongletParam)) S.ongletParam = null;
   if (!S.ongletParam && large) S.ongletParam = 'compte';
   const choisie = toutes.find((x) => x[0] === S.ongletParam);
+  // Paramètres = un espace à part : le menu de l'application disparaît, une barre propre (Retour, titre, Fermer)
+  // et un menu en cartes groupées et colorées, qui ne ressemble pas au menu principal.
+  const COULEURS = { 'Mon compte': 'c-bleu', Association: 'c-orange', Finances: 'c-vert', Accès: 'c-violet', Données: 'c-gris' };
+  const fiche = S.profil.member_id ? (S.membres || []).find((m) => m.id === S.profil.member_id) : null;
+  const titre = choisie && !large ? choisie[1] : 'Paramètres';
   rendre(`<div class="page page-param ${choisie ? 'avec-section' : ''}">
+    <header class="param-barre">
+      ${choisie && !large ? `<button class="param-barre-btn" type="button" id="b-param-retour" aria-label="Retour aux paramètres">${icone('precedent', 20)}</button>` : `<span class="param-barre-icone">${icone('parametres', 22)}</span>`}
+      <div class="param-barre-titre"><h1>${titre}</h1><span>${esc(S.org?.nom || '')}</span></div>
+      <button class="param-barre-btn param-fermer" type="button" id="b-param-fermer">${icone('fermer', 18)}<span>Fermer</span></button>
+    </header>
     <div class="param-grille">
-      <nav class="param-menu carte" aria-label="Sections des paramètres">
-        <h1>Paramètres</h1>
-        ${groupes.map(([g, l]) => `<div class="param-groupe"><span class="param-groupe-titre">${g}</span>
+      <nav class="param-menu" aria-label="Sections des paramètres">
+        <div class="param-moi">${fiche ? avatar(fiche) : `<span class="avatar" aria-hidden="true">${esc(initiales({ prenom: S.profil.nom.split(' ')[0], nom: S.profil.nom.split(' ')[1] || '' }))}</span>`}
+          <div><b>${esc(S.profil.nom)}</b><span>${esc(nomRole(S.profil.role))}</span></div></div>
+        ${groupes.map(([g, l]) => `<div class="param-groupe ${COULEURS[g] || ''}"><span class="param-groupe-titre">${g}</span><div class="param-carte">
           ${l.map(([k, t, ic, d]) => `<a href="#parametres" class="param-lien" data-section="${k}" ${k === S.ongletParam ? 'aria-current="page"' : ''}>
-            <span class="param-icone">${icone(ic)}</span><span class="param-texte"><b>${t}</b><small>${d}</small></span>${icone('suivant', 16)}</a>`).join('')}</div>`).join('')}
+            <span class="param-icone">${icone(ic)}</span><span class="param-texte"><b>${t}</b><small>${d}</small></span>${icone('suivant', 16)}</a>`).join('')}</div></div>`).join('')}
       </nav>
       <section class="param-contenu" aria-live="polite">
-        ${choisie ? `<div class="param-entete"><button class="btn-texte btn-petit param-retour" type="button">${icone('precedent', 16)} Paramètres</button>
-          <h2>${choisie[1]}</h2><p class="muted">${choisie[3]}</p></div><div id="param-corps" class="anime-entree"></div>` : ''}
+        ${choisie ? `<div class="param-entete"><h2>${choisie[1]}</h2><p class="muted">${choisie[3]}</p></div><div id="param-corps" class="anime-entree"></div>` : ''}
       </section></div></div>`);
   document.querySelectorAll('.param-lien[data-section]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); S.ongletParam = a.dataset.section; pageParametres().then(() => window.scrollTo(0, 0)).catch(erreur); }));
-  $('.param-retour')?.addEventListener('click', () => { S.ongletParam = null; pageParametres().catch(erreur); });
+  const quitter = () => { location.hash = '#' + (S.pageAvantParam || 'tableau'); };
+  $('#b-param-fermer').addEventListener('click', quitter);
+  $('#b-param-retour')?.addEventListener('click', () => { S.ongletParam = null; pageParametres().catch(erreur); });
   if (choisie) await choisie[4]($('#param-corps'));
 }
 
@@ -2172,7 +2227,7 @@ async function paramCompte(zone) {
     <section class="carte">
       <h2>Ma fiche de membre</h2>
       ${fiche ? `<div class="identite">${avatar(fiche)}<div><b>${esc(nomComplet(fiche))}</b><span class="muted">${fiche.naissance_jour} ${MOIS[fiche.naissance_mois - 1]}${fiche.profession ? ' · ' + esc(fiche.profession) : ''}</span></div></div>
-        <div class="actions-gauche">${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-ma-fiche">Modifier ma fiche</button>' : ''}<a class="btn btn-texte btn-petit" href="#cotisations">Ma cotisation</a></div>`
+        <div class="actions-gauche">${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-ma-fiche">Modifier ma fiche</button>' : ''}</div>`
       : peut('gerer_membres') ? `<p class="muted" style="margin:0">Aucune fiche rattachée à votre compte.</p>
         <div class="actions-gauche"><button class="btn-primaire btn-petit" id="b-remplir-fiche">Remplir ma fiche</button></div>
         ${libres.length ? `<label class="champ">Ou rattacher une fiche existante<select id="s-rattacher"><option value="">Choisir un membre</option>${libres.map((m) => `<option value="${m.id}">${esc(nomComplet(m))}</option>`).join('')}</select></label>` : ''}`
@@ -2228,11 +2283,10 @@ async function paramNotifications(zone) {
   const etat = !n ? 'non prises en charge par ce navigateur' : n.permission === 'granted' ? 'activées' : n.permission === 'denied' ? 'bloquées (à autoriser dans les réglages du navigateur)' : 'désactivées';
   zone.innerHTML = `<div class="grille grille-2">
     <section class="carte"><h3>Pastilles</h3><p class="muted" style="margin:0">Un chiffre apparaît sur un onglet quand quelque chose vous attend ou est nouveau depuis votre dernière visite : demande à valider ou à payer, opération saisie par un autre, rendez-vous ajouté, participation demandée, nouveau membre. La cloche les rassemble.</p>
-      <button class="btn-tonal btn-petit b-cloche-param" style="align-self:flex-start">Voir les nouveautés</button></section>
+</section>
     <section class="carte"><h3>Alertes du navigateur</h3><p class="muted" style="margin:0">Une alerte s’affiche quand une nouveauté arrive alors que la page est ouverte en arrière-plan. Actuellement&nbsp;: <b>${etat}</b>.</p>
       ${n && n.permission === 'default' ? '<button class="btn-primaire btn-petit" id="b-notif" style="align-self:flex-start">Activer les alertes</button>' : ''}
       <p class="muted" style="margin:0">Sur Android, l’application affiche les mêmes pastilles et une notification du téléphone.</p></section></div>`;
-  $('.b-cloche-param', zone).addEventListener('click', feuilleNouveautes);
   $('#b-notif', zone)?.addEventListener('click', async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Alertes activées' : 'Alertes refusées'); paramNotifications(zone); });
 }
 
@@ -2615,7 +2669,8 @@ async function paramPersonnes(zone) {
   ]);
   const optionsRoles = (choisi) => S.roles.map((r) => `<option value="${esc(r.code)}" ${r.code === choisi ? 'selected' : ''}>${esc(r.nom)}</option>`).join('');
   zone.innerHTML = `<section class="carte">
-    <div class="page-titre"><h2 style="flex:1">Comptes et accès</h2><button class="btn-primaire btn-petit" id="b-inviter">Inviter</button></div>
+    <div class="page-titre"><h2 style="flex:1">Comptes et accès</h2><a class="btn btn-tonal btn-petit" href="#membres">Donner un accès</a></div>
+    <p class="muted" style="margin:0">Vue d’ensemble des comptes. Pour donner un accès à quelqu’un, ouvrez sa fiche dans Membres, puis « Fonction » : on est d’abord membre, puis on reçoit une fonction.</p>
     <ul class="liste">
       ${profils.map((p) => `<li>
         <span class="avatar" aria-hidden="true">${esc(initiales({ prenom: p.nom.split(' ')[0], nom: p.nom.split(' ')[1] || '' }))}</span>
@@ -2650,7 +2705,7 @@ async function paramPersonnes(zone) {
   zone.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', async () => {
     try { await q(sb.from('invitations').delete().eq('email', b.dataset.retirer)); await chargerAcces(); toast('Invitation retirée'); paramPersonnes(zone); } catch (err) { erreur(err); }
   }));
-  $('#b-inviter', zone).addEventListener('click', () => ouvrirFeuille(`<form id="f-invit" class="champs"><h2>Inviter</h2>
+  $('#b-inviter', zone)?.addEventListener('click', () => ouvrirFeuille(`<form id="f-invit" class="champs"><h2>Inviter</h2>
     <label class="champ"><span class="obligatoire">E-mail</span><input name="email" type="email" required></label>
     <label class="champ"><span class="obligatoire">Nom affiché</span><input name="nom" required maxlength="60"></label>
     <div class="champs champs-2"><label class="champ">Rôle<select name="role">${optionsRoles('adherent')}</select></label>
@@ -2907,13 +2962,13 @@ async function pageDepenses() {
       const n = demandes.filter(f).length;
       return `<button class="btn-petit ${S.filtreDepenses === k ? 'btn-primaire' : ''}" data-filtre="${k}" role="tab" aria-selected="${S.filtreDepenses === k}">${l}${k !== 'toutes' && k !== 'terminees' && n ? ` (${n})` : ''}</button>`;
     }).join('')}</div>
-    ${liste.length ? liste.map(carte).join('') : `<div class="carte vide">Aucune demande ${S.filtreDepenses === 'toutes' ? '' : FILTRES[S.filtreDepenses][0].toLowerCase()}.${peutDemander && S.filtreDepenses === 'toutes' ? '<button class="btn-primaire" id="b-demande-vide">Nouvelle demande</button>' : ''}</div>`}
+    ${liste.length ? liste.map(carte).join('') : `<div class="carte vide">Aucune demande ${S.filtreDepenses === 'toutes' ? '' : FILTRES[S.filtreDepenses][0].toLowerCase()}.</div>`}
   </div>`);
 
   const recharger = () => pageDepenses().catch(erreur);
   const trouver = (id) => demandes.find((d) => d.id === id);
   document.querySelectorAll('[data-filtre]').forEach((b) => b.addEventListener('click', () => { S.filtreDepenses = b.dataset.filtre; recharger(); }));
-  ['#b-demande', '#b-demande-vide'].forEach((sel) => $(sel)?.addEventListener('click', () => feuilleDemande(recharger)));
+  $('#b-demande')?.addEventListener('click', () => feuilleDemande(recharger));
   document.querySelectorAll('[data-valider]').forEach((b) => b.addEventListener('click', () => { const d = trouver(b.dataset.valider); feuilleValider(d, nomDe, recharger, devisDe(d)); }));
   document.querySelectorAll('[data-refuser]').forEach((b) => b.addEventListener('click', () => feuilleRefuser(trouver(b.dataset.refuser), recharger)));
   document.querySelectorAll('[data-payer]').forEach((b) => b.addEventListener('click', () => feuillePayer(trouver(b.dataset.payer), recharger)));
@@ -3107,7 +3162,7 @@ async function detailEvenement(e, recharger) {
     }
   }
   const quand = e.date_debut ? jourLong(e.date_debut) + (e.date_fin && e.date_fin !== e.date_debut ? ' au ' + jourLong(e.date_fin) : '') : 'Date à fixer';
-  ouvrirFeuille(`<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(e.nom)}</h2>${e.type === 'activite' && peut('consulter_finances', 'gerer_budget') ? '<a class="puce puce-neutre" href="#budget">Budget suivi</a>' : ''}</div>
+  ouvrirFeuille(`<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(e.nom)}</h2>${e.type === 'activite' ? '<span class="puce puce-neutre">Budget suivi</span>' : ''}</div>
     <div class="details">
       <div class="ligne-detail"><span class="muted">Date</span><span>${esc(quand)}</span></div>
       ${e.heure_debut ? `<div class="ligne-detail"><span class="muted">Heure</span><span>${heure(e.heure_debut)}${e.heure_fin ? ' – ' + heure(e.heure_fin) : ''}</span></div>` : ''}
@@ -3283,14 +3338,9 @@ function documentsExport() {
   return [
     ['rapport', 'Rapport financier (assemblée générale ou période)', ['pdf'], 'libre'],
     ['journal', 'Journal des opérations', ['pdf', 'excel'], 'libre'],
-    ['cotisations', 'État des cotisations', ['pdf', 'excel'], 'annee'],
     ['participations', 'Participations aux activités', ['excel'], ''],
-    ['budget', 'Budget prévu et réalisé', ['pdf', 'excel'], 'annee'],
     ['demandes', 'Registre des demandes de dépense', ['pdf', 'excel'], 'annee'],
-    peut('voir_membres', 'gerer_membres') && ['membres', 'Liste des membres', ['pdf', 'excel'], ''],
-    ['inventaire', 'Inventaire du matériel', ['pdf', 'excel'], ''],
     ['pieces', 'Pièces justificatives (fichier ZIP classé par mois)', ['zip'], 'annee'],
-    peut('administrer') && ['sauvegarde', 'Sauvegarde complète des données', ['json'], ''],
   ].filter(Boolean);
 }
 
@@ -3318,7 +3368,7 @@ async function pageRapports() {
         <div class="actions"><button class="btn-primaire" id="b-exporter">Exporter</button></div>
       </form>
     </section>
-    <p class="muted aide-bas">PDF&nbsp;: mis en page pour imprimer, signer ou transmettre. Excel&nbsp;: tableau modifiable (CSV). Les exports d’une page (opérations filtrées, membres, matériel) restent disponibles sur chaque page avec le bouton Exporter.</p>
+    <p class="muted aide-bas">PDF&nbsp;: mis en page pour imprimer, signer ou transmettre. Excel&nbsp;: tableau modifiable (CSV). Cotisations, budget, membres et matériel s’exportent depuis leur page (bouton Exporter) ; la sauvegarde complète est dans Paramètres › Sauvegarde.</p>
   </div>`);
   const fo = $('#f-export');
   const NOMS_FORMAT = { pdf: 'PDF', excel: 'Excel', zip: 'ZIP', json: 'Fichier de sauvegarde' };
@@ -3742,50 +3792,22 @@ async function pageLien(jeton, retour = null) {
   S.settings = { ...S.settings, cotisation_periode_mois: Number(d.reglages?.periode_mois || 1) };
   const logo = urlPublique(d.association?.logo_path) || S.logoUrl;
   const photo = urlPublique(d.association?.banniere_path);
-  const auj = aujourdhui(), an = new Date().getFullYear();
-  const periodes = d.periodes || [];
-  const retard = retardDe(periodes);
-  const regles = periodes.filter((p) => ['regle', 'dispense'].includes(p.statut)).map((p) => p.periode).sort();
-  const deLAnnee = periodes.filter((p) => p.annee === an).sort((a, b) => (a.periode > b.periode ? 1 : -1));
-  const prochaine = periodes.filter((p) => ['impaye', 'partiel', 'a_venir'].includes(p.statut)).sort((a, b) => (a.periode > b.periode ? 1 : -1))[0];
-  const parts = d.participations || [];
-  const partsDues = parts.filter((p) => p.montant_attendu && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
-  const etat = retard > 0
-    ? `<div class="situation situation-retard"><span>Cotisation</span><b class="num">${eur(retard)}</b><small>en retard${prochaine ? ` depuis ${esc(nomPeriode(prochaine.periode))}` : ''}</small></div>`
-    : `<div class="situation situation-ok"><span>Cotisation</span><b>À jour</b><small>${regles.length ? `réglée jusqu’à ${esc(nomPeriode(regles[regles.length - 1]))}` : 'aucune période due'}</small></div>`;
-  const avance = Number(d.avance || 0);
+  const planning = (d.a_venir || []).map((p, i) => ({ ...p, id: p.id || `lien-${i}` }));
+  const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   document.title = `${d.association?.nom || 'Association'} · ${d.membre?.prenom || ''}`;
   $('#app').innerHTML = `<main class="espace-membre">
-    <section class="banniere ${photo ? 'avec-photo' : ''}" ${photo ? `style="--photo:url('${esc(photo)}')"` : ''}>
-      <div class="banniere-tete"><img src="${esc(logo)}" alt=""><div><b>${esc(d.association?.nom || '')}</b><span>Bonjour ${esc(d.membre?.prenom || '')}</span></div></div>
-      ${etat}
+    <section class="banniere banniere-compacte ${photo ? 'avec-photo' : ''}" ${photo ? `style="--photo:url('${esc(photo)}')"` : ''}>
+      <div class="banniere-tete"><img src="${esc(logo)}" alt=""><div><b>${esc(d.association?.nom || '')}</b><span>Bonjour ${esc(d.membre?.prenom || '')} · ${date}</span></div></div>
     </section>
     ${retour ? `<div class="info info-action"><span>Aperçu de ce que voit ${esc(d.membre?.prenom || '')} avec son lien.</span><button class="btn-primaire btn-petit" id="b-retour">Revenir</button></div>` : ''}
-    <section class="carte">
-      <h2>Ma cotisation ${an}</h2>
-      ${deLAnnee.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${deLAnnee.length},1fr)">${deLAnnee.map((p) => `<i class="case-p p-${p.statut}" role="img" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}" aria-label="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS_COURTS[Number(p.periode.slice(5, 7)) - 1] : ''}</small></i>`).join('')}</div>
-        <div class="legende muted">${Object.entries(STATUT_PERIODE).filter(([k]) => deLAnnee.some((p) => p.statut === k)).map(([k, [, l]]) => `<span><i class="case-p p-${k}"></i>${l}</span>`).join('')}</div>` : '<p class="muted">Aucune cotisation enregistrée pour cette année.</p>'}
-      <ul class="liste">
-        <li><div class="corps"><b>Montant</b><span>${eur(d.reglages?.montant)} par ${{ 1: 'mois', 3: 'trimestre', 6: 'semestre', 12: 'an' }[pasCotis()] || 'période'}</span></div></li>
-        ${retard > 0 ? `<li><div class="corps"><b>À régler</b><span>Périodes déjà commencées et non réglées</span></div><b class="num negatif">${eur(retard)}</b></li>` : ''}
-        ${avance > 0 ? `<li><div class="corps"><b>Avance</b><span>Versé au-delà des périodes prévues</span></div><b class="num">${eur(avance)}</b></li>` : ''}
-      </ul>
-    </section>
-    ${d.reglages?.infos_paiement ? `<section class="carte"><h2>Comment régler</h2><p class="texte-libre">${esc(d.reglages.infos_paiement)}</p></section>` : ''}
-    ${parts.length ? `<section class="carte"><h2>Mes participations${partsDues.length ? ` <span class="puce puce-partiel">${partsDues.length} en attente</span>` : ''}</h2>${listeParticipations(parts)}</section>` : ''}
-    <section class="carte"><h2>À venir</h2>
-      ${(d.a_venir || []).length ? `<ul class="liste">${d.a_venir.map((p) => `<li><span class="avatar date-pastille"><b>${Number(p.date_debut.slice(8, 10))}</b>${MOIS_COURTS[Number(p.date_debut.slice(5, 7)) - 1]}</span>
-        <div class="corps"><b>${esc(p.nom)}</b><span>${esc(jourLong(p.date_debut))}${p.heure_debut ? ' · ' + heure(p.heure_debut) : ''}${p.lieu ? ' · ' + esc(p.lieu) : ''}</span>${p.description ? `<small class="muted descr">${esc(p.description)}</small>` : ''}</div></li>`).join('')}</ul>` : '<p class="muted">Aucun rendez-vous annoncé.</p>'}
-    </section>
-    ${(d.versements || []).length ? `<details class="carte rubrique"><summary><span class="rub-titre"><h2>Mes versements</h2><span class="rub-resume">${d.versements.length} dernier${d.versements.length > 1 ? 's' : ''}</span></span>
-      ${icone('chevron')}</summary>
-      <div class="rub-corps"><ul class="liste">${d.versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul></div></details>` : ''}
+    ${vueMembre({ planning, cot: d.periodes || [], parts: d.participations || [], infos: d.reglages?.infos_paiement, versements: d.versements || [], avance: Number(d.avance || 0), montant: d.reglages?.montant })}
     <section class="pied-membre">
       <p>Ce lien vous est personnel. Pour l’ouvrir en un geste, ajoutez cette page à l’écran d’accueil de votre téléphone (menu du navigateur, « Ajouter à l’écran d’accueil »).</p>
-      <p>Mise à jour le ${dateFr(auj)} · ${esc(d.association?.nom || '')}</p>
+      <p>Mise à jour le ${dateFr(aujourdhui())} · ${esc(d.association?.nom || '')}</p>
       ${retour ? '' : '<div class="actions-gauche"><button class="btn-texte btn-petit" id="b-oublier">Oublier ce lien sur cet appareil</button><button class="btn-texte btn-petit" id="b-co">Accès du bureau</button></div>'}
     </section>
   </main>`;
+  brancherVueMembre(planning, detailEvenementMembre);
   $('#b-retour')?.addEventListener('click', retour);
   $('#b-co')?.addEventListener('click', seConnecter);
   $('#b-oublier')?.addEventListener('click', () => { garderJeton(null); history.replaceState(null, '', location.pathname); ecranConnexion('Lien oublié sur cet appareil.'); });
@@ -4192,7 +4214,7 @@ async function pageMateriel() {
     ${items.length ? '<input type="search" id="recherche-mat" placeholder="Rechercher : guitare, micro, numéro de série…" aria-label="Rechercher dans le matériel">' : ''}
     ${vus.length ? Object.keys(CATEGORIES_MATERIEL).filter((c) => parCat[c]).map((c) => `<section class="carte"><h2>${CATEGORIES_MATERIEL[c]} <span class="muted">${parCat[c].reduce((s, x) => s + x.quantite, 0)}</span></h2>
       <ul class="liste liste-materiel">${parCat[c].map(ligneM).join('')}</ul></section>`).join('')
-      : `<div class="carte vide">${items.length ? 'Aucun article dans cette vue.' : `Aucun matériel inscrit.${gere ? '<span>Instruments, sonorisation, informatique, tenues : inscrivez chaque bien de l’association, avec sa valeur et son lieu de rangement.</span><button class="btn-primaire" id="b-mat-vide">Ajouter un article</button>' : ''}`}</div>`}
+      : `<div class="carte vide">${items.length ? 'Aucun article dans cette vue.' : `Aucun matériel inscrit.${gere ? '<span>Instruments, sonorisation, informatique, tenues : inscrivez chaque bien de l’association, avec sa valeur et son lieu de rangement.</span>' : ''}`}</div>`}
     ${gere && items.length ? '<p class="muted aide-bas">Une fois par an, avant l’assemblée générale, vérifiez chaque article sur place et touchez « Vérifié ». L’inventaire PDF se signe et se joint au rapport.</p>' : ''}
     ${gere ? `<button class="fab" id="b-mat" aria-label="Ajouter un article" title="Ajouter un article"></button>` : ''}
   </div>`);
@@ -4202,7 +4224,7 @@ async function pageMateriel() {
     const v = sansAccents(e.target.value);
     document.querySelectorAll('.liste-materiel li').forEach((li) => { li.hidden = v && !li.dataset.nom.includes(v); });
   });
-  ['#b-mat', '#b-mat-vide'].forEach((s) => $(s)?.addEventListener('click', () => feuilleMateriel(null, recharger)));
+  $('#b-mat')?.addEventListener('click', () => feuilleMateriel(null, recharger));
   document.querySelectorAll('[data-mat]').forEach((li) => {
     const ouvrir = () => ficheMateriel(items.find((x) => x.id === li.dataset.mat), recharger);
     li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
