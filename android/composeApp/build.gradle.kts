@@ -19,6 +19,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.kotlinx.coroutines.android)
+            implementation(libs.androidx.work)
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -30,6 +31,7 @@ kotlin {
             implementation(libs.supabase.postgrest)
             implementation(libs.supabase.auth)
             implementation(libs.supabase.storage)
+            implementation(libs.supabase.realtime)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
@@ -49,8 +51,8 @@ android {
         applicationId = "org.jpgrenoble.tresorerie"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "0.17.0"
+        versionCode = 21
+        versionName = "0.18.0"
     }
     buildTypes {
         getByName("release") { isMinifyEnabled = false }

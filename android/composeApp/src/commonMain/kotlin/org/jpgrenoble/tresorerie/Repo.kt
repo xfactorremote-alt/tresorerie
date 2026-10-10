@@ -12,6 +12,7 @@ import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.serializer.KotlinXSerializer
 import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.storage
 import io.ktor.http.ContentType
 import kotlinx.serialization.json.add
@@ -37,6 +38,7 @@ object Repo {
             install(Auth)
             install(Postgrest)
             install(Storage)
+            install(Realtime)
         }
     }
 
@@ -64,9 +66,14 @@ object Repo {
         return client.from("profiles").select { filter { eq("id", id) } }.decodeSingleOrNull<Profil>()
     }
 
+    /** Identifiant de la personne connectée (démo ou Supabase), sans appel réseau. */
+    fun profilId(): String? = if (demo) profilDemo.value?.id else try { client.auth.currentUserOrNull()?.id } catch (_: Exception) { null }
+    // Nom de l'association pour le titre des notifications (gardé sur le téléphone : la vérification en arrière-plan n'a pas d'écran)
+    fun nomAssociation(): String? = lirePreference("association.nom")
+
     suspend fun organisation(): Organisation =
         if (demo) Demo.organisation
-        else client.from("organisation").select().decodeSingleOrNull<Organisation>() ?: Organisation()
+        else (client.from("organisation").select().decodeSingleOrNull<Organisation>() ?: Organisation()).also { garderPreference("association.nom", it.nom) }
 
     suspend fun soldes(): List<Solde> =
         if (demo) Demo.soldes() else client.from("v_soldes").select().decodeList()
@@ -682,6 +689,17 @@ object Repo {
     }
 
     // ---------- Exercices ----------
+    // ---------- Communiqués (lecture : tous les connectés selon visibilité ; écriture : gerer_activites ou administrer) ----------
+    suspend fun communiques(): List<Communique> =
+        if (demo) Demo.communiquesVisibles(profilDemo.value).sortedByDescending { it.debut }
+        else client.from("communiques").select { order("debut", Order.DESCENDING) }.decodeList()
+
+    suspend fun enregistrerCommunique(id: String?, c: NouveauCommunique) {
+        if (demo) { Demo.enregistrerCommunique(id, c, profilDemo.value); return }
+        if (id == null) client.from("communiques").insert(c)
+        else client.from("communiques").update(c) { filter { eq("id", id) } }
+    }
+
     suspend fun exercices(): List<Exercice> =
         if (demo) Demo.exercices.sortedByDescending { it.debut }
         else client.from("exercices").select { order("debut", Order.DESCENDING) }.decodeList()

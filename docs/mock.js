@@ -186,7 +186,12 @@ function seed() {
         { id: 'ex2', libelle: `Exercice ${an}`, debut: `${an}-01-01`, fin: `${an}-12-31`, cloture: false, cloture_le: null, cloture_par: null, created_at: `${an}-01-02T10:00:00Z` },
       ],
       corbeille: [],
+      communiques: [
+        { id: 'cq1', titre: 'Assemblée générale le 15 novembre', texte: 'Tous les membres sont attendus à 15 h, salle paroissiale. Ordre du jour : bilan de l’année, budget, élection du bureau.', debut: iso(ilYa(1)), fin: null, priorite: 'haute', visible_adherents: true, created_by: ids.t, created_at: ilYa(1).toISOString() },
+        { id: 'cq2', titre: 'Réunion du bureau jeudi', texte: 'Préparation de l’assemblée générale.', debut: iso(ilYa(2)), fin: null, priorite: 'normale', visible_adherents: false, created_by: ids.p, created_at: ilYa(2).toISOString() },
+      ],
       settings: [
+        { cle: 'banniere', valeur: null, texte: JSON.stringify({ rotation: 8, rdv: { priorite: 1, frequence: 'toujours' }, cotisation: { priorite: 2, frequence: 'jour' }, participation: { priorite: 2, frequence: 'jour' }, communique: { priorite: 1, frequence: 'toujours' } }) },
         { cle: 'cotisation_montant', valeur: 20 }, { cle: 'cotisation_periode_mois', valeur: 1 },
         { cle: 'delai_justificatif_jours', valeur: 7 }, { cle: 'seuil_alerte_budget_pct', valeur: 90 }, { cle: 'seuil_justification', valeur: 100 },
         { cle: 'infos_paiement', valeur: null, texte: 'Virement : IBAN FR76 0000 0000 0000 0000 0000 000 (démonstration)\nEspèces : auprès du trésorier après le culte' },
@@ -205,6 +210,7 @@ const DROIT_ECRITURE = {
   profiles: ['administrer'], roles: ['administrer'], role_permissions: ['administrer'],
   materiel: ['gerer_materiel'], materiel_mouvements: ['gerer_materiel'], liens_membres: ['gerer_membres', 'gerer_cotisations'],
   tiers: ['saisir_ecritures', 'gerer_cotisations'], collectes: ['gerer_activites', 'gerer_cotisations'], collecte_membres: ['gerer_activites', 'gerer_cotisations'],
+  communiques: ['gerer_activites', 'administrer'],
 };
 
 // Cotisations par période, versements imputés sur la période la plus ancienne non réglée (comme la vue de la base)
@@ -247,7 +253,10 @@ class Requete {
   limit(n) { this.max = n; return this; }
   maybeSingle() { this.unique = 'maybe'; return this; }
   single() { this.unique = 'single'; return this; }
-  then(ok, ko) { return Promise.resolve().then(() => this.executer()).then(ok, ko); }
+  then(ok, ko) {
+    return Promise.resolve().then(() => this.executer())
+      .then((r) => { if (this.op !== 'select' && !r?.error) this.db.emettre?.(this.table); return r; }).then(ok, ko);
+  }
   executer() {
     try {
       const db = this.db;
@@ -325,8 +334,11 @@ export function createMockClient() {
   const { ids, tables } = seed();
   const fichiers = {};
   const ecouteurs = [];
+  const abonnes = [];
   const db = {
     tables, session: null,
+    // Temps réel simulé : chaque écriture prévient les abonnés (comme supabase.channel().on('postgres_changes'))
+    emettre(table) { setTimeout(() => abonnes.forEach((f) => f({ table, schema: 'public', eventType: '*' })), 30); },
     moi() { return db.session?.user.id; },
     role() { return tables.profiles.find((p) => p.id === db.session?.user.id)?.role; },
     droits() {
@@ -410,6 +422,7 @@ export function createMockClient() {
       if (nom === 'members' && !(d.has('voir_membres') || d.has('gerer_membres') || d.has('gerer_cotisations'))) return t.members.filter((m) => m.id === moi?.member_id);
       if (nom === 'cotisations' && !(finances || d.has('gerer_cotisations'))) return t.cotisations.filter((c) => c.member_id === moi?.member_id);
       if (nom === 'projects' && !(finances || d.has('gerer_activites') || d.has('demander_depenses'))) return t.projects.filter((p) => p.visible_adherents);
+      if (nom === 'communiques' && !(d.has('gerer_activites') || d.has('administrer'))) return t.communiques.filter((c) => c.visible_adherents);
       if (nom === 'expense_requests' && !(d.has('valider_depenses') || d.has('payer_depenses') || finances)) return t.expense_requests.filter((r) => r.demandeur === db.moi());
       if (nom === 'attachments' && !(finances || d.has('valider_depenses') || d.has('payer_depenses'))) return t.attachments.filter((a) => t.expense_requests.some((r) => r.id === a.request_id && r.demandeur === db.moi()));
       if (nom === 'profiles' && !(d.has('administrer') || finances || d.has('valider_depenses') || d.has('payer_depenses'))) return t.profiles.filter((p) => p.id === db.moi());
@@ -426,6 +439,12 @@ export function createMockClient() {
 
   return {
     __setRole(r) { db.session = session(ids[{ tresorier: 't', president: 'p', bureau: 'b', adherent: 'a', nouveau: 'n' }[r]]); },
+    channel() {
+      const canal = { cb: null, on(_type, _filtre, cb) { canal.cb = cb; return canal; }, subscribe(statut) { if (canal.cb) abonnes.push(canal.cb); statut?.('SUBSCRIBED'); return canal; },
+        unsubscribe() { const i = abonnes.indexOf(canal.cb); if (i >= 0) abonnes.splice(i, 1); } };
+      return canal;
+    },
+    removeChannel(c) { c?.unsubscribe?.(); },
     from: (table) => new Requete(db, table),
     async rpc(nom, args = {}) {
       const t = tables;
@@ -450,6 +469,8 @@ export function createMockClient() {
           participations: t.collectes.filter((c) => c.tous_membres || t.collecte_membres.some((x) => x.collecte_id === c.id && x.member_id === m.id)).map((c) => ({
             nom: c.nom, montant_attendu: c.montant_attendu, date_limite: c.date_limite, cloturee: c.cloturee,
             donne: t.transactions.filter((x) => x.collecte_id === c.id && x.member_id === m.id).reduce((s, x) => s + Number(x.montant), 0) })).filter((c) => !c.cloturee || c.donne !== 0),
+          communiques: t.communiques.filter((c) => c.visible_adherents && c.debut <= iso(new Date()) && (!c.fin || c.fin >= iso(new Date()))).map(({ id, titre, texte, priorite, debut, fin }) => ({ id, titre, texte, priorite, debut, fin })),
+          banniere: reg('banniere')?.texte || null,
           a_venir: t.projects.filter((p) => p.visible_adherents && p.date_debut && (p.date_fin || p.date_debut) >= iso(new Date()) && p.date_debut <= dansJours(120))
             .sort((a, b) => (a.date_debut > b.date_debut ? 1 : -1)).slice(0, 12),
         });
@@ -590,7 +611,7 @@ export function createMockClient() {
       if (nom === 'supprimer' || nom === 'restaurer') {
         const DROITS = { transactions: ['saisir_ecritures'], members: ['gerer_membres'], tiers: ['saisir_ecritures', 'gerer_cotisations'], projects: ['gerer_activites'],
           collectes: ['gerer_activites', 'gerer_cotisations'], materiel: ['gerer_materiel'], categories: ['administrer'], accounts: ['administrer'], budgets: ['gerer_budget'],
-          expense_requests: null, exercices: ['administrer'] };
+          expense_requests: null, exercices: ['administrer'], communiques: ['gerer_activites', 'administrer'] };
         const peutTable = (tb) => tb in DROITS && (DROITS[tb] === null || DROITS[tb].some((x) => d.has(x)));
         const clos = (dt) => t.exercices.some((e) => e.cloture && dt >= e.debut && dt <= e.fin);
         const eur = (m) => Number(m).toFixed(2).replace('.', ',') + ' €';
@@ -605,13 +626,14 @@ export function createMockClient() {
           c.dependances.forEach((x) => t[x.table].push({ ...x.donnees }));
           c.liens.forEach((l) => { const r = t[l.table].find((x) => x.id === l.id); if (r && r[l.colonne] == null) r[l.colonne] = l.valeur; });
           Object.assign(c, { restaure_le: new Date().toISOString(), restaure_par: db.moi() });
+          db.emettre(c.table_nom);
           return ok(null);
         }
         const tb = args.p_table, id = args.p_id;
         if (!peutTable(tb)) return ko('Droit insuffisant pour supprimer');
         const v = t[tb]?.find((x) => x.id === id);
         if (!v) return ko('Élément introuvable');
-        let lib = tb, dep = [], liens = [];
+        let lib = tb === 'communiques' ? 'Communiqué · ' + v.titre : tb, dep = [], liens = [];
         const avec = (table, lignes) => lignes.forEach((x) => dep.push({ table, donnees: { ...x } }));
         if (tb === 'transactions') {
           if (v.reconciliation_id) return ko('Opération rapprochée : utilisez la contre-passation');
@@ -671,6 +693,7 @@ export function createMockClient() {
         liens.forEach((l) => { const r = t[l.table].find((x) => x.id === l.id); if (r) r[l.colonne] = null; });
         dep.forEach((x) => { t[x.table] = t[x.table].filter((r) => !(x.table === 'transactions' ? r.id === x.donnees.id : JSON.stringify(r) === JSON.stringify(x.donnees))); });
         t[tb] = t[tb].filter((x) => x.id !== id);
+        db.emettre(tb);
         return ok(entree.id);
       }
       // Nouveautés : à traiter + nouveau depuis la dernière visite de chaque onglet (comme mes_nouveautes() de la base)
@@ -704,6 +727,10 @@ export function createMockClient() {
           && (c.tous_membres || t.collecte_membres.some((x) => x.collecte_id === c.id && x.member_id === p.member_id)))));
         compteurs.cotisations = co.length;
         co.forEach((c) => elements.push({ section: 'cotisations', titre: 'Participation demandée', detail: c.nom + (c.montant_attendu ? ' · ' + eur(c.montant_attendu) : ''), quand: c.created_at }));
+        const auj = iso(new Date());
+        const cq = t.communiques.filter((c) => c.created_at > depuis('communiques') && c.created_by !== p.id && (c.visible_adherents || d.has('gerer_activites') || d.has('administrer')) && (!c.fin || c.fin >= auj));
+        compteurs.communiques = cq.length;
+        cq.forEach((c) => elements.push({ section: 'communiques', titre: 'Communiqué', detail: c.titre, quand: c.created_at }));
         return ok({ compteurs, elements: elements.sort((a, b) => (a.quand < b.quand ? 1 : -1)) });
       }
       if (nom === 'marquer_vu') {

@@ -1,6 +1,7 @@
 package org.jpgrenoble.tresorerie
 
 import kotlinx.datetime.toInstant
+import io.github.jan.supabase.auth.auth
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -162,27 +163,71 @@ private fun prefs() = ContexteApp.contexte.getSharedPreferences("tresorerie", an
 actual fun lirePreference(cle: String): String? = try { prefs().getString(cle, null) } catch (_: Exception) { null }
 actual fun garderPreference(cle: String, valeur: String?) { try { prefs().edit().apply { if (valeur == null) remove(cle) else putString(cle, valeur) }.apply() } catch (_: Exception) { } }
 
-private const val CANAL = "nouveautes"
 actual fun notificationsPermises(): Boolean = try {
     androidx.core.app.NotificationManagerCompat.from(ContexteApp.contexte).areNotificationsEnabled() &&
         (android.os.Build.VERSION.SDK_INT < 33 || androidx.core.content.ContextCompat.checkSelfPermission(ContexteApp.contexte, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
 } catch (_: Exception) { false }
 
-actual fun notifierSysteme(titre: String, texte: String) {
+// Un canal par réglage (le son et la vibration d'un canal ne se changent plus après sa création) ;
+// importance haute : la notification sonne, vibre et s'affiche en haut de l'écran
+private fun canalNotifications(ctx: android.content.Context): String {
+    val son = lirePreference("notif.son") != "0"; val vibre = lirePreference("notif.vibration") != "0"
+    val id = "nouveautes_" + (if (son) "son" else "muet") + "_" + (if (vibre) "vibre" else "fixe")
+    if (android.os.Build.VERSION.SDK_INT >= 26) {
+        val g = ctx.getSystemService(android.app.NotificationManager::class.java)
+        if (g.getNotificationChannel(id) == null) g.createNotificationChannel(android.app.NotificationChannel(id,
+            "Nouveautés" + when { son && vibre -> ""; son -> " (sans vibration)"; vibre -> " (sans son)"; else -> " (silencieuses)" },
+            if (son) android.app.NotificationManager.IMPORTANCE_HIGH else android.app.NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "Demandes à valider ou à payer, rendez-vous, participations, communiqués"
+            enableVibration(vibre); if (vibre) vibrationPattern = longArrayOf(0, 180, 90, 180)
+            if (!son) setSound(null, null)
+            setShowBadge(true)
+        })
+    }
+    return id
+}
+
+actual fun notifierSysteme(titre: String, texte: String, nombre: Int) {
     try {
         if (!notificationsPermises()) return
         val ctx = ContexteApp.contexte
-        val gestionnaire = ctx.getSystemService(android.app.NotificationManager::class.java)
-        if (android.os.Build.VERSION.SDK_INT >= 26 && gestionnaire.getNotificationChannel(CANAL) == null)
-            gestionnaire.createNotificationChannel(android.app.NotificationChannel(CANAL, "Nouveautés", android.app.NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Demandes à valider ou à payer, nouveaux rendez-vous, participations demandées"
-            })
         val ouvrir = android.app.PendingIntent.getActivity(ctx, 0, android.content.Intent(ctx, MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
-        val n = androidx.core.app.NotificationCompat.Builder(ctx, CANAL).setSmallIcon(R.mipmap.ic_launcher).setContentTitle(titre).setContentText(texte)
-            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(texte)).setAutoCancel(true).setContentIntent(ouvrir).build()
+        val n = androidx.core.app.NotificationCompat.Builder(ctx, canalNotifications(ctx)).setSmallIcon(R.mipmap.ic_launcher).setContentTitle(titre).setContentText(texte)
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(texte)).setAutoCancel(true).setContentIntent(ouvrir)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH).setCategory(androidx.core.app.NotificationCompat.CATEGORY_MESSAGE)
+            .setNumber(nombre)   // compteur sur l'icône de l'application (lanceurs qui l'affichent)
+            .setBadgeIconType(androidx.core.app.NotificationCompat.BADGE_ICON_SMALL)
+            .setDefaults((if (lirePreference("notif.son") != "0") androidx.core.app.NotificationCompat.DEFAULT_SOUND else 0) or
+                (if (lirePreference("notif.vibration") != "0") androidx.core.app.NotificationCompat.DEFAULT_VIBRATE else 0))
+            .build()
         androidx.core.app.NotificationManagerCompat.from(ctx).notify(1, n)
     } catch (_: SecurityException) { } catch (_: Exception) { }
+}
+
+// Tout est vu : la notification et le compteur de l'icône disparaissent
+actual fun effacerNotifications() { try { androidx.core.app.NotificationManagerCompat.from(ContexteApp.contexte).cancel(1) } catch (_: Exception) { } }
+
+// Vérification en arrière-plan (application fermée) : toutes les 15 minutes quand le téléphone a du réseau
+actual fun planifierVerification() {
+    try {
+        val demande = androidx.work.PeriodicWorkRequestBuilder<VerificationNouveautes>(15, java.util.concurrent.TimeUnit.MINUTES)
+            .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build()).build()
+        androidx.work.WorkManager.getInstance(ContexteApp.contexte).enqueueUniquePeriodicWork("nouveautes", androidx.work.ExistingPeriodicWorkPolicy.KEEP, demande)
+    } catch (_: Exception) { }
+}
+
+class VerificationNouveautes(ctx: android.content.Context, params: androidx.work.WorkerParameters) : androidx.work.CoroutineWorker(ctx, params) {
+    override suspend fun doWork(): Result {
+        ContexteApp.contexte = applicationContext
+        if (Repo.demo) return Result.success()
+        return try {
+            Repo.client.auth.awaitInitialization()
+            if (Repo.client.auth.currentSessionOrNull() == null) return Result.success()
+            EtatNouveautes.charger()
+            Result.success()
+        } catch (_: Exception) { Result.retry() }
+    }
 }
 
 @Composable

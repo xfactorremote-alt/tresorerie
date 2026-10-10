@@ -1042,28 +1042,12 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 #toast:has(#b-toast-action){width:min(420px,calc(100vw - 32px))}
 #toast:has(#b-toast-action)>span{flex:1}
 
-/* Prochain rendez-vous posé sur la bannière photo (Fluent 2 : surface acrylique, coins 8 px, boutons 4 px) */
+/* Page du membre : la bannière photo reste grande (Fluent 2 : surface acrylique, coins 8 px, boutons 4 px) */
 .accueil-membre .banniere,.espace-membre .banniere{min-height:240px;justify-content:space-between}
 @media (min-width:700px){.accueil-membre .banniere,.espace-membre .banniere{min-height:300px}}
-.banniere-rdv{display:flex;align-items:center;gap:14px;margin-top:auto;padding:12px 14px;border-radius:var(--r-xgrand);color:#fff;
   background:rgba(20,18,17,.42);border:1px solid rgba(255,255,255,.22);box-shadow:inset 3px 0 0 var(--evt-accent,#fff)}
-@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.banniere-rdv{-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}}
-.rdv-date{flex:none;width:58px;border-radius:var(--r-grand);background:var(--evt-accent,var(--primaire));color:#fff;display:flex;flex-direction:column;align-items:center;padding:6px 0;box-shadow:var(--ombre4)}
-.rdv-date span{font-size:11px;line-height:14px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
-.rdv-date b{font-family:var(--police-chiffres);font-size:26px;line-height:30px;font-weight:600}
-.rdv-corps{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.rdv-sur{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;line-height:16px;font-weight:600;opacity:.92}
 .rdv-compte{background:#fff;color:var(--evt-texte,#1C1B1A);border-radius:var(--r-rond);padding:0 8px;line-height:20px;font-weight:700}
 .rdv-imminent .rdv-compte{background:var(--evt-accent);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.6)}
-.rdv-titre{font-family:var(--police-titre);font-size:20px;line-height:26px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
-.rdv-meta{font-size:14px;line-height:20px;opacity:.92}
-.rdv-actions{display:flex;gap:8px;flex:none}
-.rdv-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border-radius:var(--r-moyen);border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.08);color:#fff;font-size:14px;font-weight:600}
-.rdv-btn-plein{background:#fff;color:#1C1B1A;border-color:#fff}
-@media (hover:hover){.rdv-btn:hover{background:rgba(255,255,255,.2)}.rdv-btn-plein:hover{background:#F0F0F0}}
-.banniere-rdv-vide{flex-direction:column;align-items:flex-start;gap:2px;box-shadow:none}
-@media (min-width:700px){.banniere-rdv{padding:14px 18px;gap:18px}.rdv-date{width:64px}.rdv-date b{font-size:30px;line-height:34px}.rdv-titre{font-size:24px;line-height:30px}}
-@media (max-width:560px){.banniere-rdv{flex-wrap:wrap;align-items:flex-start}.rdv-corps{flex:1 1 calc(100% - 80px)}.rdv-actions{width:100%}.rdv-actions .rdv-btn{flex:1}}
 @media (prefers-reduced-motion:no-preference){.rdv-imminent .rdv-compte{animation:pulsation-rdv 1.8s ease-in-out infinite}}
 @keyframes pulsation-rdv{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.65)}50%{box-shadow:0 0 0 6px rgba(255,255,255,0)}}
 /* Aperçu du lien personnel, tel que WhatsApp l'affiche : logo et nom de l'association plutôt que l'adresse */
@@ -1073,3 +1057,37 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .apercu-lien b{font-size:14px;line-height:20px}
 .apercu-lien span{font-size:13px;color:var(--texte-2)}
 .apercu-lien small{font-size:12px;color:var(--texte-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- Mise à jour en temps réel : pas d'animation d'entrée quand l'écran se redessine seul ---------- */
+.sans-anim,.sans-anim *{animation:none !important}
+
+/* ---------- Annonces de la bannière (une à la fois, en fondu) : compactes, posées sur la photo ---------- */
+.annonces{position:relative;margin-top:auto;border-radius:var(--r-xgrand);color:#fff;background:rgba(20,18,17,.42);border:1px solid rgba(255,255,255,.22);overflow:hidden}
+@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.annonces{-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}}
+.annonces-piste{display:grid}
+.annonces-item{grid-area:1/1;opacity:0;visibility:hidden;transition:opacity var(--d-lent,.4s) var(--c-decel-moy,ease),visibility 0s linear var(--d-lent,.4s)}
+.annonces-item.actif{opacity:1;visibility:visible;transition:opacity var(--d-lent,.4s) var(--c-decel-moy,ease),visibility 0s}
+.annonce{display:flex;align-items:center;gap:12px;padding:10px 12px;min-height:64px;color:#fff;cursor:pointer;box-shadow:inset 3px 0 0 var(--evt-accent,rgba(255,255,255,.6))}
+.annonce:focus-visible{outline:2px solid #fff;outline-offset:-4px}
+.ann-puce{flex:none;width:44px;height:44px;border-radius:var(--r-grand);display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.18);color:#fff}
+.ann-date{flex-direction:column;background:var(--evt-accent,var(--primaire));line-height:1}
+.ann-date span{font-size:10.5px;font-weight:600;text-transform:uppercase}.ann-date b{font-family:var(--police-chiffres);font-size:20px;font-weight:600}
+.ann-corps{flex:1;min-width:0;display:flex;flex-direction:column}
+.ann-corps small{font-size:12px;line-height:16px;font-weight:600;opacity:.92}
+.ann-corps b{font-size:16px;line-height:22px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ann-corps>span{font-size:13px;line-height:18px;opacity:.88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.annonce .rdv-compte{display:inline-block}
+.ann-action{flex:none;width:40px;height:40px;min-height:0;padding:0;border-radius:var(--r-moyen);border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.08);color:#fff;display:flex;align-items:center;justify-content:center}
+@media (hover:hover){.ann-action:hover{background:rgba(255,255,255,.2)}.annonce:hover{background:rgba(255,255,255,.06)}}
+.ann-alerte{box-shadow:inset 3px 0 0 #FF8A80}.ann-alerte .ann-puce{background:rgba(186,26,26,.75)}
+.ann-attention{box-shadow:inset 3px 0 0 #FFD54F}.ann-attention .ann-puce{background:rgba(197,138,0,.8)}
+.ann-info{box-shadow:inset 3px 0 0 #8EC9F0}.ann-info .ann-puce{background:rgba(27,119,176,.8)}
+.ann-important{box-shadow:inset 3px 0 0 #fff}
+.annonces-points{position:absolute;right:10px;bottom:6px;display:flex;gap:4px}
+.annonces-points button{width:6px;height:6px;min-width:0;min-height:0;padding:0;border:0;border-radius:3px;background:rgba(255,255,255,.45);transition:width var(--d-normal,.2s) ease,background-color var(--d-normal,.2s) ease}
+.annonces-points button.actif{width:16px;background:#fff}
+@media (min-width:700px){.annonce{padding:12px 16px;min-height:72px}.ann-corps b{font-size:18px;line-height:24px}}
+.ligne-regle{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}
+.ligne-regle b{font-size:14px;font-weight:600}
+@media (max-width:560px){.ligne-regle{grid-template-columns:1fr 1fr}.ligne-regle b{grid-column:1/-1}}
+.annonces-piste{grid-template-columns:minmax(0,1fr)}.annonces-item,.annonce{min-width:0}

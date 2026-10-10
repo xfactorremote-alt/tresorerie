@@ -456,3 +456,27 @@ data class LienMembre(
     @SerialName("derniere_consultation") val derniereConsultation: String? = null,
     val code: String? = null,   // code court de 12 caractères (liens créés depuis le 10 octobre 2026)
 )
+
+// ---------- Communiqués de l'association (bannière des membres) ----------
+@Serializable
+data class Communique(
+    val id: String,
+    val titre: String,
+    val texte: String? = null,
+    val debut: String,
+    val fin: String? = null,
+    val priorite: String = "normale",          // haute (en premier sur la bannière), normale, basse
+    @SerialName("visible_adherents") val visible: Boolean = true,
+    @SerialName("created_by") val creePar: String? = null,
+    @SerialName("created_at") val creeLe: String? = null,
+)
+
+@Serializable
+data class NouveauCommunique(
+    val titre: String,
+    val texte: String? = null,
+    val debut: String,
+    val fin: String? = null,
+    val priorite: String = "normale",
+    @SerialName("visible_adherents") val visible: Boolean = true,
+)

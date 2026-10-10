@@ -123,7 +123,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
     var projetsTous by remember { mutableStateOf<List<Projet>>(emptyList()) }
     var profilsCourts by remember { mutableStateOf<List<ProfilCourt>>(emptyList()) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try {
             liste = Repo.demandes()
             ecritures = try { Repo.toutesEcritures() } catch (_: Exception) { emptyList() }
@@ -576,7 +576,7 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
     val choix = rememberChoixFichier { f, err -> if (err != null) message(err); if (f != null) releve = f }
     val ouvrirReleve = rememberOuvrirFichier()
 
-    LaunchedEffect(compte, version, fin) {
+    LaunchedEffect(compte, version, fin, Synchro.version) {
         val c = compte ?: return@LaunchedEffect
         try {
             historique = Repo.rapprochements()

@@ -79,7 +79,7 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
     val imprimer = rememberImpression()
     val enregistrer = rememberEnregistrer { it?.let(message) }
     val gere = d.peut("gerer_budget")
-    LaunchedEffect(an, version) {
+    LaunchedEffect(an, version, Synchro.version) {
         try { b = chargerBudget(an, d.categoriesToutes) } catch (e: Exception) { message(traduireErreur(e)) }
     }
     suspend fun seuil() = (Repo.reglages()["seuil_alerte_budget_pct"] ?: 90.0).toInt()

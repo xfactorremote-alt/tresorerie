@@ -74,7 +74,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     LaunchedEffect(Unit) {
         if (d.peut("administrer")) try { nbComptes = Repo.profilsComplets().size + Repo.invitations().size } catch (_: Exception) { }
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(Synchro.version) {
         try {
             anniv = Repo.anniversaires()
             if (d.profil.memberId != null) {
@@ -428,7 +428,7 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
     val scopeOps = rememberCoroutineScope()
     val imprimer = rememberImpression()
     val enregistrer = rememberEnregistrer { it?.let(message) }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try { tiers = Repo.tiers() } catch (_: Exception) { }
         try { collectes = Repo.collectes() } catch (_: Exception) { }
         try { profils = Repo.profils() } catch (_: Exception) { }

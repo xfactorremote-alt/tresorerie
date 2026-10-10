@@ -66,7 +66,7 @@ fun EcranMateriel(d: Donnees, message: (String) -> Unit, pre: NouveauMateriel? =
     val scope = rememberCoroutineScope()
     val imprimer = rememberImpression()
     val enregistrer = rememberEnregistrer { it?.let(message) }
-    LaunchedEffect(version) { try { items = Repo.materiel() } catch (e: Exception) { message(traduireErreur(e)) } }
+    LaunchedEffect(version, Synchro.version) { try { items = Repo.materiel() } catch (e: Exception) { message(traduireErreur(e)) } }
     val tous = items.orEmpty()
     val enService = tous.filter { it.sortiLe == null }
     val filtres = linkedMapOf(

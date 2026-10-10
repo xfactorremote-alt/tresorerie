@@ -190,4 +190,37 @@ class AuditTest {
         assertTrue(url.endsWith("?m=" + slugPrenom(Demo.membres.first { it.id == "m1" }.prenom) + "-" + l.code), url)
         assertTrue(Repo.urlLien(LienMembre("m9", "a".repeat(32)), null).endsWith("?m=" + "a".repeat(32)))
     }
+
+    // Bannière : un communiqué « Important » d'abord, puis l'ordre réglé ; « jamais » retire le type ; règles relues à l'identique
+    @Test fun annoncesBanniereOrdreEtRegles() {
+        val auj = aujourdhui().toString()
+        val rdv = Projet("p1", "Répétition", debut = auj)
+        val cot = listOf(PeriodeCotisation("m", auj.take(7), aujourdhui().year, 20.0, 0.0, "impaye"))
+        val parts = listOf(Participation("c1", "Sortie", 15.0, 0.0))
+        val cq = listOf(Communique("q1", "AG", null, auj, null, "haute"), Communique("q2", "Info", null, auj, null, "normale"), Communique("q3", "Ancien", null, "2000-01-01", "2000-02-01"))
+        val regles = """{"rotation":5,"rdv":{"priorite":2,"frequence":"toujours"},"cotisation":{"priorite":1,"frequence":"toujours"},"participation":{"priorite":3,"frequence":"jamais"},"communique":{"priorite":3,"frequence":"toujours"}}"""
+        val (l, rotation) = annoncesBanniere(listOf(rdv), cot, parts, cq, regles)
+        assertEquals(5, rotation)
+        assertEquals(listOf("communique:q1", "cotisation", "rdv:p1", "communique:q2"), l.map { it.cle })
+        val r = reglesBanniere(regles); assertEquals(r, reglesBanniere(texteReglesBanniere(r)))
+        assertEquals(8, reglesBanniere(null).rotation)
+    }
+
+    // Communiqués : publiés par qui gère les activités, visibles selon le choix, comptés dans les nouveautés, corbeille réversible
+    @Test fun communiquesDroitsNouveautesCorbeille() {
+        val tres = Demo.profilsActuels().first { it.id == "u-t" }
+        val adh = Demo.profilsActuels().first { it.id == "u-a" }
+        assertFailsWith<IllegalStateException> { Demo.enregistrerCommunique(null, NouveauCommunique("Interdit", debut = aujourdhui().toString()), adh) }
+        assertFailsWith<IllegalStateException> { Demo.enregistrerCommunique(null, NouveauCommunique("Dates", debut = "2026-10-10", fin = "2026-10-01"), tres) }
+        Demo.enregistrerCommunique(null, NouveauCommunique("Répétition déplacée", "À 19 h", aujourdhui().toString()), tres)
+        assertTrue(Demo.communiquesVisibles(adh).none { it.titre == "Réunion du bureau jeudi" })
+        assertTrue(Demo.communiquesVisibles(tres).any { it.titre == "Réunion du bureau jeudi" })
+        assertTrue((Demo.nouveautes(adh).compteurs["communiques"] ?: 0) >= 1)
+        val id = Demo.communiques.first { it.titre == "Répétition déplacée" }.id
+        assertFailsWith<IllegalStateException> { Demo.supprimer("communiques", id, null, adh) }
+        val cb = Demo.supprimer("communiques", id, "erreur", tres)
+        assertTrue(Demo.communiques.none { it.id == id })
+        Demo.restaurer(cb, tres)
+        assertTrue(Demo.communiques.any { it.id == id })
+    }
 }

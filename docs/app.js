@@ -112,6 +112,8 @@ function telechargerCsv(nom, entetes, lignes) {
 
 // ---------- Démarrage ----------
 async function demarrer() {
+  // Service des notifications (son, vibration, ouverture de la bonne page) ; sans effet si le navigateur ne le permet pas
+  try { navigator.serviceWorker?.register('sw.js').catch(() => {}); } catch { /* non pris en charge */ }
   const nonConfigure = SUPABASE_URL.includes('VOTRE') || SUPABASE_ANON_KEY.includes('VOTRE');
   demo = nonConfigure || new URLSearchParams(location.search).has('demo');
   if (demo) {
@@ -177,6 +179,7 @@ async function entrer() {
     if (!location.hash) history.replaceState(null, '', location.pathname + location.search + '#tableau');
     router();
     demarrerNouveautes();
+    demarrerTempsReel();
     verifierRappels();
   } catch (e) { erreur(e); }
 }
@@ -581,8 +584,46 @@ function coquille(page, contenu) {
 
 // ---------- Nouveautés : pastilles sur les onglets, cloche, notifications du navigateur ----------
 // Une pastille compte ce qui attend une action (demande à valider, à payer) et ce qui est nouveau depuis la dernière visite de l'onglet.
-const SECTIONS_NOUVEAUTES = ['ecritures', 'depenses', 'cotisations', 'activites', 'membres'];
-const LIBELLES_SECTIONS = { ecritures: 'Opérations', depenses: 'Demandes', cotisations: 'Cotisations', activites: 'Planning', membres: 'Membres' };
+const SECTIONS_NOUVEAUTES = ['ecritures', 'depenses', 'cotisations', 'activites', 'membres', 'communiques'];
+const LIBELLES_SECTIONS = { ecritures: 'Opérations', depenses: 'Demandes', cotisations: 'Cotisations', activites: 'Planning', membres: 'Membres', communiques: 'Communiqués' };
+// Page où mène une nouveauté (les communiqués s'affichent sur la bannière de l'accueil)
+const pageDeSection = (sec) => (sec === 'communiques' ? 'tableau' : sec);
+// Préférences d'alerte de l'appareil : son et vibration (Paramètres › Notifications)
+const prefNotif = (k) => { try { return localStorage.getItem('notif:' + k) !== '0'; } catch { return true; } };
+const garderPrefNotif = (k, v) => { try { localStorage.setItem('notif:' + k, v ? '1' : '0'); } catch { /* stockage indisponible */ } };
+// Petit carillon (deux notes douces) quand une nouveauté arrive pendant que la page est ouverte
+function carillon() {
+  if (!prefNotif('son')) return;
+  try {
+    const ctx = carillon.ctx || (carillon.ctx = new (window.AudioContext || window.webkitAudioContext)());
+    [[880, 0], [1320, 0.14]].forEach(([f, t]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.35);
+      o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.4);
+    });
+  } catch { /* son indisponible */ }
+}
+// Alerte d'une nouveauté : notification du système (avec son et vibration) si la page est cachée, sinon message + carillon
+async function alerterNouveaute(e, total) {
+  const titre = `${S.org?.nom || 'Trésorerie'} · ${e.titre}`;
+  if (document.hidden && window.Notification?.permission === 'granted') {
+    const options = { body: e.detail, icon: 'icon-192.png', badge: 'icon-192.png', tag: 'nouveautes', renotify: true, silent: !prefNotif('son'),
+      vibrate: prefNotif('vibration') ? [180, 90, 180] : undefined, data: { url: './#' + pageDeSection(e.section) } };
+    try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) return reg.showNotification(titre, options); } catch { /* repli ci-dessous */ }
+    try { new Notification(titre, options); } catch { /* non pris en charge */ }
+    return;
+  }
+  carillon();
+  if (prefNotif('vibration')) navigator.vibrate?.([120, 60, 120]);
+  toastAction(`${e.titre} : ${e.detail}`, 'Voir', () => { location.hash = '#' + pageDeSection(e.section); });
+}
+// Compteur sur l'icône de l'application installée et dans le titre de l'onglet
+function pastilleIcone(total) {
+  try { if (total > 0) navigator.setAppBadge?.(total); else navigator.clearAppBadge?.(); } catch { /* non pris en charge */ }
+  const base = document.title.replace(/^\(\d+\+?\) /, '');
+  document.title = total > 0 ? `(${total > 99 ? '99+' : total}) ${base}` : base;
+}
 async function chargerNouveautes() {
   if (!S.profil) return;
   try {
@@ -590,13 +631,52 @@ async function chargerNouveautes() {
     const avant = S.nouveautes;
     S.nouveautes = n || { compteurs: {}, elements: [] };
     afficherPastilles();
-    // Notification du navigateur pour ce qui arrive pendant que la page est ouverte en arrière-plan
+    const c = S.nouveautes.compteurs || {};
+    pastilleIcone(SECTIONS_NOUVEAUTES.reduce((t, k) => t + (Number(c[k]) || 0), 0));
+    // Une nouveauté vient d'arriver (pas au premier chargement) : alerte, avec son et vibration selon les préférences
     const recent = (S.nouveautes.elements || [])[0];
-    if (avant && recent && recent.quand > (avant.elements?.[0]?.quand || '') && document.hidden && window.Notification?.permission === 'granted') {
-      try { new Notification(`${S.org?.nom || 'Trésorerie'} · ${recent.titre}`, { body: recent.detail, icon: S.logoUrl, tag: 'tresorerie' }); } catch { /* non pris en charge */ }
-    }
+    if (avant && recent && recent.quand > (avant.elements?.[0]?.quand || '')) alerterNouveaute(recent);
   } catch (e) { console.warn(e); }
 }
+// ---------- Temps réel : chaque écran se met à jour seul quand une donnée change ----------
+// La base prévient (Supabase Realtime) ; on attend un court instant pour regrouper les changements, puis l'écran
+// est redessiné sans écran de chargement, sans animation d'entrée et à la même position de défilement.
+// Jamais pendant une saisie ou une fenêtre ouverte : la mise à jour attend qu'elle soit fermée.
+function demarrerTempsReel() {
+  if (S.canal || !sb.channel) return;
+  S.tablesChangees = new Set();
+  S.canal = sb.channel('changements').on('postgres_changes', { event: '*', schema: 'public' }, (p) => signalerChangement(p.table))
+    .subscribe((etat) => {
+      // Sans temps réel (réseau qui bloque les websockets) : vérification douce toutes les 45 secondes
+      if ((etat === 'CHANNEL_ERROR' || etat === 'TIMED_OUT') && !S.minuterieSecours) S.minuterieSecours = setInterval(() => signalerChangement('*'), 45000);
+    });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.aRafraichir) { S.aRafraichir = false; rafraichirDoucement(); } });
+}
+function signalerChangement(table) {
+  (S.tablesChangees ||= new Set()).add(table);
+  clearTimeout(S.minuterieSynchro);
+  S.minuterieSynchro = setTimeout(rafraichirDoucement, 900);
+}
+async function rafraichirDoucement() {
+  if (!S.profil || !$('.contenu')) return;
+  if (document.hidden) { S.aRafraichir = true; return; }
+  const occupe = $('#sheet[open]') || document.activeElement?.closest?.('.contenu input, .contenu textarea, .contenu select');
+  if (occupe) { clearTimeout(S.minuterieSynchro); S.minuterieSynchro = setTimeout(rafraichirDoucement, 2500); return; }
+  const tables = S.tablesChangees || new Set(); S.tablesChangees = new Set();
+  const REFERENTIELS = ['*', 'members', 'accounts', 'categories', 'organisation', 'settings', 'exercices', 'liens_membres', 'tiers', 'projects', 'profiles'];
+  try {
+    if ([...tables].some((t) => REFERENTIELS.includes(t))) { await chargerReferentiels(); if (S.liensMembres) await chargerLiens(); }
+  } catch (e) { console.warn(e); }
+  chargerNouveautes();
+  const page = (location.hash.slice(1) || 'tableau');
+  if (!PAGES[page] || !pagesAutorisees().some(([k]) => k === page)) return;
+  const c = $('.contenu'), y = window.scrollY;
+  c.classList.add('sans-anim'); S.silencieux = true;
+  try { await PAGES[page](); } catch (e) { console.warn(e); } finally { S.silencieux = false; }
+  window.scrollTo(0, y);
+  requestAnimationFrame(() => requestAnimationFrame(() => c.classList.remove('sans-anim')));
+}
+
 function demarrerNouveautes() {
   chargerNouveautes();
   if (S.minuterieNouveautes) return;
@@ -637,7 +717,7 @@ function feuilleNouveautes() {
   const quand = (d) => { const j = joursDepuis(d); return j <= 0 ? 'aujourd’hui' : j === 1 ? 'hier' : `il y a ${j} jours`; };
   const notif = window.Notification && Notification.permission !== 'granted' && Notification.permission !== 'denied';
   ouvrirFeuille(`<h2>Nouveautés</h2>
-    ${els.length ? `<ul class="liste liste-nouveautes">${els.map((e) => `<li><a href="#${e.section}" class="lien-nouveaute" data-section="${e.section}">
+    ${els.length ? `<ul class="liste liste-nouveautes">${els.map((e) => `<li><a href="#${pageDeSection(e.section)}" class="lien-nouveaute" data-section="${e.section}">
       <span class="puce-section puce-${e.section}">${icone(e.section, 18)}</span>
       <div class="corps"><b>${esc(e.titre)}</b><span>${esc(e.detail)}</span></div><span class="muted">${quand(e.quand)}</span></a></li>`).join('')}</ul>`
       : `<div class="vide">${icone('valide', 32)}<p>Rien de nouveau. Vous êtes à jour.</p></div>`}
@@ -685,7 +765,7 @@ function animerChiffres(racine) {
 }
 const rendre = (html) => {
   const c = $('.contenu'); c.innerHTML = html;
-  animerChiffres(c);
+  if (!S.silencieux) animerChiffres(c);
   // Commande principale (+) : bouton dans l'en-tête de page sur tablette et ordinateur, bouton flottant sur téléphone
   const fab = c.querySelector('.page > .fab'); const titre = c.querySelector('.page > .page-titre');
   if (fab) {
@@ -858,16 +938,18 @@ function listeAnniversaires(anniv, mois) {
 }
 
 // Vue du membre, partagée par l'accueil d'un membre connecté et la page du lien personnel (même rendu partout).
-// Ordre d'importance : le prochain rendez-vous sur la bannière photo (rdvBanniere), une alerte seulement si quelque chose est dû,
+// Ordre d'importance : sur la bannière photo, les annonces (rendez-vous, relances, communiqués : banniereAnnonces),
 // puis la suite du planning, ma cotisation, mes participations,
 // les anniversaires et mes versements. Deux colonnes sur ordinateur et tablette en paysage.
 function vueMembre(o) {
   const { planning = [], cot = [], parts = [], infos, anniv = null, mois, versements = null, avance = 0, montant = null, connecte = false } = o;
-  const suite = planning.slice(1, 7);
+  // Au programme ce mois-ci : les autres rendez-vous du mois en cours (le prochain est déjà sur la bannière)
+  const moisCourant = aujourdhui().slice(0, 7);
+  const suite = planning.slice(1).filter((p) => p.date_debut && p.date_debut.slice(0, 7) === moisCourant);
+  const nomMois = MOIS_LONGS[Number(moisCourant.slice(5, 7)) - 1];
   const retard = retardDe(cot);
   const aRegler = parts.filter((p) => Number(p.montant_attendu) > 0 && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
   const resteParts = aRegler.reduce((t, p) => t + Number(p.montant_attendu) - Number(p.donne), 0);
-  const alerte = retard > 0 || resteParts > 0 ? `<a class="alerte-membre" href="#m-regler">${icone('attention', 20)}<span><b>${[retard > 0 ? `Cotisation : ${eur(retard)} en retard` : '', resteParts > 0 ? `Participations : ${eur(resteParts)} à régler` : ''].filter(Boolean).join(' · ')}</b><small>Voir comment régler</small></span>${icone('suivant', 18)}</a>` : '';
   const regles = cot.filter((p) => ['regle', 'dispense'].includes(p.statut)).map((p) => p.periode).sort();
   const an = new Date().getFullYear();
   const deLAnnee = cot.filter((p) => p.annee === an).sort((a, b) => (a.periode > b.periode ? 1 : -1));
@@ -886,30 +968,113 @@ function vueMembre(o) {
   const carteVersements = versements?.length ? rubrique('m-versements', 'Mes versements', `${versements.length} dernier${versements.length > 1 ? 's' : ''}`,
     `<ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul>`, { ouverte: false }) : '';
   return `<div class="vue-membre">
-    ${alerte ? `<div class="vm-hero">${alerte}</div>` : ''}
-    <div class="vm-suite">${rubrique('m-planning', 'Ensuite au planning', suite.length ? `${suite.length} rendez-vous` : 'Rien d’autre', suite.length ? listePlanningCouleur(suite) : '<p class="muted" style="margin:0">Rien d’autre d’annoncé pour l’instant.</p>')}</div>
+    <div class="vm-suite">${rubrique('m-planning', `Au programme en ${nomMois}`, suite.length ? `${suite.length} rendez-vous` : 'Rien d’autre', suite.length ? listePlanningCouleur(suite) : `<p class="muted" style="margin:0">Pas d’autre rendez-vous en ${nomMois}.</p>`)}</div>
     <div class="vm-cote">${carteCotis}${carteRegler}${carteParts}${carteAnniv}${carteVersements}</div>
   </div>`;
 }
 
-// Prochain rendez-vous posé sur la bannière photo (panneau acrylique Fluent 2) : la bannière reste le seul
-// élément fort de la page, plus grande que ce qui suit ; le détail et l'agenda à portée de main
-function rdvBanniere(planning, parts = []) {
+// ---------- Annonces de la bannière : rendez-vous, relances, communiqués ----------
+// Règles réglables (Paramètres › Bannière et communiqués) : priorité de chaque type (1 = d'abord), fréquence
+// (toujours, une fois par jour sur l'appareil, jamais) et durée de chaque annonce. Même calcul sur Android (annoncesBanniere).
+const REGLES_BANNIERE = { rotation: 8, rdv: { priorite: 1, frequence: 'toujours' }, cotisation: { priorite: 2, frequence: 'jour' },
+  participation: { priorite: 2, frequence: 'jour' }, communique: { priorite: 1, frequence: 'toujours' } };
+function reglesBanniere(texte) {
+  let r = {}; try { r = JSON.parse(texte || '{}') || {}; } catch { r = {}; }
+  const out = { rotation: Number(r.rotation ?? REGLES_BANNIERE.rotation) };
+  ['rdv', 'cotisation', 'participation', 'communique'].forEach((k) => { out[k] = { ...REGLES_BANNIERE[k], ...(r[k] || {}) }; });
+  return out;
+}
+const CLE_VUES_BANNIERE = 'banniereVues';
+const vuAujourdhui = (cle) => { try { return (JSON.parse(localStorage.getItem(CLE_VUES_BANNIERE) || '{}')[cle] || '') === aujourdhui(); } catch { return false; } };
+const noterVu = (cle) => { try { const t = JSON.parse(localStorage.getItem(CLE_VUES_BANNIERE) || '{}'); t[cle] = aujourdhui(); localStorage.setItem(CLE_VUES_BANNIERE, JSON.stringify(t)); } catch { /* stockage indisponible */ } };
+function annoncesBanniere({ planning = [], cot = [], parts = [], communiques = [], regles }) {
+  const R = reglesBanniere(regles), l = [], auj = aujourdhui();
+  const garder = (type, cle) => R[type].frequence !== 'jamais' && (R[type].frequence !== 'jour' || !vuAujourdhui(cle));
   const e = planning[0];
-  if (!e) return `<div class="banniere-rdv acrylique banniere-rdv-vide"><span class="rdv-sur">Prochain rendez-vous</span><b class="rdv-titre">Rien de prévu pour l’instant</b></div>`;
-  const d = dateDe(e.date_debut), j = Math.round((d - dateDe(aujourdhui())) / 864e5);
-  const p = parts.find((x) => e.collecte_id && x.collecte_id === e.collecte_id);
-  return `<div class="banniere-rdv acrylique ${j <= 1 ? 'rdv-imminent' : ''}" style="${styleEvt(e)}">
-    <div class="rdv-date"><span>${JOURS_COURTS[(d.getDay() + 6) % 7]}</span><b>${d.getDate()}</b><span>${MOIS_COURTS[d.getMonth()]}</span></div>
-    <div class="rdv-corps">
-      <span class="rdv-sur">Prochain rendez-vous <span class="rdv-compte">${dansJours(e.date_debut)}</span></span>
-      <b class="rdv-titre">${esc(e.nom)}</b>
-      <span class="rdv-meta">${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Toute la journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}${e.participation ? ` · participation ${eur(e.participation)}${p ? ` (donné ${eur(p.donne)})` : ''}` : ''}</span>
-    </div>
-    <div class="rdv-actions"><button type="button" class="rdv-btn" data-ics="${e.id}">${icone('agenda', 18)}<span>Agenda</span></button>
-      <button type="button" class="rdv-btn rdv-btn-plein" data-evt="${e.id}">Détail</button></div>
+  if (e && garder('rdv', 'rdv:' + e.id)) l.push({ type: 'rdv', cle: 'rdv:' + e.id, prio: R.rdv.priorite, e });
+  const retard = retardDe(cot);
+  if (retard > 0 && garder('cotisation', 'cotisation')) l.push({ type: 'cotisation', cle: 'cotisation', prio: R.cotisation.priorite, montant: retard });
+  const dues = parts.filter((p) => Number(p.montant_attendu) > 0 && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
+  if (dues.length && garder('participation', 'participation')) l.push({ type: 'participation', cle: 'participation', prio: R.participation.priorite, dues });
+  communiques.filter((c) => c.debut <= auj && (!c.fin || c.fin >= auj)).forEach((c) => {
+    if (garder('communique', 'communique:' + c.id)) l.push({ type: 'communique', cle: 'communique:' + c.id, prio: c.priorite === 'haute' ? 0 : R.communique.priorite + (c.priorite === 'basse' ? 0.5 : 0), c });
+  });
+  return { annonces: l.sort((a, b) => a.prio - b.prio), rotation: R.rotation };
+}
+function htmlAnnonce(a) {
+  if (a.type === 'rdv') {
+    const e = a.e, d = dateDe(e.date_debut), j = Math.round((d - dateDe(aujourdhui())) / 864e5);
+    return `<div class="annonce ${j <= 1 ? 'rdv-imminent' : ''}" style="${styleEvt(e)}" data-type="rdv" data-evt="${e.id}" tabindex="0" role="button">
+      <span class="ann-puce ann-date"><span>${MOIS_COURTS[d.getMonth()]}</span><b>${d.getDate()}</b></span>
+      <span class="ann-corps"><small>Prochain rendez-vous · <span class="rdv-compte">${dansJours(e.date_debut)}</span></small>
+        <b>${esc(e.nom)}</b><span>${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Toute la journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}</span></span>
+      <button type="button" class="ann-action" data-ics="${e.id}" aria-label="Ajouter à mon agenda" title="Ajouter à mon agenda">${icone('agenda', 20)}</button></div>`;
+  }
+  if (a.type === 'cotisation') return `<div class="annonce ann-alerte" data-type="regler" tabindex="0" role="button">
+      <span class="ann-puce">${icone('cotisations', 20)}</span>
+      <span class="ann-corps"><small>Rappel · cotisation</small><b>${eur(a.montant)} en retard</b><span>Touchez pour voir comment régler</span></span>${icone('suivant', 18)}</div>`;
+  if (a.type === 'participation') {
+    const reste = a.dues.reduce((t, p) => t + Number(p.montant_attendu) - Number(p.donne), 0);
+    return `<div class="annonce ann-attention" data-type="regler" tabindex="0" role="button">
+      <span class="ann-puce">${icone('activites', 20)}</span>
+      <span class="ann-corps"><small>Rappel · participation</small><b>${eur(reste)} à régler</b><span>${esc(a.dues.map((p) => p.nom).join(', '))}</span></span>${icone('suivant', 18)}</div>`;
+  }
+  const c = a.c;
+  return `<div class="annonce ann-info ${c.priorite === 'haute' ? 'ann-important' : ''}" data-type="communique" data-communique="${c.id}" tabindex="0" role="button">
+      <span class="ann-puce">${icone('communiques', 20)}</span>
+      <span class="ann-corps"><small>${c.priorite === 'haute' ? 'Important · ' : ''}Communiqué</small><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}</span>${icone('suivant', 18)}</div>`;
+}
+// Une annonce à la fois, en fondu ; défile seule (sauf « réduire les animations »), se met en pause au survol ou au toucher
+function banniereAnnonces(donnees) {
+  const { annonces, rotation } = annoncesBanniere(donnees);
+  S.annonces = { liste: annonces, rotation, donnees };
+  if (!annonces.length) return `<div class="annonces acrylique"><div class="annonce" aria-live="polite"><span class="ann-corps"><small>Prochain rendez-vous</small><b>Rien de prévu pour l’instant</b></span></div></div>`;
+  return `<div class="annonces acrylique" aria-roledescription="carrousel" aria-label="Annonces de l’association">
+    <div class="annonces-piste">${annonces.map((a, i) => `<div class="annonces-item ${i ? '' : 'actif'}" data-i="${i}" ${i ? 'aria-hidden="true"' : ''}>${htmlAnnonce(a)}</div>`).join('')}</div>
+    ${annonces.length > 1 ? `<div class="annonces-points" role="tablist">${annonces.map((a, i) => `<button type="button" role="tab" class="${i ? '' : 'actif'}" data-aller="${i}" aria-label="Annonce ${i + 1} sur ${annonces.length}"></button>`).join('')}</div>` : ''}
   </div>`;
 }
+function brancherAnnonces(ouvrirEvt) {
+  const zone = $('.annonces'); const A = S.annonces; if (!zone || !A) return;
+  clearInterval(S.minuterieAnnonces);
+  let i = 0;
+  const montrer = (n) => {
+    i = (n + A.liste.length) % A.liste.length;
+    zone.querySelectorAll('.annonces-item').forEach((x, k) => { x.classList.toggle('actif', k === i); x.setAttribute('aria-hidden', k === i ? 'false' : 'true'); });
+    zone.querySelectorAll('[data-aller]').forEach((b, k) => b.classList.toggle('actif', k === i));
+    const a = A.liste[i]; if (a) noterVu(a.cle);
+  };
+  if (A.liste[0]) noterVu(A.liste[0].cle);
+  const auto = A.liste.length > 1 && A.rotation > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let pause = false;
+  if (auto) S.minuterieAnnonces = setInterval(() => { if (!pause && !document.hidden && document.body.contains(zone)) montrer(i + 1); }, A.rotation * 1000);
+  ['pointerenter', 'focusin'].forEach((ev) => zone.addEventListener(ev, () => { pause = true; }));
+  ['pointerleave', 'focusout'].forEach((ev) => zone.addEventListener(ev, () => { pause = false; }));
+  zone.querySelectorAll('[data-aller]').forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); montrer(Number(b.dataset.aller)); }));
+  let x0 = null;
+  zone.addEventListener('touchstart', (ev) => { x0 = ev.touches[0].clientX; pause = true; }, { passive: true });
+  zone.addEventListener('touchend', (ev) => { if (x0 != null) { const dx = ev.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) montrer(i + (dx < 0 ? 1 : -1)); } x0 = null; setTimeout(() => { pause = false; }, 4000); });
+  zone.querySelectorAll('.annonce[data-type]').forEach((el) => {
+    const agir = (ev) => {
+      if (ev.target.closest('[data-ics]')) return;
+      const t = el.dataset.type;
+      if (t === 'rdv') { const e = A.donnees.planning.find((p) => String(p.id) === el.dataset.evt); if (e) ouvrirEvt(e); }
+      else if (t === 'regler') { const r = $('[data-rub=m-regler]'); if (r) { r.open = true; r.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }
+      else if (t === 'communique') { const c = (A.donnees.communiques || []).find((x) => String(x.id) === el.dataset.communique); if (c) feuilleCommunique(c); }
+    };
+    el.addEventListener('click', agir); el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') agir(ev); });
+  });
+  zone.querySelectorAll('[data-ics]').forEach((b) => b.addEventListener('click', (ev) => {
+    ev.stopPropagation(); const e = A.donnees.planning.find((p) => String(p.id) === b.dataset.ics); if (e) telechargerIcs(e);
+  }));
+}
+function feuilleCommunique(c) {
+  ouvrirFeuille(`<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(c.titre)}</h2>${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}</div>
+    <p class="muted" style="margin:0">Publié le ${dateFr(c.debut)}${c.fin ? ` · jusqu’au ${dateFr(c.fin)}` : ''}</p>
+    ${c.texte ? `<p class="texte-libre">${esc(c.texte)}</p>` : ''}
+    <div class="actions"><button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => $('#b-fermer', root).addEventListener('click', fermerFeuille));
+}
+const communiquesActifs = (l) => (l || []).filter((c) => c.debut <= aujourdhui() && (!c.fin || c.fin >= aujourdhui()));
 
 // Fichier .ics : le rendez-vous s'ajoute à l'agenda du téléphone ou de l'ordinateur (Google, Apple, Outlook)
 function telechargerIcs(e) {
@@ -945,23 +1110,21 @@ function detailEvenementMembre(e) {
 }
 
 function brancherVueMembre(planning, ouvrir) {
-  document.querySelectorAll('.vue-membre [data-evt], .banniere-rdv [data-evt]').forEach((li) => {
+  document.querySelectorAll('.vue-membre [data-evt]').forEach((li) => {
     const go = (ev) => { ev.stopPropagation(); const e = planning.find((p) => String(p.id) === li.dataset.evt); if (e) ouvrir(e); };
     li.addEventListener('click', go); li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(ev); });
   });
-  document.querySelectorAll('.banniere-rdv [data-ics]').forEach((b) => b.addEventListener('click', (ev) => {
-    ev.stopPropagation(); const e = planning.find((p) => String(p.id) === b.dataset.ics); if (e) telechargerIcs(e);
-  }));
-  $('.alerte-membre')?.addEventListener('click', (ev) => { ev.preventDefault(); const r = $('[data-rub=m-regler]'); if (r) { r.open = true; r.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
   brancherRubriques();
 }
 
 async function pageTableauAdherent(anniv, mois) {
-  const [cot, planning, parts] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('planning_activites', { p_debut: isoLocal(new Date()) })), q(sb.rpc('mes_participations'))]);
-  rendre(`<div class="page accueil accueil-membre">${banniere(rdvBanniere(planning, parts))}
+  const [cot, planning, parts, communiques] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('planning_activites', { p_debut: isoLocal(new Date()) })),
+    q(sb.rpc('mes_participations')), q(sb.from('communiques').select('*').order('debut', { ascending: false })).catch(() => [])]);
+  rendre(`<div class="page accueil accueil-membre">${banniere(banniereAnnonces({ planning, cot, parts, communiques: communiquesActifs(communiques), regles: S.textes?.banniere }))}
     ${vueMembre({ planning, cot, parts, infos: S.textes?.infos_paiement, anniv, mois, connecte: true })}</div>`);
   brancherVueMembre(planning, (e) => detailEvenement(e, () => router()));
-  marquerVu('cotisations');
+  brancherAnnonces((e) => detailEvenement(e, () => router()));
+  marquerVu('cotisations'); marquerVu('communiques');
 }
 
 // Liste des rendez-vous avec la couleur de chacun (vue des membres)
@@ -2147,7 +2310,8 @@ function sectionsParametres() {
     ['Association', [
       ['association', 'Identité et coordonnées', 'association', 'Nom, sigle, objet, adresse, RNA, SIRET', paramAssociation, admin],
       ['apparence', 'Logo et bannière', 'image', 'Logo, photo de l’accueil', paramApparence, admin],
-      ['exercices', 'Exercices', 'exercice', 'Créer, clôturer ou rouvrir un exercice', paramExercices, admin]]],
+      ['exercices', 'Exercices', 'exercice', 'Créer, clôturer ou rouvrir un exercice', paramExercices, admin],
+      ['banniere', 'Bannière et communiqués', 'communiques', 'Communiqués, ordre et fréquence des annonces', paramBanniere, admin || peut('gerer_activites')]]],
     ['Finances', [
       ['comptes', 'Comptes et soldes de départ', 'compte', 'Banque, caisse, livret', paramComptes, admin],
       ['categories', 'Catégories', 'categorie', 'Recettes et dépenses', paramCategories, admin],
@@ -2199,7 +2363,9 @@ async function pageParametres() {
 
 // Mon compte : nom affiché, fiche de membre rattachée, mot de passe, déconnexion
 async function paramCompte(zone) {
-  const fiche = S.profil.member_id ? S.membres.find((m) => m.id === S.profil.member_id) : null;
+  // La fiche rattachée : dans la liste des membres si on y a accès, sinon lue directement (un membre lit sa propre fiche)
+  let fiche = S.profil.member_id ? S.membres.find((m) => m.id === S.profil.member_id) : null;
+  if (S.profil.member_id && !fiche) { try { fiche = (await q(sb.from('members').select('*').eq('id', S.profil.member_id)))[0] || null; } catch { fiche = null; } }
   const email = S.session?.user?.email || '';
   const libres = peut('administrer') ? S.membres.filter((m) => m.actif && !(S.liens || {})[m.id]) : [];
   zone.innerHTML = `<div class="grille grille-2 param-compte">
@@ -2273,8 +2439,80 @@ async function paramNotifications(zone) {
 </section>
     <section class="carte"><h3>Alertes du navigateur</h3><p class="muted" style="margin:0">Une alerte s’affiche quand une nouveauté arrive alors que la page est ouverte en arrière-plan. Actuellement&nbsp;: <b>${etat}</b>.</p>
       ${n && n.permission === 'default' ? '<button class="btn-primaire btn-petit" id="b-notif" style="align-self:flex-start">Activer les alertes</button>' : ''}
-      <p class="muted" style="margin:0">Sur Android, l’application affiche les mêmes pastilles et une notification du téléphone.</p></section></div>`;
+      <p class="muted" style="margin:0">Sur Android, l’application affiche les mêmes pastilles et une notification du téléphone, même fermée (vérification toutes les 15 minutes).</p></section>
+    <section class="carte"><h3>Son et vibration</h3>
+      <label class="case">${icone('son', 18)}<input type="checkbox" id="c-son" ${prefNotif('son') ? 'checked' : ''}> Jouer un son à l’arrivée d’une nouveauté</label>
+      <label class="case">${icone('vibration', 18)}<input type="checkbox" id="c-vibration" ${prefNotif('vibration') ? 'checked' : ''}> Faire vibrer le téléphone</label>
+      <button class="btn-tonal btn-petit" id="b-essai" style="align-self:flex-start">Essayer</button>
+      <p class="muted" style="margin:0">Le chiffre des nouveautés s’affiche aussi sur l’icône de l’application installée et dans le titre de l’onglet.</p></section></div>`;
+  $('#c-son', zone).addEventListener('change', (e) => garderPrefNotif('son', e.target.checked));
+  $('#c-vibration', zone).addEventListener('change', (e) => garderPrefNotif('vibration', e.target.checked));
+  $('#b-essai', zone).addEventListener('click', () => alerterNouveaute({ titre: 'Essai', detail: 'Voici comment une nouveauté vous sera signalée', section: 'tableau' }));
   $('#b-notif', zone)?.addEventListener('click', async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Alertes activées' : 'Alertes refusées'); paramNotifications(zone); });
+}
+
+// Bannière et communiqués : les communiqués de l'association et l'ordre / la fréquence des annonces de la bannière des membres
+async function paramBanniere(zone) {
+  const gere = peut('gerer_activites', 'administrer');
+  const liste = await q(sb.from('communiques').select('*').order('debut', { ascending: false }));
+  const R = reglesBanniere(S.textes?.banniere);
+  const auj = aujourdhui();
+  const etat = (c) => (c.debut > auj ? `À partir du ${dateFr(c.debut)}` : c.fin && c.fin < auj ? 'Terminé' : c.fin ? `Jusqu’au ${dateFr(c.fin)}` : 'En cours');
+  const PRIO = { haute: ['Important', 'puce-ko'], normale: ['Normal', 'puce-neutre'], basse: ['Discret', 'puce-neutre'] };
+  const optPrio = (v) => [[1, 'En premier'], [2, 'Ensuite'], [3, 'En dernier']].map(([k, l]) => `<option value="${k}" ${Number(v) === k ? 'selected' : ''}>${l}</option>`).join('');
+  const optFreq = (v) => [['toujours', 'À chaque visite'], ['jour', 'Une fois par jour'], ['jamais', 'Jamais']].map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${l}</option>`).join('');
+  const TYPES = [['rdv', 'Prochain rendez-vous'], ['communique', 'Communiqués'], ['cotisation', 'Rappel de cotisation en retard'], ['participation', 'Rappel de participation à régler']];
+  zone.innerHTML = `<div class="grille grille-2">
+    <section class="carte"><div class="page-titre"><h3 style="flex:1">Communiqués</h3>${gere ? '<button class="btn-primaire btn-petit" id="b-communique">Nouveau communiqué</button>' : ''}</div>
+      <p class="muted" style="margin:0">Un communiqué s’affiche sur la bannière des membres pendant sa période, et chacun reçoit une notification.</p>
+      ${liste.length ? `<ul class="liste">${liste.map((c) => `<li class="cliquable" data-communique="${c.id}" tabindex="0" role="button"><span class="avatar">${icone('communiques', 18)}</span>
+        <div class="corps"><b>${esc(c.titre)}</b><span>${etat(c)}${c.visible_adherents ? '' : ' · bureau seulement'}</span></div><span class="puce ${PRIO[c.priorite][1]}">${PRIO[c.priorite][0]}</span></li>`).join('')}</ul>`
+        : '<p class="muted">Aucun communiqué pour l’instant.</p>'}</section>
+    ${peut('administrer') ? `<section class="carte"><h3>Ordre et fréquence des annonces</h3>
+      <p class="muted" style="margin:0">La bannière des membres montre une annonce à la fois. Choisissez l’ordre et la fréquence de chaque type ; un communiqué « Important » passe toujours en premier.</p>
+      <form id="f-banniere" class="champs">
+        ${TYPES.map(([k, l]) => `<div class="ligne-regle"><b>${l}</b><select name="${k}_p" aria-label="Ordre : ${l}">${optPrio(R[k].priorite)}</select><select name="${k}_f" aria-label="Fréquence : ${l}">${optFreq(R[k].frequence)}</select></div>`).join('')}
+        <label class="champ">Durée de chaque annonce<select name="rotation">${[[5, '5 secondes'], [8, '8 secondes'], [12, '12 secondes'], [20, '20 secondes'], [0, 'Ne pas faire défiler']].map(([k, l]) => `<option value="${k}" ${R.rotation === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <button class="btn-primaire btn-petit" style="align-self:flex-end">Enregistrer</button>
+      </form></section>` : ''}
+  </div>`;
+  marquerVu('communiques');
+  $('#b-communique', zone)?.addEventListener('click', () => feuilleEditionCommunique(null, () => paramBanniere(zone)));
+  zone.querySelectorAll('[data-communique]').forEach((li) => {
+    const ouvrir = () => { const c = liste.find((x) => x.id === li.dataset.communique); if (gere) feuilleEditionCommunique(c, () => paramBanniere(zone)); else feuilleCommunique(c); };
+    li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+  });
+  $('#f-banniere', zone)?.addEventListener('submit', async (e) => {
+    e.preventDefault(); const f = e.target;
+    const regles = { rotation: Number(f.rotation.value) };
+    TYPES.forEach(([k]) => { regles[k] = { priorite: Number(f[k + '_p'].value), frequence: f[k + '_f'].value }; });
+    try { await enregistrerTexteReglage('banniere', JSON.stringify(regles), 'Bannière des membres : ordre et fréquence des annonces'); toast('Réglages de la bannière enregistrés'); } catch (err) { erreur(err); }
+  });
+}
+function feuilleEditionCommunique(c, apres) {
+  ouvrirFeuille(`<form id="f-communique" class="champs"><h2>${c ? 'Modifier le communiqué' : 'Nouveau communiqué'}</h2>
+    <label class="champ"><span class="obligatoire">Titre</span><input name="titre" required minlength="2" maxlength="120" value="${esc(c?.titre || '')}" placeholder="Assemblée générale le 15 novembre"></label>
+    <label class="champ">Texte<textarea name="texte" rows="4" maxlength="1500" placeholder="Ce que les membres doivent savoir">${esc(c?.texte || '')}</textarea></label>
+    <div class="champs champs-2">
+      <label class="champ">Afficher à partir du<input type="date" name="debut" required value="${c?.debut || aujourdhui()}"></label>
+      <label class="champ">Jusqu’au (facultatif)<input type="date" name="fin" value="${c?.fin || ''}"></label>
+    </div>
+    <label class="champ">Priorité<select name="priorite">${[['haute', 'Important (en premier sur la bannière)'], ['normale', 'Normal'], ['basse', 'Discret']].map(([k, l]) => `<option value="${k}" ${(c?.priorite || 'normale') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="case"><input type="checkbox" name="visible" ${c ? (c.visible_adherents ? 'checked' : '') : 'checked'}> Visible par tous les membres (sinon bureau seulement)</label>
+    <div class="actions">${c ? `<button type="button" class="btn-texte btn-texte-danger" id="b-suppr-cq">${icone('corbeille', 16)} Supprimer</button>` : ''}<button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">${c ? 'Enregistrer' : 'Publier'}</button></div>
+  </form>`, (root) => {
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    $('#b-suppr-cq', root)?.addEventListener('click', () => supprimerAvecConfirmation('communiques', c.id, c.titre, apres));
+    $('#f-communique', root).addEventListener('submit', async (e) => {
+      e.preventDefault(); const f = e.target; const b = f.querySelector('.btn-primaire'); b.disabled = true;
+      const v = { titre: f.titre.value.trim(), texte: f.texte.value.trim() || null, debut: f.debut.value, fin: f.fin.value || null, priorite: f.priorite.value, visible_adherents: f.visible.checked };
+      if (v.fin && v.fin < v.debut) { b.disabled = false; return toast('La date de fin est avant la date de début'); }
+      try {
+        if (c) await q(sb.from('communiques').update(v).eq('id', c.id)); else await q(sb.from('communiques').insert(v));
+        fermerFeuille(); toast(c ? 'Communiqué modifié' : 'Communiqué publié'); apres();
+      } catch (err) { b.disabled = false; erreur(err); }
+    });
+  });
 }
 
 // Identité et coordonnées de l'association (reprises sur les documents)
@@ -3838,10 +4076,18 @@ const nomAssoLisible = (n) => (n && n === n.toUpperCase() ? n.toLowerCase().spli
 const messageLien = (m, u) => `Bonjour ${m.prenom},\n\nVoici votre espace membre ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'de l’association'} : votre cotisation, vos participations et les prochains rendez-vous.\n\n👉 ${u}\n\nCe lien est personnel et sûr : il ouvre seulement votre page, sans compte ni mot de passe. Gardez-le pour vous.`;
 const urlPublique = (chemin) => { if (!chemin) return ''; const u = sb.storage.from('logos').getPublicUrl(chemin).data.publicUrl; return u.startsWith('blob:') ? u : u + '?v=' + encodeURIComponent(chemin); };
 
-async function pageLien(jeton, retour = null) {
-  $('#app').innerHTML = '<p class="chargement">Chargement…</p>';
+async function pageLien(jeton, retour = null, silencieux = false) {
+  if (!silencieux) $('#app').innerHTML = '<p class="chargement">Chargement…</p>';
   let d = null;
   try { d = await q(sb.rpc('situation_par_lien', { p_jeton: jeton })); } catch (e) { console.warn(e); }
+  // Mise à jour automatique : toutes les minutes tant que la page est visible, redessinée seulement si quelque chose a changé
+  if (silencieux) { if (!d || JSON.stringify(d) === S.lienDernier) return; }
+  S.lienDernier = JSON.stringify(d);
+  if (!retour && !S.minuterieLien) {
+    const verifier = () => { if (!document.hidden && $('.espace-membre') && !$('#sheet[open]')) pageLien(jeton, null, true); };
+    S.minuterieLien = setInterval(verifier, 60000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) verifier(); });
+  }
   const seConnecter = () => { garderJeton(null); history.replaceState(null, '', location.pathname); ecranConnexion(); };
   if (!d) {
     if (!retour) garderJeton(null);
@@ -3860,10 +4106,11 @@ async function pageLien(jeton, retour = null) {
   const planning = (d.a_venir || []).map((p, i) => ({ ...p, id: p.id || `lien-${i}` }));
   const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   document.title = `${d.association?.nom || 'Association'} · ${d.membre?.prenom || ''}`;
-  $('#app').innerHTML = `<main class="espace-membre">
+  const yLien = window.scrollY;
+  $('#app').innerHTML = `<main class="espace-membre ${silencieux ? 'sans-anim' : ''}">
     <section class="banniere ${photo ? 'avec-photo' : ''}" ${photo ? `style="--photo:url('${esc(photo)}')"` : ''}>
       <div class="banniere-tete"><img src="${esc(logo)}" alt=""><div><b>${esc(d.association?.nom || '')}</b><span>Bonjour ${esc(d.membre?.prenom || '')} · ${date}</span></div></div>
-      ${rdvBanniere(planning, d.participations || [])}
+      ${banniereAnnonces({ planning, cot: d.periodes || [], parts: d.participations || [], communiques: d.communiques || [], regles: d.banniere })}
     </section>
     ${retour ? `<div class="info info-action"><span>Aperçu de ce que voit ${esc(d.membre?.prenom || '')} avec son lien.</span><button class="btn-primaire btn-petit" id="b-retour">Revenir</button></div>` : ''}
     ${vueMembre({ planning, cot: d.periodes || [], parts: d.participations || [], infos: d.reglages?.infos_paiement, versements: d.versements || [], avance: Number(d.avance || 0), montant: d.reglages?.montant })}
@@ -3874,6 +4121,8 @@ async function pageLien(jeton, retour = null) {
     </section>
   </main>`;
   brancherVueMembre(planning, detailEvenementMembre);
+  brancherAnnonces(detailEvenementMembre);
+  if (silencieux) { window.scrollTo(0, yLien); requestAnimationFrame(() => requestAnimationFrame(() => $('.espace-membre')?.classList.remove('sans-anim'))); }
   $('#b-retour')?.addEventListener('click', retour);
   $('#b-co')?.addEventListener('click', seConnecter);
   $('#b-oublier')?.addEventListener('click', () => { garderJeton(null); history.replaceState(null, '', location.pathname); ecranConnexion('Lien oublié sur cet appareil.'); });

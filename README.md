@@ -35,6 +35,7 @@ Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase
 | Rapports PDF, exports Excel, sauvegarde | Oui | Oui |
 | Paramètres (roue dentée, en bas du menu ou en haut à droite sur téléphone ; espace à part avec son propre menu coloré et « Fermer ») : **Mon compte** pour tous (nom, fiche de membre, mot de passe, déconnexion) ; pour l’administrateur : association, comptes, catégories, **rôles et droits**, accès | Oui | Oui |
 | Membre d’abord, fonction ensuite : groupe Bureau en tête de la liste des membres, bouton « Fonction » pour donner un accès et désigner président, trésorier, bureau… | Oui | Oui |
+| Temps réel : chaque écran se met à jour seul quand quelqu’un modifie une donnée ; notifications avec son et vibration, chiffre sur l’icône de l’application, communiqués et rappels sur la bannière des membres | Oui | Oui (notifications même application fermée) |
 | Mise en route : étapes cochées automatiquement dans Paramètres › Mise en route, avec un rappel discret au plus une fois par semaine (plus de fenêtre insistante) | Oui | Oui |
 
 ## Rôles et droits

@@ -49,7 +49,11 @@ expect fun lirePreference(cle: String): String?
 expect fun garderPreference(cle: String, valeur: String?)
 
 /** Notification du téléphone (nouveautés) ; sans effet si la personne ne l'a pas autorisée. */
-expect fun notifierSysteme(titre: String, texte: String)
+expect fun notifierSysteme(titre: String, texte: String, nombre: Int = 0)
+/** Tout est vu : retire la notification (et le compteur de l'icône). */
+expect fun effacerNotifications()
+/** Vérifie les nouveautés en arrière-plan, application fermée (toutes les 15 minutes). */
+expect fun planifierVerification()
 expect fun notificationsPermises(): Boolean
 
 /** Demande l'autorisation d'afficher des notifications (Android 13 et plus). */

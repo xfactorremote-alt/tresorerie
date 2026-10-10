@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Settings
@@ -64,19 +65,23 @@ fun dansJours(date: String): String {
 // =====================================================================
 // Nouveautés : pastilles sur les onglets, cloche, notification du téléphone
 // =====================================================================
-val SECTIONS_NOUVEAUTES = listOf("ecritures", "depenses", "cotisations", "activites", "membres")
+val SECTIONS_NOUVEAUTES = listOf("ecritures", "depenses", "cotisations", "activites", "membres", "communiques")
 val LIBELLES_SECTIONS = mapOf("ecritures" to "Opérations", "depenses" to "Demandes", "cotisations" to "Cotisations", "activites" to "Planning", "membres" to "Membres")
 
 object EtatNouveautes {
     val n = mutableStateOf(Nouveautes())
-    private var dernier: String? = null
-    // Recharge ; prévient par une notification du téléphone si un élément plus récent est arrivé
+    // Recharge ; prévient par une notification du téléphone (son, vibration, compteur sur l'icône) si un élément plus
+    // récent est arrivé. Le dernier élément signalé est gardé sur le téléphone : l'application et la vérification en
+    // arrière-plan ne préviennent jamais deux fois pour la même chose.
     suspend fun charger() {
         try {
             val r = Repo.nouveautes()
             val recent = r.elements.firstOrNull()
-            if (dernier != null && recent != null && recent.quand > dernier!!) notifierSysteme(recent.titre, recent.detail)
-            dernier = recent?.quand ?: dernier ?: ""
+            val cle = "nouveautes.dernier." + (Repo.profilId() ?: "")
+            val dernier = lirePreference(cle)
+            if (dernier != null && recent != null && recent.quand > dernier) notifierSysteme("${Repo.nomAssociation() ?: "Trésorerie"} · ${recent.titre}", recent.detail, r.total)
+            if (recent != null && (dernier == null || recent.quand > dernier)) garderPreference(cle, recent.quand) else if (dernier == null) garderPreference(cle, "")
+            if (r.total == 0) effacerNotifications()
             n.value = r
         } catch (_: Exception) { }
     }
@@ -284,7 +289,7 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
     var version by remember { mutableStateOf(0) }
     var enCours by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try { o = Repo.organisation(); exercices = Repo.exercices(); comptes = Repo.tousLesComptes(); reglages = Repo.reglages(); infos = Repo.texteReglage("infos_paiement") ?: "" }
         catch (e: Exception) { message(traduireErreur(e)) }
     }
@@ -457,7 +462,7 @@ fun ParamExercices(d: Donnees, message: (String) -> Unit) {
     var aRouvrir by remember { mutableStateOf<Exercice?>(null) }
     val scope = rememberCoroutineScope()
     val supprimer = rememberSuppression(message) { version++ }
-    LaunchedEffect(version) { try { liste = Repo.exercices() } catch (e: Exception) { message(traduireErreur(e)) } }
+    LaunchedEffect(version, Synchro.version) { try { liste = Repo.exercices() } catch (e: Exception) { message(traduireErreur(e)) } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Text("L’exercice regroupe 12 mois de comptes. Une fois clôturé, ses opérations ne peuvent plus être ajoutées, modifiées ni supprimées (il peut être rouvert).", color = Couleurs.Texte2, fontSize = 14.sp)
@@ -550,7 +555,7 @@ fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit)
     var version by remember { mutableStateOf(0) }
     var voirRestaures by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(version) { try { liste = Repo.corbeille(); profils = try { Repo.profils() } catch (_: Exception) { emptyList() } } catch (e: Exception) { message(traduireErreur(e)) } }
+    LaunchedEffect(version, Synchro.version) { try { liste = Repo.corbeille(); profils = try { Repo.profils() } catch (_: Exception) { emptyList() } } catch (e: Exception) { message(traduireErreur(e)) } }
     fun nom(id: String?) = if (id == d.profil.id) "vous" else profils.firstOrNull { it.id == id }?.nom ?: "un membre du bureau"
     val l = liste
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -628,7 +633,7 @@ fun ParamCategories(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
     var ajouter by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val supprimer = rememberSuppression(message) { version++; recharger() }
-    LaunchedEffect(version) { try { categories = Repo.categories().filter { !it.interne } } catch (e: Exception) { message(traduireErreur(e)) } }
+    LaunchedEffect(version, Synchro.version) { try { categories = Repo.categories().filter { !it.interne } } catch (e: Exception) { message(traduireErreur(e)) } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         listOf("recette" to "Recettes (ressources)", "depense" to "Dépenses (emplois)").forEach { (sens, titre) ->
             item(key = sens) {
@@ -708,6 +713,17 @@ fun ParamNotifications() {
                 Text("Notifications du téléphone", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("Une notification s’affiche quand une nouveauté arrive pendant que l’application est ouverte ou en arrière-plan. Actuellement : ${if (autorise) "activées" else "désactivées"}.", color = Couleurs.Texte2, fontSize = 14.sp)
                 if (!autorise) Button(onClick = demander) { Text("Activer les notifications") }
+                Text("L’application vérifie aussi les nouveautés toutes les 15 minutes quand elle est fermée. Le chiffre des nouveautés s’affiche sur son icône.", color = Couleurs.Texte2, fontSize = 13.sp)
+            }
+        }
+        item {
+            CarteBlanche {
+                Text("Son et vibration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                var son by remember { mutableStateOf(lirePreference("notif.son") != "0") }
+                var vibre by remember { mutableStateOf(lirePreference("notif.vibration") != "0") }
+                Row(verticalAlignment = Alignment.CenterVertically) { Text("Jouer un son à l’arrivée d’une nouveauté", Modifier.weight(1f)); Switch(son, { son = it; garderPreference("notif.son", if (it) "1" else "0") }) }
+                Row(verticalAlignment = Alignment.CenterVertically) { Text("Faire vibrer le téléphone", Modifier.weight(1f)); Switch(vibre, { vibre = it; garderPreference("notif.vibration", if (it) "1" else "0") }) }
+                FilledTonalButton(onClick = { notifierSysteme("Essai", "Voici comment une nouveauté vous sera signalée", EtatNouveautes.n.value.total) }) { Text("Essayer") }
             }
         }
     }
@@ -723,9 +739,10 @@ fun sectionsParametres(d: Donnees): List<Pair<String, List<SectionParam>>> {
         "Mon compte" to listOf(SectionParam("compte", "Profil et fiche de membre", "Nom affiché, ma fiche de membre", Icons.Outlined.Person),
             SectionParam("securite", "Mot de passe et session", "Changer le mot de passe, se déconnecter", Icons.Outlined.Lock),
             SectionParam("notifications", "Notifications", "Pastilles et notifications du téléphone", Icons.Outlined.Notifications)),
-        "Association" to if (admin) listOf(SectionParam("association", "Identité et coordonnées", "Nom, sigle, objet, adresse, RNA, SIRET", Icons.Outlined.Business),
+        "Association" to (if (admin) listOf(SectionParam("association", "Identité et coordonnées", "Nom, sigle, objet, adresse, RNA, SIRET", Icons.Outlined.Business),
             SectionParam("apparence", "Logo et bannière", "Logo, photo de l’accueil", Icons.Outlined.Image),
-            SectionParam("exercices", "Exercices", "Créer, clôturer ou rouvrir un exercice", Icons.Outlined.CalendarMonth)) else emptyList(),
+            SectionParam("exercices", "Exercices", "Créer, clôturer ou rouvrir un exercice", Icons.Outlined.CalendarMonth)) else emptyList()) +
+            (if (admin || d.peut("gerer_activites")) listOf(SectionParam("banniere", "Bannière et communiqués", "Communiqués, ordre et fréquence des annonces", Icons.Outlined.Campaign)) else emptyList()),
         "Finances" to if (admin) listOf(SectionParam("comptes", "Comptes et soldes de départ", "Banque, caisse, livret", Icons.Outlined.AccountBalanceWallet),
             SectionParam("categories", "Catégories", "Recettes et dépenses", Icons.Outlined.Sell),
             SectionParam("regles", "Cotisations et dépenses", "Montant, périodicité, délais, seuils", Icons.Outlined.Payments)) else emptyList(),

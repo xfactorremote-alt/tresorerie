@@ -90,6 +90,7 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
             "roles" -> ParamRoles(d, message, recharger)
             "corbeille" -> ParamCorbeille(d, message, recharger)
             "sauvegarde" -> ParamSauvegarde(message)
+            "banniere" -> ParamBanniere(d, message)
             else -> ParamMiseEnRoute(d) { cible ->
                 when (cible) { "assistant" -> onAssistant(); "apparence", "comptes" -> section = cible; else -> onCible(cible) }
             }
@@ -294,7 +295,7 @@ private fun ParamComptes(d: Donnees, message: (String) -> Unit, recharger: () ->
     var categories by remember { mutableStateOf(d.categories) }
     var feuille by remember { mutableStateOf<String?>(null) }
     val action = rememberAction(message) { version++; recharger() }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try {
             comptes = Repo.tousLesComptes(); soldes = comptes.associate { it.id to montantSaisie(it.soldeInitial) }
             categories = Repo.categories().filter { !it.interne }
@@ -372,7 +373,7 @@ private fun ParamRoles(d: Donnees, message: (String) -> Unit, recharger: () -> U
     var choisi by remember { mutableStateOf<String?>(null) }
     var feuille by remember { mutableStateOf<String?>(null) }   // "nouveau", "renommer", "supprimer"
     val action = rememberAction(message) { version++; recharger() }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try {
             roles = Repo.roles(); permissions = Repo.permissions()
             liens = Repo.rolePermissions().map { it.role to it.permission }.toSet()
@@ -467,7 +468,7 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit) {
     var invitations by remember { mutableStateOf<List<Invitation>>(emptyList()) }
     var inviter by remember { mutableStateOf(false) }
     val action = rememberAction(message) { version++ }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try { roles = Repo.roles(); profils = Repo.profilsComplets(); invitations = Repo.invitations() } catch (e: Exception) { message(traduireErreur(e)) }
     }
     fun nomRole(c: String) = roles.firstOrNull { it.code == c }?.nom ?: c
@@ -647,7 +648,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     val choixCsv = rememberChoixTexte { texte ->
         if (texte != null) aImporter = try { analyserCsvMembres(texte, membres) } catch (e: Exception) { message(e.message ?: "Fichier illisible"); null }
     }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try {
             if (version > 0) membres = Repo.membres()
             if (d.peut("administrer", "consulter_finances", "valider_depenses", "payer_depenses")) profils = Repo.profilsComplets()
@@ -1247,16 +1248,21 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     var pas by remember { mutableStateOf(1) }
     var version by remember { mutableStateOf(0) }
     var detail by remember { mutableStateOf<Projet?>(null) }
-    LaunchedEffect(version) {
+    var communiques by remember { mutableStateOf<List<Communique>>(emptyList()) }
+    var regles by remember { mutableStateOf<String?>(null) }
+    var communiqueLu by remember { mutableStateOf<Communique?>(null) }
+    LaunchedEffect(version, Synchro.version) {
+        try { communiques = communiquesActifs(Repo.communiques()); regles = Repo.texteReglage("banniere") } catch (_: Exception) { }
         try { cotis = Repo.maCotisation() } catch (_: Exception) { }
         try { parts = Repo.mesParticipations() } catch (_: Exception) { }
         try { anniv = Repo.anniversaires(); planning = Repo.planning(aujourdhui().toString()) } catch (_: Exception) { }
         try { pas = (Repo.reglages()["cotisation_periode_mois"] ?: 1.0).toInt(); infos = Repo.texteReglage("infos_paiement") } catch (_: Exception) { }
-        EtatNouveautes.vu("cotisations")
+        EtatNouveautes.vu("cotisations"); EtatNouveautes.vu("communiques")
     }
     val mois = aujourdhui().monthNumber
-    val prochain = planning.firstOrNull()
-    val suite = planning.drop(1).take(6)
+    // Au programme ce mois-ci : les autres rendez-vous du mois en cours (le prochain est déjà sur la bannière)
+    val moisCourant = aujourdhui().toString().take(7)
+    val suite = planning.drop(1).filter { it.debut?.take(7) == moisCourant }
     val retard = retardDe(cotis)
     val resteParts = parts.filter { (it.montantAttendu ?: 0.0) > 0 && it.donne < it.montantAttendu!! && !it.cloturee }.sumOf { it.montantAttendu!! - it.donne }
     val agenda = { p: Projet -> if (!ajouterAgenda(p.nom, p.debut ?: "", p.heureDebut, p.fin, p.heureFin, p.lieu, p.description)) message("Aucune application d’agenda sur ce téléphone") }
@@ -1264,18 +1270,17 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     val scope = rememberCoroutineScope()
     val du = retard > 0.005 || resteParts > 0.005
 
-    // Une seule bannière forte : la photo, avec le prochain rendez-vous posé dessus (comme rdvBanniere du site)
+    // Une seule bannière forte : la photo, avec les annonces posées dessus, une à la fois (comme banniereAnnonces du site)
+    val (annonces, rotation) = remember(planning, cotis, parts, communiques, regles) { annoncesBanniere(planning, cotis, parts, communiques, regles) }
     @Composable fun Tete() = Banniere(d, onReglages, onCloche) {
-        Spacer(Modifier.height(12.dp))
-        RdvBanniere(prochain, parts.firstOrNull { it.collecteId != null && it.collecteId == prochain?.collecteId }, onAgenda = { prochain?.let(agenda) }) { prochain?.let { detail = it } }
-    }
-    @Composable fun Hero() { if (du) AlerteMembre(listOfNotNull(if (retard > 0.005) "Cotisation : ${euros(retard)} en retard" else null, if (resteParts > 0.005) "Participations : ${euros(resteParts)} à régler" else null).joinToString(" · ")) {
-            EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(4) }   // « Comment régler »
-        }
+        Spacer(Modifier.height(16.dp))
+        BanniereAnnonces(annonces, rotation, onEvt = { detail = it }, onAgenda = agenda,
+            onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(4) } }, onCommunique = { communiqueLu = it })
     }
     val etatCotis = if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour"
-    @Composable fun Suite() = Rubrique("m-planning", "Ensuite au planning", if (suite.isEmpty()) "Rien d’autre" else "${suite.size} rendez-vous") {
-        if (suite.isEmpty()) Text("Rien d’autre d’annoncé pour l’instant.", color = Couleurs.Texte2)
+    val nomMois = MOIS[mois - 1]
+    @Composable fun Suite() = Rubrique("m-planning", "Au programme en $nomMois", if (suite.isEmpty()) "Rien d’autre" else "${suite.size} rendez-vous") {
+        if (suite.isEmpty()) Text("Pas d’autre rendez-vous en $nomMois.", color = Couleurs.Texte2)
         suite.forEach { p -> LigneRendezVous(p) { detail = p } }
     }
     @Composable fun Cotisation() = Rubrique("m-cotisation", "Ma cotisation", etatCotis, alerte = retard > 0.005) {
@@ -1296,14 +1301,12 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
         val large = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxWidth > maxHeight)
         if (large) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Tete()
-            Apparition(0) { Hero() }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(1) { Suite() } }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(2) { Cotisation() }; Regler(); Participations(); Anniversaires() }
             }
         } else LazyColumn(Modifier.fillMaxSize(), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Tete() }
-            item { Apparition(0) { Hero() } }
             item { Apparition(1) { Suite() } }
             item { Apparition(2) { Cotisation() } }
             item { Regler() }
@@ -1311,6 +1314,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
             item { Anniversaires() }
         }
     }
+    communiqueLu?.let { FeuilleCommunique(it) { communiqueLu = null } }
     detail?.let { e ->
         @OptIn(ExperimentalMaterial3Api::class)
         ModalBottomSheet(onDismissRequest = { detail = null }) {
@@ -1318,63 +1322,6 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
         }
     }
 }
-
-// Prochain rendez-vous posé sur la bannière photo : panneau translucide, date à la couleur du rendez-vous,
-// pastille « Dans 2 jours », boutons Agenda et Détail (même contenu que rdvBanniere du site)
-@Composable
-fun RdvBanniere(p: Projet?, part: Participation?, onAgenda: () -> Unit = {}, onClick: () -> Unit) {
-    val panneau = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0x6B141211))
-        .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
-    if (p == null || p.debut == null) {
-        Column(panneau.padding(14.dp)) {
-            Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.9f))
-            Text("Rien de prévu pour l’instant", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        }
-        return
-    }
-    val (_, encre, accent) = couleurEvt(p.id)
-    val j = LocalDate.parse(p.debut.take(10))
-    val imminent = aujourdhui().daysUntil(j) <= 1
-    Column(panneau.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(Modifier.width(58.dp).clip(RoundedCornerShape(8.dp)).background(accent).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(JOURS_COURTS[j.dayOfWeek.ordinal].uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Text("${j.dayOfMonth}", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, lineHeight = 30.sp)
-                Text(MOIS_COURTS[j.monthNumber - 1].uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.92f))
-                    Text(dansJours(p.debut), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (imminent) Color.White else encre,
-                        modifier = Modifier.background(if (imminent) accent else Color.White, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp))
-                }
-                Text(p.nom, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(listOfNotNull(if (p.heureDebut != null) heureFr(p.heureDebut) + (p.heureFin?.let { " – " + heureFr(it) } ?: "") else "Toute la journée", p.lieu).joinToString(" · ") +
-                    (p.participation?.let { m -> " · participation ${euros(m)}" + (part?.let { " (donné ${euros(it.donne)})" } ?: "") } ?: ""),
-                    fontSize = 14.sp, color = Color.White.copy(alpha = 0.92f))
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onAgenda, shape = RoundedCornerShape(6.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White), modifier = Modifier.weight(1f)) {
-                Icon(Icons.Outlined.EditCalendar, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Agenda", maxLines = 1)
-            }
-            Button(onClick = onClick, shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1C1B1A)), modifier = Modifier.weight(1f)) { Text("Détail", maxLines = 1) }
-        }
-    }
-}
-
-// Alerte seulement si quelque chose est dû (même texte que .alerte-membre du site)
-@Composable
-fun AlerteMembre(texte: String, onClick: () -> Unit) =
-    Surface(onClick = onClick, color = Couleurs.ErreurClair, contentColor = Color(0xFF410002), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.drawBehind { drawRect(Couleurs.Erreur, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Outlined.ErrorOutline, null, tint = Couleurs.Erreur)
-            Column(Modifier.weight(1f)) { Text(texte, fontWeight = FontWeight.Bold); Text("Voir comment régler", fontSize = 13.sp, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline) }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
-        }
-    }
 
 // Rendez-vous dans une liste, avec sa couleur (filet, date pleine, « Dans N jours »)
 @Composable

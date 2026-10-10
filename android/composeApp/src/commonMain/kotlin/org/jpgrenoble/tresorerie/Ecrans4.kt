@@ -362,7 +362,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     val gere = d.peut("gerer_cotisations")
-    LaunchedEffect(annee, version) {
+    LaunchedEffect(annee, version, Synchro.version) {
         try {
             synth = Repo.cotisations(annee); periodes = Repo.periodes(annee)
             val r = Repo.reglages(); pas = (r["cotisation_periode_mois"] ?: 1.0).toInt(); montantPeriode = r["cotisation_montant"] ?: 0.0
@@ -458,7 +458,7 @@ private fun FicheCotisation(d: Donnees, m: Membre, annee: Int, pas: Int, message
     var version by remember { mutableStateOf(0) }
     var edition by remember { mutableStateOf<PeriodeCotisation?>(null) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try {
             periodes = Repo.periodesMembre(m.id); operations = Repo.toutesEcritures().filter { it.membreId == m.id }.sortedByDescending { it.date }
             collectes = Repo.collectes()
@@ -531,7 +531,7 @@ private fun OngletParticipations(d: Donnees, message: (String) -> Unit) {
     var version by remember { mutableStateOf(0) }
     var detail by remember { mutableStateOf<Collecte?>(null) }
     var formulaire by remember { mutableStateOf<Pair<Collecte?, String?>?>(null) }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try { liste = Repo.collectes(); projets = Repo.projets() } catch (e: Exception) { message(traduireErreur(e)) }
     }
     val gere = d.peut("gerer_activites", "gerer_cotisations")
@@ -587,7 +587,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     val enregistrer = rememberEnregistrer { it?.let(message) }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try {
             operations = Repo.toutesEcritures().filter { it.collecteId == c.id }
             if (!c.tousMembres) choisis = Repo.collecteMembres(c.id)
@@ -752,7 +752,7 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
             p.minus(DatePeriod(days = p.dayOfWeek.isoDayNumber - 1)) to dern.plus(DatePeriod(days = 7 - dern.dayOfWeek.isoDayNumber)) }
         else -> { val l = ref.minus(DatePeriod(days = ref.dayOfWeek.isoDayNumber - 1)); l to l.plus(DatePeriod(days = 6)) }
     }
-    LaunchedEffect(vue, debut, fin, version) {
+    LaunchedEffect(vue, debut, fin, version, Synchro.version) {
         try {
             evts = Repo.planning(debut.toString(), fin.toString())
             val mois = if (vue == "avenir") emptySet() else generateSequence(debut) { it.plus(DatePeriod(days = 7)) }.takeWhile { it <= fin }.map { it.monthNumber }.toSet() + fin.monthNumber
@@ -1090,7 +1090,7 @@ fun EcranTiers(d: Donnees, message: (String) -> Unit) {
     var encaisser by remember { mutableStateOf<PreEcriture?>(null) }
     var pas by remember { mutableStateOf(1) }
     val enregistrerCsv = rememberEnregistrer { it?.let(message) }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, Synchro.version) {
         try { tiers = Repo.tiers(); operations = Repo.toutesEcritures(); collectes = try { Repo.collectes() } catch (_: Exception) { emptyList() }
             pas = try { (Repo.reglages()["cotisation_periode_mois"] ?: 1.0).toInt() } catch (_: Exception) { 1 } }
         catch (e: Exception) { message(traduireErreur(e)) }

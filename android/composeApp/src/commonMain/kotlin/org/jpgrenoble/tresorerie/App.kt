@@ -250,7 +250,7 @@ fun Principal(cle: String) {
     var assistantDemande by rememberSaveable(cle) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(cle, version) {
+    LaunchedEffect(cle, version, Synchro.versionReferentiels) {
         try {
             val p = Repo.profil()
             if (p == null || !p.actif) { sansProfil = true; return@LaunchedEffect }
@@ -347,6 +347,9 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
     var miseEnRouteOuverte by remember { mutableStateOf(false) }
     // Nouveautés : rechargées chaque minute tant que l'application est ouverte
     LaunchedEffect(d.profil.id) { while (true) { EtatNouveautes.charger(); kotlinx.coroutines.delay(60_000) } }
+    // Temps réel : chaque écran ouvert se met à jour seul quand une donnée change (Synchro)
+    val porteeSynchro = rememberCoroutineScope()
+    LaunchedEffect(d.profil.id) { Synchro.demarrer(porteeSynchro) }
     // Personne sans droit financier : espace adhérent seul
     val adherentSeul = d.droits.isEmpty()
     var vueAdherent by rememberSaveable { mutableStateOf(0) }   // 0 : accueil, 1 : planning
@@ -373,6 +376,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
             "ecritures" -> { compteFiltre = null; onglet = Onglet.Operations }
             "depenses" -> onglet = Onglet.Depenses
             "cotisations" -> onglet = if (Onglet.Cotisations in onglets) Onglet.Cotisations else Onglet.Accueil
+            "communiques" -> onglet = Onglet.Accueil   // les communiqués s'affichent sur la bannière de l'accueil
             else -> { sousEcran = section; onglet = Onglet.Plus }
         }
     }

@@ -271,7 +271,27 @@ object Demo {
 
     fun ecritures(): List<Ecriture> = lignes.map { it.e }.sortedByDescending { it.date }
 
-    val textes = mutableMapOf<String, String?>("infos_paiement" to "En espèces auprès du trésorier après la répétition, ou par virement (IBAN sur demande).")
+    val textes = mutableMapOf<String, String?>("infos_paiement" to "En espèces auprès du trésorier après la répétition, ou par virement (IBAN sur demande).",
+        "banniere" to REGLES_BANNIERE_DEFAUT)
+
+    // ---------- Communiqués (mêmes règles que la base : lecture selon visibilité, écriture gerer_activites ou administrer) ----------
+    val communiques = mutableListOf(
+        Communique("cq1", "Assemblée générale le 15 novembre", "Tous les membres sont attendus à 15 h, salle paroissiale. Ordre du jour : bilan de l’année, budget, élection du bureau.",
+            ilYa(1), null, "haute", true, "u-t", ilYa(1) + "T10:00:00Z"),
+        Communique("cq2", "Réunion du bureau jeudi", "Préparation de l’assemblée générale.", ilYa(2), null, "normale", false, "u-p", ilYa(2) + "T10:00:00Z"),
+    )
+    fun communiquesVisibles(profil: Profil?): List<Communique> {
+        val d = droitsDe(profil)
+        if (actuel(profil) == null) return emptyList()
+        return communiques.filter { it.visible || "gerer_activites" in d || "administrer" in d }
+    }
+    fun enregistrerCommunique(id: String?, c: NouveauCommunique, profil: Profil?) {
+        exiger(profil, "gerer_activites", "administrer")
+        if (c.titre.trim().length < 2) throw IllegalStateException("Titre trop court")
+        if (c.fin != null && c.fin < c.debut) throw IllegalStateException("violates check constraint : fin avant début")
+        if (id == null) communiques += Communique("cq${compteur++}", c.titre.trim(), c.texte, c.debut, c.fin, c.priorite, c.visible, profil?.id, maintenant())
+        else { val i = communiques.indexOfFirst { it.id == id }; if (i >= 0) communiques[i] = communiques[i].copy(titre = c.titre.trim(), texte = c.texte, debut = c.debut, fin = c.fin, priorite = c.priorite, visible = c.visible) }
+    }
     fun majTexte(cle: String, texte: String?, profil: Profil?) { exiger(profil, "administrer"); textes[cle] = texte }
 
     // ---------- Liens personnels (même règle que la fonction lien_membre de la base) ----------
@@ -727,7 +747,7 @@ object Demo {
     private val droitsSuppression = mapOf("transactions" to listOf("saisir_ecritures"), "members" to listOf("gerer_membres"),
         "tiers" to listOf("saisir_ecritures", "gerer_cotisations"), "projects" to listOf("gerer_activites"), "collectes" to listOf("gerer_activites", "gerer_cotisations"),
         "materiel" to listOf("gerer_materiel"), "categories" to listOf("administrer"), "accounts" to listOf("administrer"), "budgets" to listOf("gerer_budget"),
-        "expense_requests" to emptyList(), "exercices" to listOf("administrer"))
+        "expense_requests" to emptyList(), "exercices" to listOf("administrer"), "communiques" to listOf("gerer_activites", "administrer"))
     private fun peutSupprimer(table: String, profil: Profil?): Boolean {
         val l = droitsSuppression[table] ?: return false
         return actuel(profil) != null && (l.isEmpty() || l.any { it in droitsDe(profil) })
@@ -822,6 +842,10 @@ object Demo {
                 if (e.cloture) throw IllegalStateException("Exercice clôturé : rouvrez-le d’abord")
                 libelle = e.libelle; retirer(exercices) { it.id == id }
             }
+            "communiques" -> {
+                val c = communiques.firstOrNull { it.id == id } ?: throw IllegalStateException("Élément introuvable")
+                libelle = "Communiqué · " + c.titre; retirer(communiques) { it.id == id }
+            }
             else -> throw IllegalStateException("Droit insuffisant pour supprimer")
         }
         val el = ElementCorbeille("cb${compteur++}", table, id, libelle, motif?.trim()?.ifBlank { null }, profil?.id, maintenant())
@@ -886,6 +910,10 @@ object Demo {
             (c.tousMembres || collecteMembres.any { it.collecteId == c.id && it.membreId == p.memberId }))) }
         compteurs["cotisations"] = co.size
         co.forEach { c -> els += ElementNouveaute("cotisations", "Participation demandée", c.nom + (c.montantAttendu?.let { " · " + eur(it) } ?: ""), c.creeLe) }
+        val auj = aujourdhui().toString()
+        val cq = communiques.filter { (it.creeLe ?: "") > depuis("communiques") && it.creePar != p.id && (it.visible || "gerer_activites" in d || "administrer" in d) && (it.fin == null || it.fin >= auj) }
+        compteurs["communiques"] = cq.size
+        cq.forEach { els += ElementNouveaute("communiques", "Communiqué", it.titre, it.creeLe ?: "") }
         return Nouveautes(compteurs, els.sortedByDescending { it.quand })
     }
 
