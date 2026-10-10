@@ -14,7 +14,38 @@ data class Profil(
 
 @Serializable
 data class Organisation(val nom: String = "JP Grenoble", @SerialName("logo_path") val logo: String? = null,
-                        @SerialName("banniere_path") val banniere: String? = null)
+                        @SerialName("banniere_path") val banniere: String? = null,
+                        // Identité et coordonnées (reprises sur les documents)
+                        val sigle: String? = null, val objet: String? = null, val adresse: String? = null,
+                        @SerialName("code_postal") val codePostal: String? = null, val ville: String? = null,
+                        val email: String? = null, val telephone: String? = null, @SerialName("site_web") val siteWeb: String? = null,
+                        val rna: String? = null, val siret: String? = null, @SerialName("date_creation") val dateCreation: String? = null,
+                        // false tant que l'assistant de configuration n'a pas été terminé
+                        val configuree: Boolean = true,
+                        @SerialName("exercice_debut") val exerciceDebut: String? = null)
+
+// Exercice comptable : clôturé, ses opérations sont verrouillées (réouverture possible et tracée)
+@Serializable
+data class Exercice(val id: String, val libelle: String, val debut: String, val fin: String, val cloture: Boolean = false,
+                    @SerialName("cloture_le") val clotureLe: String? = null, @SerialName("cloture_par") val cloturePar: String? = null)
+
+@Serializable
+data class NouvelExercice(val libelle: String, val debut: String, val fin: String)
+
+// Corbeille : copie complète de ce qui a été supprimé, restaurable
+@Serializable
+data class ElementCorbeille(val id: String, @SerialName("table_nom") val table: String, @SerialName("ligne_id") val ligneId: String,
+                            val libelle: String, val motif: String? = null, @SerialName("supprime_par") val supprimePar: String? = null,
+                            @SerialName("supprime_le") val supprimeLe: String, @SerialName("restaure_le") val restaureLe: String? = null)
+
+// Nouveautés : à traiter + nouveau depuis la dernière visite de chaque onglet (pastilles, cloche)
+@Serializable
+data class ElementNouveaute(val section: String, val titre: String, val detail: String, val quand: String)
+
+@Serializable
+data class Nouveautes(val compteurs: Map<String, Int> = emptyMap(), val elements: List<ElementNouveaute> = emptyList()) {
+    val total get() = compteurs.values.sum()
+}
 
 @Serializable
 data class Solde(val id: String, val nom: String, val type: String, val solde: Double)
@@ -38,6 +69,7 @@ data class Membre(
     @SerialName("consent_anniversaire") val consentement: Boolean = false,
     val email: String? = null,
     @SerialName("photo_path") val photo: String? = null,
+    @SerialName("created_at") val creeLe: String? = null,
 ) { val nomComplet get() = "$prenom $nom" }
 
 @Serializable
@@ -237,6 +269,7 @@ data class Projet(
     val lieu: String? = null,
     val participation: Double? = null,               // planning : montant demandé par personne
     @SerialName("collecte_id") val collecteId: String? = null,
+    @SerialName("created_at") val creeLe: String? = null,
 )
 
 @Serializable

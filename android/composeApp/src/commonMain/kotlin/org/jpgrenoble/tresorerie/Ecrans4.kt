@@ -1,5 +1,21 @@
 package org.jpgrenoble.tresorerie
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,7 +64,7 @@ import kotlinx.datetime.plus
 val TYPES_TIERS = mapOf("donateur" to "Donateur", "fournisseur" to "Fournisseur", "partenaire" to "Partenaire", "autre" to "Autre")
 val PERIODICITES = mapOf(1 to "Mensuelle", 3 to "Trimestrielle", 6 to "Semestrielle", 12 to "Annuelle")
 private val STATUTS_PERIODE = mapOf("regle" to "Réglé", "partiel" to "Partiel", "impaye" to "Impayé", "a_venir" to "À venir", "dispense" to "Dispensé")
-private val JOURS_COURTS = listOf("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
+internal val JOURS_COURTS = listOf("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
 private val JOURS_LONGS = listOf("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 internal fun lireMontant(s: String) = s.replace(',', '.').replace(" ", "").replace(NBSP.toString(), "").replace(NBSP_FINE.toString(), "").toDoubleOrNull()
@@ -558,6 +574,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
     var filtre by remember { mutableStateOf("tous") }
     var version by remember { mutableStateOf(0) }
     var encaisser by remember { mutableStateOf<PreEcriture?>(null) }
+    val supprimerCollecte = rememberSuppression(message) { onChange(); onFermer() }
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     val enregistrer = rememberEnregistrer { it?.let(message) }
@@ -630,6 +647,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
                 }
             }
             if (gere && !c.cloturee) Button(onClick = { encaisser = PreEcriture("recette", null, c.id) }) { Text("Autre encaissement") }
+            if (d.peut("gerer_activites", "gerer_cotisations") && operations.none { it.collecteId == c.id }) BoutonSupprimer({ supprimerCollecte("collectes", c.id, c.nom) })
         }
     }
     encaisser?.let { pre ->
@@ -718,6 +736,7 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
     var detail by remember { mutableStateOf<Projet?>(null) }
     var jour by remember { mutableStateOf<String?>(null) }
     var nouveau by remember { mutableStateOf<String?>(null) }
+    var sens by remember { mutableStateOf(1) }   // le mois suivant arrive par la droite
     val (debut, fin) = when {
         vue == "avenir" -> aujourdhui() to aujourdhui().plus(DatePeriod(days = 365))
         affichage == "mois" -> { val p = LocalDate(ref.year, ref.monthNumber, 1); val dern = p.plus(DatePeriod(months = 1)).minus(DatePeriod(days = 1))
@@ -754,30 +773,60 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
                 }
             }
             if (vue == "calendrier") {
+                // Bandeau coloré du mois (une couleur par mois), flèches rondes ; glisser pour changer de mois
                 item {
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        listOf("mois" to "Mois", "semaine" to "Semaine").forEachIndexed { i, (k, l) ->
-                            SegmentedButton(selected = affichage == k, onClick = { affichage = k; PreferencesPlanning.affichage = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(l) }
+                    val couleurMois = EVT_PALETTE[(ref.monthNumber - 1) % EVT_PALETTE.size].third
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(couleurMois, couleurMois.copy(red = couleurMois.red * 0.7f, green = couleurMois.green * 0.7f, blue = couleurMois.blue * 0.7f))))
+                        .padding(horizontal = 10.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Précédent") { sens = -1; ref = if (affichage == "mois") LocalDate(ref.year, ref.monthNumber, 1).minus(DatePeriod(months = 1)) else ref.minus(DatePeriod(days = 7)) }
+                        AnimatedContent(if (affichage == "mois") "${MOIS[ref.monthNumber - 1].replaceFirstChar { it.uppercase() }} ${ref.year}" else "Semaine du ${debut.dayOfMonth} ${MOIS[debut.monthNumber - 1]}",
+                            Modifier.weight(1f), transitionSpec = { (slideInVertically { it / 2 } + fadeIn()) togetherWith (slideOutVertically { -it / 2 } + fadeOut()) }) { t ->
+                            Text(t, Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.White)
                         }
+                        FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Suivant") { sens = 1; ref = if (affichage == "mois") LocalDate(ref.year, ref.monthNumber, 1).plus(DatePeriod(months = 1)) else ref.plus(DatePeriod(days = 7)) }
                     }
                 }
                 item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { ref = if (affichage == "mois") LocalDate(ref.year, ref.monthNumber, 1).minus(DatePeriod(months = 1)) else ref.minus(DatePeriod(days = 7)) }) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Précédent", tint = Couleurs.Orange) }
-                        Text(if (affichage == "mois") "${MOIS[ref.monthNumber - 1].replaceFirstChar { it.uppercase() }} ${ref.year}" else "Semaine du ${debut.dayOfMonth} ${MOIS[debut.monthNumber - 1]}",
-                            Modifier.weight(1f), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        IconButton(onClick = { ref = if (affichage == "mois") LocalDate(ref.year, ref.monthNumber, 1).plus(DatePeriod(months = 1)) else ref.plus(DatePeriod(days = 7)) }) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Suivant", tint = Couleurs.Orange) }
-                        OutlinedButton(onClick = { ref = aujourdhui() }) { Text("Aujourd’hui") }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
+                            listOf("mois" to "Mois", "semaine" to "Semaine").forEachIndexed { i, (k, l) ->
+                                SegmentedButton(selected = affichage == k, onClick = { affichage = k; PreferencesPlanning.affichage = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(l) }
+                            }
+                        }
+                        OutlinedButton(onClick = { sens = if (aujourdhui() > ref) 1 else -1; ref = aujourdhui() }) { Text("Aujourd’hui") }
                     }
                 }
                 if (evts == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 if (affichage == "mois") {
-                    item { CalendrierMois(ref, debut, fin, parJour, ::annivDe) { jour = it } }
                     item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Legende(Couleurs.Bleu, "Rendez-vous"); Legende(Couleurs.Jaune, "Anniversaire")
+                        val nb = (evts ?: emptyList()).count { LocalDate.parse(it.debut!!.take(10)).monthNumber == ref.monthNumber }
+                        val na = anniv[ref.monthNumber].orEmpty().size
+                        Text(buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Couleurs.Texte)) { append("$nb") }; append(" rendez-vous ce mois")
+                            if (na > 0) { append(" · "); withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Couleurs.Texte)) { append("$na") }; append(" anniversaire${if (na > 1) "s" else ""}") }
+                        }, fontSize = 13.sp, color = Couleurs.Texte2)
+                    }
+                    item {
+                        AnimatedContent(ref.year * 12 + ref.monthNumber, transitionSpec = {
+                            (slideInHorizontally { w -> sens * w / 3 } + fadeIn()) togetherWith (slideOutHorizontally { w -> -sens * w / 3 } + fadeOut())
+                        }, modifier = Modifier.pointerInput(affichage) {
+                            var cumul = 0f
+                            detectHorizontalDragGestures(onDragEnd = {
+                                if (cumul < -120) { sens = 1; ref = LocalDate(ref.year, ref.monthNumber, 1).plus(DatePeriod(months = 1)) }
+                                else if (cumul > 120) { sens = -1; ref = LocalDate(ref.year, ref.monthNumber, 1).minus(DatePeriod(months = 1)) }
+                                cumul = 0f
+                            }) { _, dx -> cumul += dx }
+                        }) { _ -> CalendrierMois(ref, debut, fin, parJour, ::annivDe) { jour = it } }
+                    }
+                    item {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row { EVT_PALETTE.take(4).forEach { Box(Modifier.size(width = 6.dp, height = 4.dp).background(it.third)) } }
+                                Text("Rendez-vous (une couleur chacun)", fontSize = 12.sp, color = Couleurs.Texte2)
+                            }
+                            Legende(Couleurs.Jaune, "Anniversaire")
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Box(Modifier.size(10.dp).background(Couleurs.Orange, CircleShape)); Text("Aujourd’hui", fontSize = 12.sp, color = Couleurs.Texte2) }
                             Text("Touchez un jour pour le détail", fontSize = 12.sp, color = Couleurs.Texte2)
                         }
                     }
@@ -857,7 +906,7 @@ private fun Legende(couleur: Color, texte: String) = Row(verticalAlignment = Ali
 
 @Composable
 private fun PastilleDate(s: String, aujourdhuiOui: Boolean, onClick: () -> Unit) =
-    Surface(onClick = onClick, color = if (aujourdhuiOui) Couleurs.Orange else Color(0xFFEFEDEC), contentColor = if (aujourdhuiOui) Color.White else Couleurs.Texte,
+    Surface(onClick = onClick, color = if (aujourdhuiOui) Couleurs.Orange else if (LocalDate.parse(s).dayOfWeek.isoDayNumber >= 6) Color(0xFFFFEDE5) else Color(0xFFEFEDEC), contentColor = if (aujourdhuiOui) Color.White else Couleurs.Texte,
         shape = RoundedCornerShape(14.dp), modifier = Modifier.size(48.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(s.takeLast(2).trimStart('0'), fontWeight = FontWeight.Bold, fontSize = 17.sp)
@@ -889,15 +938,18 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, par
     val auj = aujourdhui().toString()
     Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp)) { Box {
         Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row { JOURS_COURTS.forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 11.sp, color = Couleurs.Texte2, fontWeight = FontWeight.Bold) } }
+            Row { JOURS_COURTS.forEachIndexed { i, t -> Text(t, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 11.sp, color = if (i >= 5) Couleurs.Orange else Couleurs.Texte2, fontWeight = FontWeight.Bold) } }
             jours.chunked(7).forEach { semaine ->
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    semaine.forEach { j ->
+                    semaine.forEachIndexed { k, j ->
                         val s = j.toString()
                         val e = parJour[s].orEmpty(); val a = annivDe(s)
                         val hors = j.monthNumber != ref.monthNumber
-                        Column(Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(12.dp))
-                            .background(Couleurs.Fond.copy(alpha = if (hors) 0.5f else 1f))
+                        val weekEnd = k >= 5
+                        val fondJour = when { s == auj -> Color(0xFFFFF4EF); e.isNotEmpty() -> Color.White; weekEnd -> Color(0xFFFFF7F3); else -> Color(0xFFFAFAF9) }
+                        Column(Modifier.weight(1f).height(88.dp).graphicsLayer { alpha = if (hors) 0.5f else 1f }.clip(RoundedCornerShape(12.dp))
+                            .background(fondJour)
+                            .then(if (s == auj) Modifier.border(2.dp, Couleurs.Orange, RoundedCornerShape(12.dp)) else if (e.isNotEmpty()) Modifier.border(1.dp, Color(0xFFE8E3E1), RoundedCornerShape(12.dp)) else Modifier)
                             .clickable { onJour(s) }.padding(3.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Box(Modifier.size(22.dp).background(if (s == auj) Couleurs.Orange else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
                                 Text(j.dayOfMonth.toString(), fontSize = 12.sp, fontWeight = FontWeight.Bold,
@@ -905,8 +957,10 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, par
                             }
                             // Comme le site : nom des rendez-vous (3 au plus, avec l'heure), « +N », prénoms des anniversaires
                             e.take(3).forEach { ev ->
+                                val (fondEvt, encre, accent) = couleurEvt(ev.id)
                                 Text((ev.heureDebut?.let { it.take(5) + " " } ?: "") + ev.nom, fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    color = Color.White, modifier = Modifier.fillMaxWidth().background(Couleurs.Bleu, RoundedCornerShape(4.dp)).padding(horizontal = 2.dp))
+                                    color = encre, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(fondEvt)
+                                        .drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(2.dp.toPx(), size.height)) }.padding(start = 4.dp, end = 2.dp))
                             }
                             if (e.size > 3) Text("+${e.size - 3}", fontSize = 9.sp, lineHeight = 10.sp, color = Couleurs.Texte2)
                             if (a.isNotEmpty()) Text(a.joinToString(", ") { it.prenom }, fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -923,9 +977,9 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, par
 
 @Composable
 private fun CarteEvenement(e: Projet, jourDetail: Boolean = false, onClick: () -> Unit) {
-    val (fond, texte) = Couleurs.BleuClair to Couleurs.SurBleuClair
+    val (fond, texte, accent) = couleurEvt(e.id)
     Surface(onClick = onClick, color = fond, contentColor = texte, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(start = 16.dp, top = 12.dp, end = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(e.nom, fontWeight = FontWeight.Bold)
                 val l = listOfNotNull(if (e.heureDebut != null) heureFr(e.heureDebut) + (e.heureFin?.let { " – " + heureFr(it) } ?: "") else "Journée", e.lieu)
@@ -943,6 +997,7 @@ private fun PuceAnniversaire(a: Anniversaire) = Puce("Anniversaire de ${a.prenom
 
 @Composable
 fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: () -> Unit, onFermer: () -> Unit, onBudget: (() -> Unit)? = null) {
+    val supprimerEvt = rememberSuppression(message) { onChange(); onFermer() }
     var collecte by remember { mutableStateOf<Collecte?>(null) }
     var maPart by remember { mutableStateOf<Participation?>(null) }
     var projets by remember { mutableStateOf<List<Projet>>(emptyList()) }
@@ -987,6 +1042,7 @@ fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: 
             if (collecte != null && d.peut("consulter_finances", "gerer_cotisations")) TextButton(onClick = { voir = true }) { Text("Voir les participations") }
             if (budgetSuivi && onBudget != null) TextButton(onClick = { onFermer(); onBudget() }) { Text("Voir le budget") }
             if (e.collecteId == null && d.peut("gerer_activites")) TextButton(onClick = { demander = true }) { Text("Demander une participation") }
+            if (d.peut("gerer_activites")) BoutonSupprimer({ supprimerEvt("projects", e.id, e.nom) })
             if (d.peut("gerer_activites")) FilledTonalButton(onClick = { modifier = projets.firstOrNull { it.id == e.id } ?: e }) { Text("Modifier") }
             Button(onClick = onFermer) { Text("Fermer") }
         }
@@ -1066,6 +1122,7 @@ fun EcranTiers(d: Donnees, message: (String) -> Unit) {
         if (d.peut("saisir_ecritures", "gerer_cotisations")) ExtendedFloatingActionButton(onClick = { edition = true to null }, containerColor = Couleurs.Jaune, contentColor = Couleurs.SurJaune,
             icon = { Icon(Icons.Filled.Add, contentDescription = null) }, text = { Text("Nouveau tiers") }, modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp))
     }
+    val supprimerTiers = rememberSuppression(message) { version++ }
     fiche?.let { (m, t) ->
         ModalBottomSheet(onDismissRequest = { fiche = null }) {
             val liste = (operations ?: emptyList()).filter { if (m != null) it.membreId == m.id else it.tiersId == t?.id }.sortedByDescending { it.date }
@@ -1092,6 +1149,7 @@ fun EcranTiers(d: Donnees, message: (String) -> Unit) {
                             liste.map { listOf(dateFr(it.date), it.libelle, nomRubrique(it, collectes), d.nomCategorie(it.categorieId), it.signe) }).encodeToByteArray())
                     }, colors = ButtonDefaults.buttonColors(containerColor = Couleurs.Bleu)) { Text("Exporter") }
                     if (t != null && d.peut("saisir_ecritures", "gerer_cotisations")) TextButton(onClick = { fiche = null; edition = false to t }) { Text("Modifier") }
+                    if (t != null && d.peut("saisir_ecritures", "gerer_cotisations") && liste.isEmpty()) BoutonSupprimer({ fiche = null; supprimerTiers("tiers", t.id, t.nom) })
                     if (m != null && d.peut("gerer_cotisations")) TextButton(onClick = { fiche = null; cotisMembre = m }) { Text("Cotisation") }
                 }
             }
@@ -1169,3 +1227,10 @@ fun ListeParticipations(parts: List<Participation>) {
         }
     }
 }
+
+@Composable
+private fun FlecheMois(icone: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit) =
+    Surface(onClick = onClick, shape = CircleShape, color = Color.White.copy(alpha = 0.16f), contentColor = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)), modifier = Modifier.size(44.dp)) {
+        Box(contentAlignment = Alignment.Center) { Icon(icone, description) }
+    }

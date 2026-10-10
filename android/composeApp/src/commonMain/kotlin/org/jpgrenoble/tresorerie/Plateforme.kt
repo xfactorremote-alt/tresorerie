@@ -43,3 +43,15 @@ expect fun RetourSysteme(actif: Boolean, onRetour: () -> Unit)
 
 /** Archive ZIP en mémoire : chemins relatifs et contenus. */
 expect fun zipper(fichiers: List<Pair<String, ByteArray>>): ByteArray
+
+/** Petite préférence gardée sur le téléphone (rester connecté, dernière vue…). */
+expect fun lirePreference(cle: String): String?
+expect fun garderPreference(cle: String, valeur: String?)
+
+/** Notification du téléphone (nouveautés) ; sans effet si la personne ne l'a pas autorisée. */
+expect fun notifierSysteme(titre: String, texte: String)
+expect fun notificationsPermises(): Boolean
+
+/** Demande l'autorisation d'afficher des notifications (Android 13 et plus). */
+@Composable
+expect fun rememberDemandeNotifications(quandFini: (Boolean) -> Unit): () -> Unit

@@ -45,6 +45,14 @@ object Repo {
         client.auth.signInWith(Email) { email = adresse; password = motDePasse }
     }
 
+    // « Rester connecté » décoché : la session n'est pas reprise au lancement suivant de l'application
+    private var sessionVerifiee = false
+    suspend fun oublierSessionSiDemande() {
+        if (demo || sessionVerifiee) return
+        sessionVerifiee = true
+        if (lirePreference("resterConnecte") == "0") try { client.auth.clearSession() } catch (_: Exception) { }
+    }
+
     suspend fun deconnecter() {
         if (demo) { profilDemo.value = null; return }
         client.auth.signOut()
@@ -419,9 +427,9 @@ object Repo {
     // ---------- Sauvegarde ----------
     suspend fun sauvegardeJson(): String {
         if (demo) return Demo.sauvegardeJson()
-        val tables = listOf("organisation", "settings", "accounts", "categories", "projects", "budgets", "members", "cotisations",
+        val tables = listOf("organisation", "settings", "exercices", "accounts", "categories", "projects", "budgets", "members", "cotisations",
             "tiers", "collectes", "collecte_membres", "transactions", "expense_requests", "attachments", "reconciliations", "profiles", "invitations",
-            "materiel", "materiel_mouvements")
+            "materiel", "materiel_mouvements", "corbeille")
         return buildString {
             append("""{"format":"tresorerie-jp-v1","exporte_le":"${Clock.System.now()}"""")
             tables.forEach { t -> append(""","$t":"""); append(client.from(t).select().data) }
@@ -644,5 +652,83 @@ object Repo {
     suspend fun majCompte(id: String, solde: Double, actif: Boolean) {
         if (demo) { Demo.majCompte(id, solde, actif, profilDemo.value); return }
         client.from("accounts").update({ set("solde_initial", solde); set("actif", actif) }) { filter { eq("id", id) } }
+    }
+
+    // ---------- Première connexion, mot de passe oublié ----------
+    suspend fun inscrire(adresse: String, motDePasse: String): Boolean {
+        if (demo) throw IllegalStateException("En démonstration, utilisez un compte de démonstration")
+        client.auth.signUpWith(Email) { email = adresse; password = motDePasse }
+        return client.auth.currentSessionOrNull() != null   // false : confirmer l'adresse par le lien reçu
+    }
+
+    suspend fun motDePasseOublie(adresse: String) {
+        if (demo) return
+        client.auth.resetPasswordForEmail(adresse, redirectUrl = Config.SITE_URL)
+    }
+
+    // ---------- Association : identité, coordonnées, première configuration ----------
+    suspend fun majIdentite(champs: Map<String, String?>) {
+        if (demo) { Demo.majIdentite(champs, profilDemo.value); return }
+        client.from("organisation").update(buildJsonObject { champs.forEach { (k, v) -> put(k, v) } }) { filter { eq("id", 1) } }
+    }
+
+    suspend fun terminerConfiguration() {
+        if (demo) { Demo.organisation = Demo.organisation.copy(configuree = true); return }
+        client.from("organisation").update({ set("configuree", true) }) { filter { eq("id", 1) } }
+    }
+
+    // ---------- Exercices ----------
+    suspend fun exercices(): List<Exercice> =
+        if (demo) Demo.exercices.sortedByDescending { it.debut }
+        else client.from("exercices").select { order("debut", Order.DESCENDING) }.decodeList()
+
+    suspend fun enregistrerExercice(id: String?, e: NouvelExercice) {
+        if (demo) { Demo.enregistrerExercice(id, e, profilDemo.value); return }
+        if (id == null) client.from("exercices").insert(e)
+        else client.from("exercices").update({ set("libelle", e.libelle); set("debut", e.debut); set("fin", e.fin) }) { filter { eq("id", id) } }
+        client.from("organisation").update({ set("exercice_debut", e.debut) }) { filter { eq("id", 1) } }
+    }
+
+    suspend fun cloturerExercice(id: String, cloture: Boolean) {
+        if (demo) { Demo.cloturerExercice(id, cloture, profilDemo.value); return }
+        client.from("exercices").update({ set("cloture", cloture) }) { filter { eq("id", id) } }
+    }
+
+    // ---------- Corbeille : suppression réversible ----------
+    // Renvoie l'identifiant de l'élément dans la corbeille (pour « Annuler » aussitôt)
+    suspend fun supprimer(table: String, id: String, motif: String? = null): String =
+        if (demo) Demo.supprimer(table, id, motif, profilDemo.value)
+        else client.postgrest.rpc("supprimer", buildJsonObject { put("p_table", table); put("p_id", id); put("p_motif", motif) }).decodeAs()
+
+    suspend fun restaurer(id: String) {
+        if (demo) { Demo.restaurer(id, profilDemo.value); return }
+        client.postgrest.rpc("restaurer", buildJsonObject { put("p_id", id) })
+    }
+
+    suspend fun corbeille(): List<ElementCorbeille> =
+        if (demo) Demo.corbeilleVisible(profilDemo.value)
+        else client.from("corbeille").select { order("supprime_le", Order.DESCENDING) }.decodeList()
+
+    // ---------- Nouveautés ----------
+    suspend fun nouveautes(): Nouveautes =
+        if (demo) Demo.nouveautes(profilDemo.value)
+        else client.postgrest.rpc("mes_nouveautes").decodeAs()
+
+    suspend fun marquerVu(section: String) {
+        if (demo) { Demo.marquerVu(section, profilDemo.value); return }
+        client.postgrest.rpc("marquer_vu", buildJsonObject { put("p_section", section) })
+    }
+
+    // ---------- Le nouveau membre remplit sa fiche ----------
+    suspend fun enregistrerMaFiche(prenom: String, nom: String, jour: Int, mois: Int, whatsapp: String?, profession: String?, consentement: Boolean): String =
+        if (demo) Demo.enregistrerMaFiche(prenom, nom, jour, mois, whatsapp, profession, consentement, profilDemo.value)
+        else client.postgrest.rpc("enregistrer_ma_fiche", buildJsonObject {
+            put("p_prenom", prenom); put("p_nom", nom); put("p_jour", jour); put("p_mois", mois)
+            put("p_whatsapp", whatsapp); put("p_profession", profession); put("p_consent", consentement)
+        }).decodeAs()
+
+    suspend fun renommerCategorie(id: String, nom: String) {
+        if (demo) { Demo.renommerCategorie(id, nom, profilDemo.value); return }
+        client.from("categories").update({ set("nom", nom) }) { filter { eq("id", id) } }
     }
 }

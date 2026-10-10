@@ -123,4 +123,57 @@ class AuditTest {
         assertTrue(!aVerifier(Materiel("m", "Sono", verifieLe = aujourdhui().toString())))
         assertTrue(!aVerifier(Materiel("m", "Sono", sortiLe = aujourdhui().toString())))
     }
+
+    @Test fun corbeilleSupprimerEtRestaurer() {
+        val avant = Demo.soldes().first { it.id == "acc-caisse" }.solde
+        val id = Demo.ajouter(NouvelleEcriture(aujourdhui().toString(), "acc-caisse", "depense", 7.0, "c6", "pain doublon", "especes", tresorier.id), tresorier)
+        Demo.joindrePiece(id, "x/pain.jpg", Fichier(ByteArray(4), "image/jpeg", "jpg"), tresorier)
+        val c = Demo.supprimer("transactions", id, "doublon", tresorier)
+        assertTrue(Demo.ecritures().none { it.id == id }); assertTrue(Demo.pieces.none { it.transactionId == id })
+        assertEquals(avant, Demo.soldes().first { it.id == "acc-caisse" }.solde, 0.001)
+        assertEquals("doublon", Demo.corbeilleVisible(tresorier).first { it.id == c }.motif)
+        Demo.restaurer(c, tresorier)
+        assertTrue(Demo.ecritures().any { it.id == id }); assertTrue(Demo.pieces.any { it.transactionId == id })
+        assertFailsWith<IllegalStateException> { Demo.restaurer(c, tresorier) }
+        // Le bureau ne supprime pas une opération ; un membre avec des opérations ne se supprime pas
+        assertFailsWith<IllegalStateException> { Demo.supprimer("transactions", id, null, bureau) }
+        assertFailsWith<IllegalStateException> { Demo.supprimer("members", "m0", null, tresorier) }
+        // Opération rapprochée : contre-passation obligatoire
+        val rapprochee = Demo.ecritures().first { it.rapprochementId != null }
+        assertFailsWith<IllegalStateException> { Demo.supprimer("transactions", rapprochee.id, null, tresorier) }
+    }
+
+    @Test fun exerciceClotureVerrouille() {
+        val ex = Demo.exercices.first { it.cloture }
+        assertFailsWith<IllegalStateException> { Demo.ajouter(NouvelleEcriture(ex.fin, "acc-caisse", "recette", 3.0, "c2", "don tardif", "especes", tresorier.id), tresorier) }
+        // Chevauchement refusé ; réouverture puis saisie possible ; nouvelle clôture
+        assertFailsWith<IllegalStateException> { Demo.enregistrerExercice(null, NouvelExercice("Chevauche", ex.debut, ex.fin), tresorier) }
+        Demo.cloturerExercice(ex.id, false, tresorier)
+        val id = Demo.ajouter(NouvelleEcriture(ex.fin, "acc-caisse", "recette", 3.0, "c2", "don tardif", "especes", tresorier.id), tresorier)
+        Demo.cloturerExercice(ex.id, true, tresorier)
+        assertFailsWith<IllegalStateException> { Demo.supprimer("transactions", id, null, tresorier) }
+        assertNotNull(Demo.exercices.first { it.id == ex.id }.clotureLe)
+        assertFailsWith<IllegalStateException> { Demo.cloturerExercice(ex.id, false, bureau) }
+    }
+
+    @Test fun nouveautesEtPastilles() {
+        val n = Demo.nouveautes(president)
+        assertTrue((n.compteurs["depenses"] ?: 0) >= 1)        // demande à valider
+        assertTrue(n.elements.isNotEmpty())
+        val adherent = Profil("u-a", "Grâce Mbala", "adherent", memberId = "m0")
+        assertNull(Demo.nouveautes(adherent).compteurs["membres"])   // l'adhérent ne voit pas les arrivées de membres
+        assertTrue((Demo.nouveautes(adherent).compteurs["activites"] ?: 0) >= 1)
+        Demo.marquerVu("activites", adherent)
+        assertEquals(0, Demo.nouveautes(adherent).compteurs["activites"])
+    }
+
+    @Test fun nouveauMembreRemplitSaFiche() {
+        val nouveau = Demo.connecter("nouveau@demo.jp", Demo.MOT_DE_PASSE)
+        assertNull(nouveau.memberId)
+        assertFailsWith<IllegalStateException> { Demo.enregistrerMaFiche("", "Neuf", 10, 10, null, null, true, nouveau) }
+        val id = Demo.enregistrerMaFiche("Léa", "Nouvelle", 14, 7, "0600000000", null, true, nouveau)
+        val p = Demo.profilsActuels().first { it.id == "u-n" }
+        assertEquals(id, p.memberId); assertEquals("Léa Nouvelle", p.nom)
+        assertEquals(14, Demo.membres.first { it.id == id }.jour)
+    }
 }

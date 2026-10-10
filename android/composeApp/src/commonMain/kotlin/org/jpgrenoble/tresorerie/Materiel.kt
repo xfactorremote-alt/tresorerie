@@ -190,6 +190,8 @@ private fun LigneMateriel(x: Materiel, detenteur: String, onClick: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FicheMateriel(d: Donnees, x: Materiel, message: (String) -> Unit, onModifier: () -> Unit, onFini: (Boolean) -> Unit) {
+    // Saisi par erreur : retiré de la liste (réversible) ; un article réel qui part se « sort » de l'inventaire
+    val supprimerMat = rememberSuppression(message) { onFini(true) }
     val scope = rememberCoroutineScope()
     val gere = d.peut("gerer_materiel")
     var mvts by remember { mutableStateOf<List<MouvementMateriel>>(emptyList()) }
@@ -248,6 +250,7 @@ private fun FicheMateriel(d: Donnees, x: Materiel, message: (String) -> Unit, on
                 TextButton(onClick = onModifier) { Text("Modifier") }
                 TextButton(onClick = { action = "sortir" }) { Text("Sortir") }
             }
+            if (gere) BoutonSupprimer({ supprimerMat("materiel", x.id, x.designation) })
             Button(onClick = { onFini(false) }) { Text("Fermer") }
         }
     }

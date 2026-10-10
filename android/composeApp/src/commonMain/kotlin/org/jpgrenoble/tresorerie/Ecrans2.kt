@@ -156,6 +156,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
         aJustifier = null
     }
 
+    val supprimerDemande = rememberSuppression(message) { version++ }
     // Mêmes actions sur la carte et dans le détail (comme la carte du site)
     @Composable
     fun ActionsDemande(x: Demande, apres: () -> Unit = {}) {
@@ -171,6 +172,8 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
             if (x.statut == "payee" && annul == null && (d.peut("saisir_ecritures", "payer_depenses") || x.demandeur == d.profil.id))
                 FilledTonalButton(onClick = { apres(); aJustifier = x; choixPiece() }) { Text("Joindre le justificatif") }
             if (x.statut == "soumise" && x.demandeur == d.profil.id) TextButton(onClick = { apres(); aAnnuler = x }) { Text("Annuler la demande") }
+            if (x.statut in listOf("annulee", "refusee", "brouillon") && op == null && (x.demandeur == d.profil.id || d.peut("administrer")))
+                BoutonSupprimer({ apres(); supprimerDemande("expense_requests", x.id, x.objet) })
         }
     }
 

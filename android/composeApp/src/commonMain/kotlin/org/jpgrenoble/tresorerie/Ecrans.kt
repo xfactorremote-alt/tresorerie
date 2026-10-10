@@ -151,12 +151,17 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         erreur?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         item {
-            Banniere(d, onReglages = { onAller("parametres") }) {
+            Banniere(d, onReglages = { onAller("parametres") }, onCloche = { onAller("nouveautes") }) {
                 if (voitSoldes) {
                     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable { onAller("operations:") }) {
                         Text("Trésorerie au ${dateFr(jour)}", color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         if (soldes == null) LinearProgressIndicator(Modifier.width(160.dp).padding(vertical = 14.dp), color = Color.White)
-                        else Text(euros(total), color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                        else {
+                            // Le solde « monte » jusqu'à sa valeur à l'ouverture
+                            val anime = remember { androidx.compose.animation.core.Animatable(0f) }
+                            LaunchedEffect(total) { anime.animateTo(total.toFloat(), androidx.compose.animation.core.tween(700, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+                            Text(euros(anime.value.toDouble()), color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                        }
                     }
                     if (operations.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         PuceBanniere("Résultat $an", signe(resultat), Modifier.weight(1f))
@@ -281,11 +286,11 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
 
 // Bannière : photo de l'association si elle existe, sinon aplat neutre ; voile sombre pour la lisibilité
 @Composable
-internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, contenu: @Composable ColumnScope.() -> Unit) {
+internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: (() -> Unit)? = null, compacte: Boolean = false, contenu: @Composable ColumnScope.() -> Unit) {
     val octets by Repo.banniere.collectAsState()
     val photo = remember(octets) { octets?.let { imageDepuisOctets(it) } }
     val forme = RoundedCornerShape(28.dp)
-    Box(Modifier.fillMaxWidth().heightIn(min = 200.dp).clip(forme)
+    Box(Modifier.fillMaxWidth().heightIn(min = if (compacte) 0.dp else 200.dp).clip(forme)
         .background(Brush.radialGradient(listOf(Color(0xFF5A5350), Color(0xFF2B2826), Color(0xFF1C1B1A)), center = Offset(2000f, 0f), radius = 2200f))) {
         if (photo != null) {
             Image(photo, null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
@@ -298,7 +303,8 @@ internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, contenu: @Co
                     Text(d.organisation.nom, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text("Bonjour ${d.membres.firstOrNull { it.id == d.profil.memberId }?.prenom ?: d.profil.nom.substringBefore('@').substringBefore(' ')} · ${dateFr(aujourdhui().toString())}", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                // Roue dentée des Paramètres, posée sur la photo (l'accueil n'a pas de barre du haut)
+                // Cloche des nouveautés et roue dentée des Paramètres, posées sur la photo (l'accueil n'a pas de barre du haut)
+                if (onCloche != null) BoutonCloche(onCloche, clair = true)
                 if (onReglages != null) Surface(onClick = onReglages, color = Color.White.copy(alpha = 0.16f), contentColor = Color.White, shape = RoundedCornerShape(14.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)), modifier = Modifier.size(44.dp)) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Settings, contentDescription = "Paramètres") }
@@ -733,6 +739,7 @@ internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pi
     val virementAnnule = e.virement != null && toutes.any { it.virement == e.virement && it.contrepasseDe != null }
     val compte = d.comptes.firstOrNull { it.id == e.compteId }
     val alerteMode = if (e.virement != null) "" else incoherenceMode(compte, e.mode)
+    val supprimer = rememberSuppression(message) { onFini(true) }
     fun auteur(id: String?) = when (id) { null -> ""; d.profil.id -> "vous"; else -> profils.firstOrNull { it.id == id }?.nom ?: "une personne du bureau" }
     val choix = rememberChoixFichier { f, err ->
         if (err != null) message(err)
@@ -795,6 +802,10 @@ internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pi
                 TextButton(onClick = { inventaire = true }) { Text("Inscrire à l’inventaire") }
             if (d.peut("saisir_ecritures", "payer_depenses") && correction == null && e.contrepasseDe == null)
                 FilledTonalButton(onClick = choix) { Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Joindre une pièce") }
+            // Supprimer (réversible, corbeille) : saisie par erreur, ni rapprochée, ni corrigée, ni dans un exercice clôturé
+            if (d.peut("saisir_ecritures") && !e.rapproche && correction == null && !(e.demandeId != null && e.contrepasseDe == null) && !d.exerciceClos(e.date) &&
+                !(e.virement != null && (virementAnnule || jambes.any { it.rapproche })))
+                BoutonSupprimer({ supprimer("transactions", e.id, e.libelle) })
         }
     }
     if (inventaire) ModalBottomSheet(onDismissRequest = { inventaire = false }) {

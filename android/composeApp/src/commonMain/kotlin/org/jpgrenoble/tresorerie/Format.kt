@@ -77,6 +77,7 @@ fun traduireErreur(e: Throwable): String {
         "Réservé au trésorier" in m -> "Action réservée au trésorier"
         "foreign key" in m && "role" in m -> "Ce rôle est encore attribué à quelqu’un"
         "duplicate key" in m -> "Cet élément existe déjà"
+        "supprimer" in m && ("Could not find the function" in m || "does not exist" in m) -> "La corbeille n’est pas encore activée sur la base : le trésorier doit exécuter le fichier « A-EXECUTER-corbeille » dans Supabase"
         "Unable to resolve host" in m || "UnknownHost" in m || "timeout" in m.lowercase() -> "Connexion perdue. Réessayez."
         else -> m.lineSequence().firstOrNull() ?: m
     }

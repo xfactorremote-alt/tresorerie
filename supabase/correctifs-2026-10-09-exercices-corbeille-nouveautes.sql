@@ -69,10 +69,10 @@ $$;
 create or replace function public.lock_exercice() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  if tg_op in ('UPDATE','DELETE') and exercice_clos(old.date_op) then
+  if tg_op <> 'INSERT' and exercice_clos(old.date_op) then
     raise exception 'Exercice clôturé : opération verrouillée';
   end if;
-  if tg_op in ('INSERT','UPDATE') and exercice_clos(new.date_op) then
+  if tg_op <> 'DELETE' and exercice_clos(new.date_op) then
     raise exception 'Exercice clôturé : impossible d’enregistrer à cette date';
   end if;
   return coalesce(new, old);
@@ -282,9 +282,14 @@ end $$;
 
 -- ---------- 13.4 Nouveautés : pastilles sur les onglets et liste des nouveautés ----------
 alter table public.profiles add column if not exists vus jsonb not null default '{}';
-alter table public.projects add column if not exists created_at timestamptz not null default now();
+-- Rendez-vous déjà existants : datés de la création des comptes (ils ne s'affichent pas comme « nouveaux »)
+alter table public.projects add column if not exists created_at timestamptz;
+update public.projects set created_at = coalesce((select min(created_at) from public.profiles), now()) where created_at is null;
+alter table public.projects alter column created_at set default now(), alter column created_at set not null;
 
--- Pour chaque onglet : ce qui attend une action (à traiter) et ce qui est nouveau depuis la dernière visite
+-- Pour chaque onglet : ce qui attend une action (à traiter) et ce qui est nouveau depuis la dernière visite :
+-- demandes (à valider, à payer, les miennes mises à jour), opérations saisies par d'autres, rendez-vous ajoutés,
+-- membres arrivés, participations demandées (pour moi) ou collectes créées (gestion)
 create or replace function public.mes_nouveautes() returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
@@ -293,7 +298,6 @@ begin
   select * into p from profiles where id = v_moi and actif;
   if p.id is null then return jsonb_build_object('compteurs', '{}'::jsonb, 'elements', '[]'::jsonb); end if;
 
-  -- Demandes : à valider, à payer, et les miennes dont l'état a changé
   v_depuis := coalesce((p.vus->>'depenses')::timestamptz, p.created_at);
   n := 0;
   if a_droit('valider_depenses') then n := n + (select count(*) from expense_requests where statut = 'soumise' and demandeur <> v_moi); end if;
@@ -309,7 +313,6 @@ begin
        or (demandeur = v_moi and greatest(validee_le, payee_le) > v_depuis)
     order by 4 desc limit 10) x), '[]');
 
-  -- Opérations saisies par d'autres
   if a_droit('consulter_finances') or a_droit('saisir_ecritures') then
     v_depuis := coalesce((p.vus->>'ecritures')::timestamptz, p.created_at);
     v_res := v_res || jsonb_build_object('ecritures', (select count(*) from transactions where created_at > v_depuis and created_by is distinct from v_moi));
@@ -319,7 +322,6 @@ begin
       from transactions where created_at > v_depuis and created_by is distinct from v_moi order by created_at desc limit 10) x), '[]');
   end if;
 
-  -- Planning : rendez-vous ajoutés que je peux voir
   v_depuis := coalesce((p.vus->>'activites')::timestamptz, p.created_at);
   v_res := v_res || jsonb_build_object('activites', (select count(*) from projects pr where pr.created_at > v_depuis
      and (pr.visible_adherents or a_droit('gerer_activites') or a_droit('consulter_finances') or a_droit('demander_depenses'))));
@@ -329,7 +331,6 @@ begin
       and (pr.visible_adherents or a_droit('gerer_activites') or a_droit('consulter_finances') or a_droit('demander_depenses'))
     order by created_at desc limit 10) x), '[]');
 
-  -- Membres arrivés
   if a_droit('voir_membres') or a_droit('gerer_membres') then
     v_depuis := coalesce((p.vus->>'membres')::timestamptz, p.created_at);
     v_res := v_res || jsonb_build_object('membres', (select count(*) from members where created_at > v_depuis));
@@ -338,7 +339,6 @@ begin
       from members where created_at > v_depuis order by created_at desc limit 10) x), '[]');
   end if;
 
-  -- Cotisations : participations demandées (pour moi) ou collectes créées (gestion)
   v_depuis := coalesce((p.vus->>'cotisations')::timestamptz, p.created_at);
   if a_droit('gerer_cotisations') or a_droit('consulter_finances') then
     n := (select count(*) from collectes where created_at > v_depuis);

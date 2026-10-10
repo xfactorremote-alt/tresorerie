@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        ContexteApp.contexte = applicationContext
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent { App() }

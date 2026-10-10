@@ -5,7 +5,7 @@ Grille de la page 17 de l'audit du 7 octobre 2026. Un contrôle non effectué re
 Moyens utilisés :
 - **Base** : PostgreSQL 16 local avec le `schema.sql` complet (sections 1 à 12), et les rôles réels (trésorier, président, bureau, adhérent) testés avec les règles d'accès actives.
 - **Site** : mode démonstration piloté par navigateur automatique (Chromium), sans erreur JavaScript sur tous les parcours.
-- **Application Android** : 9 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.13.0.
+- **Application Android** : 13 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.14.0.
 
 | Scénario | Résultat attendu | Résultat | Preuve |
 |---|---|---|---|
@@ -19,9 +19,14 @@ Moyens utilisés :
 | Restauration de sauvegarde | Données restaurées sur une base distincte | **Validé pour les données** | `outils/restaurer-sauvegarde.mjs` : restauration complète sur une base vierge, nombres de lignes, soldes et cotisations identiques. Les pièces (fichiers) restent dans Supabase Storage ou dans le ZIP annuel |
 | Téléphone et clavier | Actions atteignables, focus visible | **Validé pour le site** | Mise en page vérifiée à 360 px (recherche et filtres sur une ligne, mois sur deux lignes). Android : pas d'émulateur disponible, à tester sur un téléphone |
 
+| Suppression par erreur puis restauration | Rien n’est perdu ; soldes revenus à l’identique | **Validé sur la base de test et en démonstration** | Opération avec pièce supprimée : solde de la caisse 93 → 100 €, restaurée : 93 €, pièce revenue ; virement : les deux mouvements partent et reviennent ensemble ; membre avec opérations, opération rapprochée ou corrigée : refus motivé. En production : fonction `supprimer` à installer (fichier `A-EXECUTER-corbeille`) |
+| Exercice clôturé | Opérations verrouillées, réouverture tracée | **Validé** | Saisie, modification et suppression refusées aux dates d’un exercice clôturé ; chevauchement refusé ; date et auteur de la clôture enregistrés |
+| Nouveau membre | Sa fiche lui est demandée, rattachée par l’e-mail | **Validé sur la base de test et en démonstration** | Fiche existante rattachée par l’adresse e-mail ; sinon fiche créée ; prénom ou nom vide refusé |
+| Nouveautés | Pastilles exactes selon le rôle | **Validé** | Président : demande à valider comptée ; bureau : ses propres saisies non comptées ; adhérent : rendez-vous et participations seulement ; vu → 0 |
+
 ## Points restant à valider par une personne
 
-1. **Application Android sur un vrai téléphone** : installer l’APK 0.13.0 et refaire les parcours (virement, régularisation, filtres, export).
+1. **Application Android sur un vrai téléphone** : installer l’APK 0.14.0 et refaire les parcours (virement, régularisation, filtres, export).
 2. **Export réel** depuis le site en ligne : ouvrir un PDF et un Excel du journal d'octobre et comparer les totaux à l'écran Opérations.
 3. **Restauration sur Supabase** : la commande `set local session_replication_role = replica` du script de restauration doit être acceptée par l'éditeur SQL de Supabase (à confirmer lors d'un premier essai, sur un projet de test).
 

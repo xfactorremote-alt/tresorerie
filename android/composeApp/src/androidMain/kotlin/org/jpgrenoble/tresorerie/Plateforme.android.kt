@@ -153,3 +153,39 @@ actual fun zipper(fichiers: List<Pair<String, ByteArray>>): ByteArray {
     }
     return sortie.toByteArray()
 }
+
+// Contexte de l'application, fixé au démarrage (MainActivity)
+object ContexteApp { lateinit var contexte: android.content.Context }
+
+private fun prefs() = ContexteApp.contexte.getSharedPreferences("tresorerie", android.content.Context.MODE_PRIVATE)
+actual fun lirePreference(cle: String): String? = try { prefs().getString(cle, null) } catch (_: Exception) { null }
+actual fun garderPreference(cle: String, valeur: String?) { try { prefs().edit().apply { if (valeur == null) remove(cle) else putString(cle, valeur) }.apply() } catch (_: Exception) { } }
+
+private const val CANAL = "nouveautes"
+actual fun notificationsPermises(): Boolean = try {
+    androidx.core.app.NotificationManagerCompat.from(ContexteApp.contexte).areNotificationsEnabled() &&
+        (android.os.Build.VERSION.SDK_INT < 33 || androidx.core.content.ContextCompat.checkSelfPermission(ContexteApp.contexte, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+} catch (_: Exception) { false }
+
+actual fun notifierSysteme(titre: String, texte: String) {
+    try {
+        if (!notificationsPermises()) return
+        val ctx = ContexteApp.contexte
+        val gestionnaire = ctx.getSystemService(android.app.NotificationManager::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= 26 && gestionnaire.getNotificationChannel(CANAL) == null)
+            gestionnaire.createNotificationChannel(android.app.NotificationChannel(CANAL, "Nouveautés", android.app.NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Demandes à valider ou à payer, nouveaux rendez-vous, participations demandées"
+            })
+        val ouvrir = android.app.PendingIntent.getActivity(ctx, 0, android.content.Intent(ctx, MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = androidx.core.app.NotificationCompat.Builder(ctx, CANAL).setSmallIcon(R.mipmap.ic_launcher).setContentTitle(titre).setContentText(texte)
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(texte)).setAutoCancel(true).setContentIntent(ouvrir).build()
+        androidx.core.app.NotificationManagerCompat.from(ctx).notify(1, n)
+    } catch (_: SecurityException) { } catch (_: Exception) { }
+}
+
+@Composable
+actual fun rememberDemandeNotifications(quandFini: (Boolean) -> Unit): () -> Unit {
+    val lanceur = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { quandFini(it) }
+    return { if (android.os.Build.VERSION.SDK_INT >= 33) lanceur.launch(android.Manifest.permission.POST_NOTIFICATIONS) else quandFini(notificationsPermises()) }
+}

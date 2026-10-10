@@ -102,11 +102,13 @@ Le **premier compte créé devient trésorier**, avec le droit d’administrer. 
 
 ### 4. Paramétrer
 
+À la première connexion du trésorier, l’**assistant de configuration** s’ouvre : identité de l’association (nom, sigle, objet, logo), coordonnées (adresse, e-mail, téléphone, n° RNA, SIRET), **exercice** (année civile, année scolaire ou dates libres), comptes et soldes de départ, cotisation. Tout reste modifiable dans **Paramètres** ; l’assistant se relance depuis **Paramètres** > **Données** > **Assistant de configuration**. Chaque nouveau membre qui se connecte voit ensuite une fenêtre qui lui demande de **remplir sa fiche** (prénom, nom, anniversaire, WhatsApp).
+
 L’accueil affiche **Bien démarrer** : chaque étape se coche toute seule une fois faite.
 
 1. **Créer votre fiche de membre** : on est d’abord membre, puis on reçoit une fonction. **Membres** > **Créer ma fiche** (ou **Paramètres** > **Mon compte**). Votre compte y est rattaché et vous apparaissez dans le groupe **Bureau**.
-2. **Paramètres** > **Association** : nom, logo, photo de la bannière.
-3. **Paramètres** > **Montants et comptes** : cotisation (20 € par mois par défaut ; périodicité mensuelle, trimestrielle, semestrielle ou annuelle), délai du justificatif (7 jours après paiement), puis montant compté dans la caisse et montant du dernier relevé bancaire au jour du démarrage. Ces soldes de départ ne sont pas des recettes : ils ne gonflent pas le résultat de l’année.
+2. **Paramètres** > **Association** : identité et coordonnées, logo et photo de la bannière, **exercices**.
+3. **Paramètres** > **Finances** : cotisation (20 € par mois par défaut ; périodicité mensuelle, trimestrielle, semestrielle ou annuelle), délai du justificatif (7 jours après paiement), puis montant compté dans la caisse et montant du dernier relevé bancaire au jour du démarrage. Ces soldes de départ ne sont pas des recettes : ils ne gonflent pas le résultat de l’année.
 4. **Membres** : ajoutez-les un par un (bouton +) ou **Importer** (CSV ou Excel). Les lignes sans prénom, nom, jour ou mois sont refusées avec la raison.
 5. **Envoyer à chaque membre son lien personnel** : **Paramètres** > **Montants et comptes** > « Comment régler » (IBAN, espèces…), puis **Membres** > **Liens personnels** > **Créer les liens**, et un geste par membre pour l’envoyer par WhatsApp. Le membre touche le lien : sa page s’ouvre, sans compte ni mot de passe. Il l’ajoute à l’écran d’accueil de son téléphone pour l’ouvrir ensuite d’un geste. Les relances de cotisation contiennent aussi ce lien.
 6. **Désigner le bureau** : dans **Membres**, bouton **Fonction** sur la ligne du membre, saisissez son e-mail, choisissez sa fonction (Président, Bureau…), puis **Donner l’accès**. La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création. Un lien permet de la prévenir par WhatsApp.
@@ -115,7 +117,11 @@ L’accueil affiche **Bien démarrer** : chaque étape se coche toute seule une 
 9. **Matériel** : inscrivez les instruments et autres biens, avec leur valeur et leur lieu de rangement ; vérifiez-les une fois par an avant l’assemblée générale.
 10. Si besoin, **Paramètres** > **Rôles et droits** : créez d’autres fonctions (Secrétaire, Vice-président, Trésorier adjoint…) et ajustez leurs droits.
 
-Pour se déconnecter : **Paramètres** > **Mon compte** > **Se déconnecter**.
+Pour se déconnecter : **Paramètres** > **Mot de passe et session** > **Se déconnecter**. À la connexion, l’œil affiche le mot de passe, « Rester connecté » garde la session sur l’appareil, et le navigateur ou le téléphone propose d’enregistrer le mot de passe.
+
+**Nouveautés** : un chiffre rouge sur un onglet signale ce qui vous attend (demande à valider ou à payer) ou ce qui est nouveau depuis votre dernière visite (opération, rendez-vous, participation, membre) ; la cloche en fait la liste. Sur le site, une alerte du navigateur peut être activée ; sur le téléphone, une notification.
+
+**Corbeille** : tout ce qui a été saisi par erreur (opération non rapprochée, membre sans opération, tiers, rendez-vous, collecte, matériel, ligne de budget, demande annulée ou refusée, compte ou catégorie jamais utilisés, exercice) se supprime avec un motif ; « Annuler » apparaît aussitôt et **Paramètres** > **Données** > **Corbeille** permet de tout restaurer, pièces jointes comprises.
 
 Limite de l’offre gratuite : Supabase envoie environ 2 e-mails de confirmation par heure. Pour inviter beaucoup d’adhérents d’un coup, branchez un service d’e-mail gratuit (Brevo, 300 e-mails par jour) dans **Authentication** > **Emails** > **SMTP Settings**, ou étalez les invitations.
 
@@ -135,7 +141,8 @@ Le même secret sert au **réveil de la base** : Supabase gratuit se met en paus
 - Cotisations : chaque versement est imputé sur la période la plus ancienne non réglée. Un membre est « à jour » quand toutes les périodes déjà commencées sont réglées ; le surplus apparaît en avance. Montant dû à 0 : membre dispensé pour cette période.
 - Une cotisation se rattache toujours à un membre ; une opération n’a qu’un tiers (un membre ou un autre tiers).
 - Justificatif en retard : signalé dès 7 jours après le paiement, tant qu’il n’est pas déposé.
-- Aucune suppression d’écriture : une erreur se corrige par **contre-passation** (écriture de correction en négatif, même catégorie, même compte).
+- Une écriture saisie par erreur va dans la **corbeille** (copie complète, restaurable, tracée). Une écriture rapprochée, déjà corrigée, qui paie une demande de dépense ou qui appartient à un **exercice clôturé** ne se supprime pas : elle se corrige par **contre-passation** (écriture de correction en négatif, même catégorie, même compte).
+- **Exercice clôturé** : aucune opération ne peut plus être ajoutée, modifiée ni supprimée à ses dates ; la réouverture est possible et tracée (Paramètres > Exercices).
 - Lien personnel : jeton aléatoire de 32 caractères, impossible à deviner ; il donne accès à la situation d’un seul membre et à rien d’autre ; renouveler le lien rend l’ancien inutilisable.
 - Anniversaires : jour et mois seulement, sans l’année. Les adhérents ne voient que les membres qui ont donné leur accord, avec l’initiale du nom.
 

@@ -50,6 +50,7 @@ function traduireErreur(m) {
   if (/foreign key/i.test(m) && /roles|profiles_role/i.test(m)) return 'Ce rôle est encore attribué à quelqu’un';
   if (/rate limit/i.test(m)) return 'Trop de tentatives, réessayez dans quelques minutes';
   if (/duplicate key/i.test(m)) return 'Cet élément existe déjà';
+  if (/function public\.supprimer|supprimer\(.*does not exist|Could not find the function.*supprimer/i.test(m)) return 'La corbeille n’est pas encore activée sur la base : le trésorier doit exécuter le fichier « A-EXECUTER-corbeille » dans Supabase';
   return m;
 }
 async function q(promise) {           // exécute une requête et lève l'erreur éventuelle

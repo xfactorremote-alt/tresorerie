@@ -75,7 +75,6 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
     var version by remember { mutableStateOf(0) }
     var feuille by remember { mutableStateOf<String?>(null) }      // null : fermée ; "" : activité à choisir ; id : activité imposée
     var exporter by remember { mutableStateOf(false) }
-    var retrait by remember { mutableStateOf<Budget?>(null) }
     val scope = rememberCoroutineScope()
     val imprimer = rememberImpression()
     val enregistrer = rememberEnregistrer { it?.let(message) }
@@ -87,7 +86,7 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
     fun enregistrerPrevu(x: PosteBudget, v: Double) = scope.launch {
         try {
             when {
-                x.ligne != null && v == 0.0 -> Repo.supprimerBudget(x.ligne.id)
+                x.ligne != null && v == 0.0 -> Repo.supprimer("budgets", x.ligne.id, "Prévu remis à zéro")
                 x.ligne != null -> Repo.majBudget(x.ligne.id, v)
                 v > 0 -> Repo.ajouterBudget(NouveauBudget(an, x.cat.id, null, v, seuil()))
                 else -> return@launch
@@ -156,7 +155,18 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
                 if (x.activites.isEmpty()) Text("Aucune activité budgétée. Une activité suivie apparaît ici dès qu’une ligne est prévue ou qu’une opération y est rattachée.", color = Couleurs.Texte2, fontSize = 14.sp)
             }
         }
-        x.activites.forEach { a -> item(key = "act-" + a.p.id) { CarteActiviteBudget(a, d, gere, onPrevoir = { feuille = a.p.id }, onRetirer = { retrait = it }) } }
+        x.activites.forEach { a -> item(key = "act-" + a.p.id) { CarteActiviteBudget(a, d, gere, onPrevoir = { feuille = a.p.id }, onRetirer = { r ->
+            // Comme sur le site : retirée aussitôt, avec « Annuler » (la ligne passe par la corbeille)
+            scope.launch {
+                try {
+                    val idCorbeille = Repo.supprimer("budgets", r.id, "Retirée du budget"); version++
+                    val hote = Annulation.hote
+                    if (hote != null && hote.showSnackbar("Ligne retirée", actionLabel = "Annuler", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                        Repo.restaurer(idCorbeille); version++
+                    }
+                } catch (e: Exception) { message(traduireErreur(e)) }
+            }
+        }) } }
         if (gere) item { Text("Le montant prévu s’enregistre dès que vous validez la case. Les catégories se créent dans Paramètres, Montants et comptes.", color = Couleurs.Texte2, fontSize = 13.sp) }
     }
 
@@ -167,16 +177,6 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
         confirmButton = { Button(onClick = { exporter = false; scope.launch { try { val (t, h) = documentHtml(d, "budget", an); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("PDF") } },
         dismissButton = { OutlinedButton(onClick = { exporter = false; scope.launch { try { enregistrer("budget-$an.csv", "text/csv", exportCsv(d, "budget", an).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("Excel") } },
     )
-    retrait?.let { r ->
-        AlertDialog(
-            onDismissRequest = { retrait = null },
-            title = { Text("Retirer cette ligne$NBSP?") },
-            text = { Text("${d.nomCategorie(r.categorieId)} : ${euros(r.prevu)} prévus. Les opérations ne sont pas touchées.") },
-            confirmButton = { Button(onClick = { scope.launch { try { Repo.supprimerBudget(r.id); message("Ligne retirée"); version++ } catch (e: Exception) { message(traduireErreur(e)) }; retrait = null } },
-                colors = ButtonDefaults.buttonColors(containerColor = Couleurs.Erreur)) { Text("Retirer") } },
-            dismissButton = { TextButton(onClick = { retrait = null }) { Text("Annuler") } },
-        )
-    }
     feuille?.let { pid -> FeuilleLigneBudget(d, an, pid.ifEmpty { null }, message) { ok -> feuille = null; if (ok) version++ } }
 }
 
