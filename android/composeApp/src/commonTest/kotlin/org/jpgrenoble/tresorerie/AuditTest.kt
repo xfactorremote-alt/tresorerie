@@ -176,4 +176,18 @@ class AuditTest {
         assertEquals(id, p.memberId); assertEquals("Léa Nouvelle", p.nom)
         assertEquals(14, Demo.membres.first { it.id == id }.jour)
     }
+
+    // Lien personnel court : prénom sans accent puis code de 12 caractères ; les anciens liens gardent leur jeton
+    @Test fun lienCourtEtRassurant() {
+        assertEquals("grace", slugPrenom("Grâce")); assertEquals("jeanmarie", slugPrenom("Jean-Marie"))
+        assertEquals("Jeunes de Tous Pays", nomAssoLisible("JEUNES DE TOUS PAYS")); assertEquals("JP Grenoble", nomAssoLisible("JP Grenoble"))
+        val tres = Demo.profilsActuels().first { it.id == "u-t" }
+        val nouveau = Demo.lienMembre("m1", true, tres)
+        val l = Demo.liens.first { it.membreId == "m1" }
+        assertEquals(nouveau, l.jeton); assertEquals(12, l.code?.length)
+        assertTrue(l.code!!.none { it in "01ilo" })
+        val url = Repo.urlLien(l, Demo.membres.first { it.id == "m1" })
+        assertTrue(url.endsWith("?m=" + slugPrenom(Demo.membres.first { it.id == "m1" }.prenom) + "-" + l.code), url)
+        assertTrue(Repo.urlLien(LienMembre("m9", "a".repeat(32)), null).endsWith("?m=" + "a".repeat(32)))
+    }
 }

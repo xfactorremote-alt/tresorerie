@@ -5,7 +5,7 @@ Grille de la page 17 de l'audit du 7 octobre 2026. Un contrôle non effectué re
 Moyens utilisés :
 - **Base** : PostgreSQL 16 local avec le `schema.sql` complet (sections 1 à 12), et les rôles réels (trésorier, président, bureau, adhérent) testés avec les règles d'accès actives.
 - **Site** : mode démonstration piloté par navigateur automatique (Chromium), sans erreur JavaScript sur tous les parcours.
-- **Application Android** : 13 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.16.0.
+- **Application Android** : 14 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.17.0.
 
 | Scénario | Résultat attendu | Résultat | Preuve |
 |---|---|---|---|
@@ -24,12 +24,13 @@ Moyens utilisés :
 | Nouveau membre | Sa fiche lui est demandée, rattachée par l’e-mail | **Validé sur la base de test et en démonstration** | Fiche existante rattachée par l’adresse e-mail ; sinon fiche créée ; prénom ou nom vide refusé |
 | Page d’un membre (lien et compte) | Prochain rendez-vous visible sans faire défiler, sur téléphone, tablette en paysage et ordinateur | **Validé en démonstration** | 1366 × 768, 1024 × 768 et 390 × 844 : rendez-vous en tête, deux colonnes dès 900 px en paysage ; « Ajouter à mon agenda » produit un fichier .ics (rappel la veille) ; Android : agenda du téléphone. Base : identifiant du rendez-vous ajouté à `situation_par_lien` (empreinte vérifiée) |
 | Fenêtres et rappels dosés | « Plus tard » respecté, rien d’intrusif | **Validé en démonstration** | Nouveau compte : fiche proposée une fois ; après « Plus tard », rien dans les Paramètres ni sur les autres pages ; à la connexion suivante, seulement un petit rappel « Remplir » ; la suivante, rien (une fois par semaine au plus) ; trésorier : plus de « Bien démarrer », un rappel « Mise en route » discret |
+| Lien personnel court | Lien lisible, aperçu rassurant, anciens liens valables | **Validé sur la base de test, en démonstration et en production** | `?m=grace-k7qp2xyz9abc` ouvre la page ; l’ancien lien à 32 caractères aussi ; un code inconnu affiche « Lien inactif » ; 20 000 codes tirés sans doublon ; aperçu WhatsApp (titre et logo) par les balises Open Graph ; code ajouté au lien déjà existant en production |
 | Parcours complet du site | Aucune erreur, aucun débordement | **Validé** | 12 pages × 4 rôles × 3 tailles = 144 vues sans erreur JavaScript ni défilement horizontal |
 | Nouveautés | Pastilles exactes selon le rôle | **Validé** | Président : demande à valider comptée ; bureau : ses propres saisies non comptées ; adhérent : rendez-vous et participations seulement ; vu → 0 |
 
 ## Points restant à valider par une personne
 
-1. **Application Android sur un vrai téléphone** : installer l’APK 0.16.0 et refaire les parcours (virement, régularisation, filtres, export).
+1. **Application Android sur un vrai téléphone** : installer l’APK 0.17.0 et refaire les parcours (virement, régularisation, filtres, export).
 2. **Export réel** depuis le site en ligne : ouvrir un PDF et un Excel du journal d'octobre et comparer les totaux à l'écran Opérations.
 3. **Restauration sur Supabase** : la commande `set local session_replication_role = replica` du script de restauration doit être acceptée par l'éditeur SQL de Supabase (à confirmer lors d'un premier essai, sur un projet de test).
 

@@ -181,9 +181,18 @@ private fun Legende() {
     }
 }
 
+// Relance WhatsApp : même texte que lienRelance du site (comment régler, lien vers l'espace membre)
+private val porteeRelance = kotlinx.coroutines.MainScope()
 private fun lienRelance(uri: androidx.compose.ui.platform.UriHandler, m: Membre, objet: String) {
     val num = numeroWa(m.whatsapp) ?: return
-    uri.openUri("https://wa.me/$num?text=${encoderUrl("Bonjour ${m.prenom}, $objet. Vous pouvez régler en espèces auprès du trésorier ou par virement. Merci.")}")
+    porteeRelance.launch {
+        val infos = try { Repo.texteReglage("infos_paiement") } catch (_: Exception) { null }
+        val lien = try { Repo.liens().firstOrNull { it.membreId == m.id } } catch (_: Exception) { null }
+        val texte = "Bonjour ${m.prenom}, $objet. " +
+            (infos?.takeIf { it.isNotBlank() }?.let { "Pour régler : " + it.trim().replace(Regex("\\s*\n\\s*"), " ; ") + "." } ?: "Vous pouvez régler en espèces auprès du trésorier ou par virement.") +
+            (lien?.let { " Votre espace membre : ${Repo.urlLien(it, m)}" } ?: "") + " Merci."
+        uri.openUri("https://wa.me/$num?text=${encoderUrl(texte)}")
+    }
 }
 
 // =====================================================================

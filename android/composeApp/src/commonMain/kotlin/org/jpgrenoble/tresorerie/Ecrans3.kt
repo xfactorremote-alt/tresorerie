@@ -2,6 +2,7 @@ package org.jpgrenoble.tresorerie
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -1263,9 +1264,12 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     val scope = rememberCoroutineScope()
     val du = retard > 0.005 || resteParts > 0.005
 
-    @Composable fun Hero() = Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        HeroRendezVous(prochain, parts.firstOrNull { it.collecteId != null && it.collecteId == prochain?.collecteId }, onAgenda = { prochain?.let(agenda) }) { prochain?.let { detail = it } }
-        if (du) AlerteMembre(listOfNotNull(if (retard > 0.005) "Cotisation : ${euros(retard)} en retard" else null, if (resteParts > 0.005) "Participations : ${euros(resteParts)} à régler" else null).joinToString(" · ")) {
+    // Une seule bannière forte : la photo, avec le prochain rendez-vous posé dessus (comme rdvBanniere du site)
+    @Composable fun Tete() = Banniere(d, onReglages, onCloche) {
+        Spacer(Modifier.height(12.dp))
+        RdvBanniere(prochain, parts.firstOrNull { it.collecteId != null && it.collecteId == prochain?.collecteId }, onAgenda = { prochain?.let(agenda) }) { prochain?.let { detail = it } }
+    }
+    @Composable fun Hero() { if (du) AlerteMembre(listOfNotNull(if (retard > 0.005) "Cotisation : ${euros(retard)} en retard" else null, if (resteParts > 0.005) "Participations : ${euros(resteParts)} à régler" else null).joinToString(" · ")) {
             EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(4) }   // « Comment régler »
         }
     }
@@ -1291,14 +1295,14 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val large = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxWidth > maxHeight)
         if (large) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (onReglages != null) Banniere(d, onReglages, onCloche, compacte = true) { }
+            Tete()
             Apparition(0) { Hero() }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(1) { Suite() } }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(2) { Cotisation() }; Regler(); Participations(); Anniversaires() }
             }
         } else LazyColumn(Modifier.fillMaxSize(), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (onReglages != null) item { Banniere(d, onReglages, onCloche, compacte = true) { } } else item { }
+            item { Tete() }
             item { Apparition(0) { Hero() } }
             item { Apparition(1) { Suite() } }
             item { Apparition(2) { Cotisation() } }
@@ -1315,48 +1319,47 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     }
 }
 
-// Prochain rendez-vous : carte sobre sous la bannière (pas une seconde bannière, comme .prochain du site) ;
-// la couleur du rendez-vous tient dans la date et le filet de gauche ; toucher la carte ouvre le détail
+// Prochain rendez-vous posé sur la bannière photo : panneau translucide, date à la couleur du rendez-vous,
+// pastille « Dans 2 jours », boutons Agenda et Détail (même contenu que rdvBanniere du site)
 @Composable
-fun HeroRendezVous(p: Projet?, part: Participation?, onAgenda: () -> Unit = {}, onClick: () -> Unit) {
+fun RdvBanniere(p: Projet?, part: Participation?, onAgenda: () -> Unit = {}, onClick: () -> Unit) {
+    val panneau = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0x6B141211))
+        .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
     if (p == null || p.debut == null) {
-        CarteBlanche {
-            Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
-            Text("Rien de prévu pour l’instant", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Il s’affichera ici dès qu’il sera annoncé.", color = Couleurs.Texte2, fontSize = 14.sp)
+        Column(panneau.padding(14.dp)) {
+            Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.9f))
+            Text("Rien de prévu pour l’instant", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
         return
     }
-    val (fond, encre, accent) = couleurEvt(p.id)
+    val (_, encre, accent) = couleurEvt(p.id)
     val j = LocalDate.parse(p.debut.take(10))
     val imminent = aujourdhui().daysUntil(j) <= 1
-    Surface(onClick = onClick, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(start = 16.dp, top = 14.dp, end = 12.dp, bottom = 14.dp),
-            verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(Modifier.width(56.dp).clip(RoundedCornerShape(14.dp)).background(accent).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(panneau.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.width(58.dp).clip(RoundedCornerShape(8.dp)).background(accent).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(JOURS_COURTS[j.dayOfWeek.ordinal].uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Text("${j.dayOfMonth}", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, lineHeight = 28.sp)
+                Text("${j.dayOfMonth}", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, lineHeight = 30.sp)
                 Text(MOIS_COURTS[j.monthNumber - 1].uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+                    Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.92f))
                     Text(dansJours(p.debut), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (imminent) Color.White else encre,
-                        modifier = Modifier.background(if (imminent) accent else fond, RoundedCornerShape(50)).padding(horizontal = 9.dp, vertical = 1.dp))
+                        modifier = Modifier.background(if (imminent) accent else Color.White, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp))
                 }
-                Text(p.nom, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(listOfNotNull(if (p.heureDebut != null) heureFr(p.heureDebut) + (p.heureFin?.let { " – " + heureFr(it) } ?: "") else "Toute la journée", p.lieu).joinToString(" · "),
-                    fontSize = 14.sp, color = Couleurs.Texte2)
-                p.description?.let { Text(it, fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                p.participation?.let { m -> Puce("Participation ${euros(m)}" + (part?.let { " · donné ${euros(it.donne)}" } ?: ""), Couleurs.JauneClair, Couleurs.SurJaune) }
+                Text(p.nom, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(listOfNotNull(if (p.heureDebut != null) heureFr(p.heureDebut) + (p.heureFin?.let { " – " + heureFr(it) } ?: "") else "Toute la journée", p.lieu).joinToString(" · ") +
+                    (p.participation?.let { m -> " · participation ${euros(m)}" + (part?.let { " (donné ${euros(it.donne)})" } ?: "") } ?: ""),
+                    fontSize = 14.sp, color = Color.White.copy(alpha = 0.92f))
             }
-            Surface(onClick = onAgenda, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, contentColor = encre,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE6E2E0))) {
-                Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp).widthIn(min = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.EditCalendar, contentDescription = "Ajouter à mon agenda", modifier = Modifier.size(20.dp))
-                    Text("Agenda", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onAgenda, shape = RoundedCornerShape(6.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White), modifier = Modifier.weight(1f)) {
+                Icon(Icons.Outlined.EditCalendar, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Agenda", maxLines = 1)
             }
+            Button(onClick = onClick, shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1C1B1A)), modifier = Modifier.weight(1f)) { Text("Détail", maxLines = 1) }
         }
     }
 }

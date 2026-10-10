@@ -1032,25 +1032,6 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 
 .param-barre-icone{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--primaire);color:#fff;flex:none}
 
-/* Prochain rendez-vous : carte sobre sous la bannière (une seule bannière par page) */
-.prochain{display:flex;align-items:flex-start;gap:14px;padding:14px 14px 14px 16px;border-radius:var(--r-xgrand);background:var(--surface);box-shadow:var(--ombre4),inset 4px 0 0 var(--evt-accent,var(--primaire));
-  color:var(--texte);transition:box-shadow var(--d-rapide) var(--c-decel),transform var(--d-rapide) var(--c-decel)}
-@media (hover:hover){.prochain.cliquable:hover{box-shadow:var(--ombre8),inset 4px 0 0 var(--evt-accent,var(--primaire));transform:translateY(-1px)}}
-.prochain-date{flex:none;width:56px;border-radius:var(--r-grand);background:var(--evt-accent,var(--primaire));color:#fff;display:flex;flex-direction:column;align-items:center;padding:6px 0}
-.prochain-date span{font-size:11px;line-height:14px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;opacity:.95}
-.prochain-date b{font-family:var(--police-chiffres);font-size:24px;line-height:28px;font-weight:700}
-.prochain-corps{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.prochain-sur{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--texte-3)}
-.prochain-compte{background:var(--evt-fond,var(--surface-2));color:var(--evt-texte,var(--texte));border-radius:999px;padding:1px 9px;font-weight:700}
-.prochain-imminent .prochain-compte{background:var(--evt-accent);color:#fff}
-.prochain-corps h2{margin:2px 0 0;font-size:18px;line-height:24px;overflow-wrap:anywhere}
-.prochain-corps p{margin:0;font-size:14px;color:var(--texte-2)}
-.prochain-descr{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px !important;color:var(--texte-3) !important}
-.prochain-corps .puce{align-self:flex-start;margin-top:4px}
-.prochain-agenda{flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:56px;min-height:56px;padding:6px;border-radius:var(--r-grand);border:1px solid var(--bord-doux);background:var(--surface);color:var(--evt-texte,var(--primaire));font-size:11.5px;font-weight:600}
-@media (hover:hover){.prochain-agenda:hover{background:var(--evt-fond,var(--survol))}}
-.prochain-vide{box-shadow:var(--ombre4)}
-@media (min-width:900px){.prochain{padding:18px 18px 18px 20px;gap:18px}.prochain-date{width:64px}.prochain-date b{font-size:28px;line-height:32px}.prochain-corps h2{font-size:20px;line-height:26px}}
 .vm-suite>.rubrique,.vm-cote>.rubrique{margin:0}
 .statut-titre{display:inline-flex;align-items:center;gap:8px}
 .statut-titre.statut-ok .ic{color:#2E8B4E}.statut-titre.statut-alerte .ic{color:var(--erreur)}
@@ -1060,3 +1041,35 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 #toast .btn-icone-toast{min-width:32px;min-height:32px;padding:0;border:0;background:transparent;color:inherit;display:inline-flex;align-items:center;justify-content:center;border-radius:50%}
 #toast:has(#b-toast-action){width:min(420px,calc(100vw - 32px))}
 #toast:has(#b-toast-action)>span{flex:1}
+
+/* Prochain rendez-vous posé sur la bannière photo (Fluent 2 : surface acrylique, coins 8 px, boutons 4 px) */
+.accueil-membre .banniere,.espace-membre .banniere{min-height:240px;justify-content:space-between}
+@media (min-width:700px){.accueil-membre .banniere,.espace-membre .banniere{min-height:300px}}
+.banniere-rdv{display:flex;align-items:center;gap:14px;margin-top:auto;padding:12px 14px;border-radius:var(--r-xgrand);color:#fff;
+  background:rgba(20,18,17,.42);border:1px solid rgba(255,255,255,.22);box-shadow:inset 3px 0 0 var(--evt-accent,#fff)}
+@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.banniere-rdv{-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}}
+.rdv-date{flex:none;width:58px;border-radius:var(--r-grand);background:var(--evt-accent,var(--primaire));color:#fff;display:flex;flex-direction:column;align-items:center;padding:6px 0;box-shadow:var(--ombre4)}
+.rdv-date span{font-size:11px;line-height:14px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.rdv-date b{font-family:var(--police-chiffres);font-size:26px;line-height:30px;font-weight:600}
+.rdv-corps{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.rdv-sur{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;line-height:16px;font-weight:600;opacity:.92}
+.rdv-compte{background:#fff;color:var(--evt-texte,#1C1B1A);border-radius:var(--r-rond);padding:0 8px;line-height:20px;font-weight:700}
+.rdv-imminent .rdv-compte{background:var(--evt-accent);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.6)}
+.rdv-titre{font-family:var(--police-titre);font-size:20px;line-height:26px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.rdv-meta{font-size:14px;line-height:20px;opacity:.92}
+.rdv-actions{display:flex;gap:8px;flex:none}
+.rdv-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border-radius:var(--r-moyen);border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.08);color:#fff;font-size:14px;font-weight:600}
+.rdv-btn-plein{background:#fff;color:#1C1B1A;border-color:#fff}
+@media (hover:hover){.rdv-btn:hover{background:rgba(255,255,255,.2)}.rdv-btn-plein:hover{background:#F0F0F0}}
+.banniere-rdv-vide{flex-direction:column;align-items:flex-start;gap:2px;box-shadow:none}
+@media (min-width:700px){.banniere-rdv{padding:14px 18px;gap:18px}.rdv-date{width:64px}.rdv-date b{font-size:30px;line-height:34px}.rdv-titre{font-size:24px;line-height:30px}}
+@media (max-width:560px){.banniere-rdv{flex-wrap:wrap;align-items:flex-start}.rdv-corps{flex:1 1 calc(100% - 80px)}.rdv-actions{width:100%}.rdv-actions .rdv-btn{flex:1}}
+@media (prefers-reduced-motion:no-preference){.rdv-imminent .rdv-compte{animation:pulsation-rdv 1.8s ease-in-out infinite}}
+@keyframes pulsation-rdv{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.65)}50%{box-shadow:0 0 0 6px rgba(255,255,255,0)}}
+/* Aperçu du lien personnel, tel que WhatsApp l'affiche : logo et nom de l'association plutôt que l'adresse */
+.apercu-lien{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:var(--r-xgrand);background:var(--surface-2);border:1px solid var(--bord-doux);box-shadow:inset 3px 0 0 var(--primaire)}
+.apercu-lien img{width:48px;height:48px;border-radius:var(--r-grand);object-fit:cover;background:#fff;flex:none}
+.apercu-lien div{display:flex;flex-direction:column;min-width:0}
+.apercu-lien b{font-size:14px;line-height:20px}
+.apercu-lien span{font-size:13px;color:var(--texte-2)}
+.apercu-lien small{font-size:12px;color:var(--texte-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

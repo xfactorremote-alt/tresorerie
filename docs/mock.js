@@ -193,7 +193,7 @@ function seed() {
       ],
       categories, accounts, members, cotisations, transactions, profiles, expense_requests, invitations: [],
       projects, budgets, attachments, reconciliations: [rec0], tiers, collectes, collecte_membres: [],
-      liens_membres: [{ member_id: 'm0', jeton: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', cree_par: ids.t, cree_le: ilYa(2).toISOString(), nb_consultations: 3, derniere_consultation: null }], materiel, materiel_mouvements,
+      liens_membres: [{ member_id: 'm0', jeton: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', code: 'k7qp2xyz9abc', cree_par: ids.t, cree_le: ilYa(2).toISOString(), nb_consultations: 3, derniere_consultation: ilYa(1).toISOString() }], materiel, materiel_mouvements,
     },
   };
 }
@@ -430,7 +430,9 @@ export function createMockClient() {
     async rpc(nom, args = {}) {
       const t = tables;
       if (nom === 'situation_par_lien') {
-        const l = t.liens_membres.find((x) => x.jeton === args.p_jeton && String(args.p_jeton).length === 32);
+        // Même règle que la base : jeton de 32 caractères (anciens liens) ou code de 12 caractères
+        const v = String(args.p_jeton || '');
+        const l = t.liens_membres.find((x) => (v.length === 32 && x.jeton === v) || (v.length === 12 && x.code === v.toLowerCase()));
         if (!l) return ok(null);
         l.nb_consultations++; l.derniere_consultation = new Date().toISOString();
         const m = t.members.find((x) => x.id === l.member_id);
@@ -460,8 +462,9 @@ export function createMockClient() {
         let l = t.liens_membres.find((x) => x.member_id === args.p_member);
         if (l && !args.p_renouveler) return ok(l.jeton);
         const jeton = Array.from({ length: 32 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
-        if (l) Object.assign(l, { jeton, cree_le: new Date().toISOString(), nb_consultations: 0, derniere_consultation: null });
-        else t.liens_membres.push({ member_id: args.p_member, jeton, cree_par: db.moi(), cree_le: new Date().toISOString(), nb_consultations: 0, derniere_consultation: null });
+        const code = Array.from({ length: 12 }, () => 'abcdefghjkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 31)]).join('');
+        if (l) Object.assign(l, { jeton, code, cree_le: new Date().toISOString(), nb_consultations: 0, derniere_consultation: null });
+        else t.liens_membres.push({ member_id: args.p_member, jeton, code, cree_par: db.moi(), cree_le: new Date().toISOString(), nb_consultations: 0, derniere_consultation: null });
         return ok(jeton);
       }
       if (nom === 'demander_validation_operation') {

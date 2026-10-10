@@ -19,9 +19,10 @@ import kotlinx.coroutines.launch
 // Lien personnel d'un membre (même conception que le site) : il ouvre sa page — cotisation,
 // participations, rendez-vous — sans compte ni mot de passe ; envoi par WhatsApp ou e-mail,
 // copie, coupure, renouvellement.
+// Même message que messageLien du site : l'association d'abord, le lien seul sur sa ligne, une phrase qui rassure
 private fun messageLien(d: Donnees, m: Membre, url: String) =
-    "Bonjour ${m.prenom}, voici votre lien personnel pour suivre votre cotisation, vos participations et les rendez-vous de ${d.organisation.nom} : $url " +
-        "Il ouvre directement votre page, sans compte ni mot de passe. Gardez-le pour vous."
+    "Bonjour ${m.prenom},\n\nVoici votre espace membre ${nomAssoLisible(d.organisation.nom)} : votre cotisation, vos participations et les prochains rendez-vous.\n\n" +
+        "👉 $url\n\nCe lien est personnel et sûr : il ouvre seulement votre page, sans compte ni mot de passe. Gardez-le pour vous."
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -29,7 +30,7 @@ fun FeuilleLien(d: Donnees, m: Membre, lien: LienMembre?, message: (String) -> U
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     val presse = LocalClipboardManager.current
-    val url = lien?.let { Repo.urlLien(it.jeton) }
+    val url = lien?.let { Repo.urlLien(it, m) }
     fun faire(msg: String, bloc: suspend () -> Unit) = scope.launch { try { bloc(); message(msg); onChange() } catch (e: Exception) { message(traduireErreur(e)) } }
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Lien personnel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -44,7 +45,17 @@ fun FeuilleLien(d: Donnees, m: Membre, lien: LienMembre?, message: (String) -> U
         Text("Le lien ouvre la page de ${m.prenom} : cotisation, participations, rendez-vous à venir. Aucun compte ni mot de passe. Il ne montre rien d’autre et peut être coupé à tout moment.",
             fontSize = 14.sp, color = Couleurs.Texte2)
         if (url != null) {
-            Surface(color = androidx.compose.ui.graphics.Color(0xFFEFEDEC), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) { Text(url, Modifier.padding(12.dp), fontSize = 13.sp) }
+            // Aperçu tel que WhatsApp l'affiche : logo et nom de l'association plutôt que l'adresse nue
+            Surface(color = androidx.compose.ui.graphics.Color(0xFFF3F1F0), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LogoAsso(Modifier.size(48.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Votre espace membre · ${d.organisation.nom}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("Cotisation, participations et prochains rendez-vous", fontSize = 13.sp, color = Couleurs.Texte2)
+                        Text(url.substringAfter("://"), fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                }
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 numeroWa(m.whatsapp)?.let { wa -> Button(onClick = { uri.openUri("https://wa.me/$wa?text=" + encoderUrl(messageLien(d, m, url))) }) { Text("Envoyer par WhatsApp") } }
                 m.email?.takeIf { it.isNotBlank() }?.let { mail -> FilledTonalButton(onClick = {
@@ -93,9 +104,9 @@ fun FeuilleLiens(d: Donnees, membres: List<Membre>, liens: List<LienMembre>, mes
                     Text((if (l == null) "Pas de lien" else if (l.nbConsultations > 0) "Ouvert ${l.nbConsultations} fois" else "Pas encore ouvert") + if (wa == null) " · sans numéro WhatsApp" else "",
                         fontSize = 13.sp, color = Couleurs.Texte2)
                 }
-                if (l != null && wa != null) FilledTonalButton(onClick = { uri.openUri("https://wa.me/$wa?text=" + encoderUrl(messageLien(d, m, Repo.urlLien(l.jeton)))) }) { Text("WhatsApp") }
+                if (l != null && wa != null) FilledTonalButton(onClick = { uri.openUri("https://wa.me/$wa?text=" + encoderUrl(messageLien(d, m, Repo.urlLien(l, m)))) }) { Text("WhatsApp") }
                 else if (l != null && !m.email.isNullOrBlank()) TextButton(onClick = {
-                    uri.openUri("mailto:${m.email}?subject=" + encoderUrl("Votre page personnelle") + "&body=" + encoderUrl(messageLien(d, m, Repo.urlLien(l.jeton)))) }) { Text("E-mail") }
+                    uri.openUri("mailto:${m.email}?subject=" + encoderUrl("Votre page personnelle") + "&body=" + encoderUrl(messageLien(d, m, Repo.urlLien(l, m)))) }) { Text("E-mail") }
             }
         }
         Button(onClick = onFermer, modifier = Modifier.align(Alignment.End)) { Text("Fermer") }

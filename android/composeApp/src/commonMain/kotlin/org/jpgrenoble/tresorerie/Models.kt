@@ -454,4 +454,5 @@ data class LienMembre(
     val jeton: String,
     @SerialName("nb_consultations") val nbConsultations: Int = 0,
     @SerialName("derniere_consultation") val derniereConsultation: String? = null,
+    val code: String? = null,   // code court de 12 caractères (liens créés depuis le 10 octobre 2026)
 )

@@ -131,7 +131,7 @@ async function demarrer() {
   });
   await chargerOrganisation();
   // Lien personnel d'un membre (?m=…) : sa page s'ouvre directement, sans compte
-  const jeton = new URLSearchParams(location.search).get('m');
+  const jeton = jetonDuLien(new URLSearchParams(location.search).get('m'));
   if (jeton) return pageLien(jeton);
   const { data } = await sb.auth.getSession();
   S.session = data.session;
@@ -858,33 +858,15 @@ function listeAnniversaires(anniv, mois) {
 }
 
 // Vue du membre, partagée par l'accueil d'un membre connecté et la page du lien personnel (même rendu partout).
-// Ordre d'importance : le prochain rendez-vous en grand et en couleur (compte à rebours, « Ajouter à mon agenda »),
-// une alerte seulement si quelque chose est dû, la suite du planning, puis ma cotisation, mes participations,
+// Ordre d'importance : le prochain rendez-vous sur la bannière photo (rdvBanniere), une alerte seulement si quelque chose est dû,
+// puis la suite du planning, ma cotisation, mes participations,
 // les anniversaires et mes versements. Deux colonnes sur ordinateur et tablette en paysage.
 function vueMembre(o) {
   const { planning = [], cot = [], parts = [], infos, anniv = null, mois, versements = null, avance = 0, montant = null, connecte = false } = o;
-  const prochain = planning[0], suite = planning.slice(1, 7);
+  const suite = planning.slice(1, 7);
   const retard = retardDe(cot);
   const aRegler = parts.filter((p) => Number(p.montant_attendu) > 0 && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
   const resteParts = aRegler.reduce((t, p) => t + Number(p.montant_attendu) - Number(p.donne), 0);
-  const partDe = (e) => parts.find((x) => e?.collecte_id && x.collecte_id === e.collecte_id);
-  // Prochain rendez-vous : une carte sobre sous la bannière (pas une seconde bannière) ; la couleur du rendez-vous
-  // tient dans la pastille de date et le filet de gauche, le compte à rebours dans une petite pastille
-  const hero = prochain ? (() => {
-    const d = dateDe(prochain.date_debut), p = partDe(prochain);
-    const j = Math.round((d - dateDe(aujourdhui())) / 864e5);
-    return `<article class="prochain ${j <= 1 ? 'prochain-imminent' : ''} cliquable" data-evt="${prochain.id}" tabindex="0" role="button" style="${styleEvt(prochain)}" aria-label="Prochain rendez-vous : ${esc(prochain.nom)}, ${esc(dansJours(prochain.date_debut))}">
-      <div class="prochain-date"><span>${JOURS_COURTS[(d.getDay() + 6) % 7]}</span><b>${d.getDate()}</b><span>${MOIS_COURTS[d.getMonth()]}</span></div>
-      <div class="prochain-corps">
-        <div class="prochain-sur"><span>Prochain rendez-vous</span><span class="prochain-compte">${dansJours(prochain.date_debut)}</span></div>
-        <h2>${esc(prochain.nom)}</h2>
-        <p>${[prochain.heure_debut ? heure(prochain.heure_debut) + (prochain.heure_fin ? ' – ' + heure(prochain.heure_fin) : '') : 'Toute la journée', prochain.lieu ? esc(prochain.lieu) : ''].filter(Boolean).join(' · ')}</p>
-        ${prochain.description ? `<p class="prochain-descr">${esc(prochain.description)}</p>` : ''}
-        ${prochain.participation ? `<span class="puce puce-partiel">Participation ${eur(prochain.participation)}${p ? ` · donné ${eur(p.donne)}` : ''}</span>` : ''}
-      </div>
-      <button type="button" class="prochain-agenda" data-ics="${prochain.id}" aria-label="Ajouter à mon agenda" title="Ajouter à mon agenda">${icone('agenda', 20)}<span>Agenda</span></button>
-    </article>`;
-  })() : `<article class="prochain prochain-vide"><div class="prochain-corps"><div class="prochain-sur"><span>Prochain rendez-vous</span></div><h2>Rien de prévu pour l’instant</h2><p class="muted">Il s’affichera ici dès qu’il sera annoncé.</p></div></article>`;
   const alerte = retard > 0 || resteParts > 0 ? `<a class="alerte-membre" href="#m-regler">${icone('attention', 20)}<span><b>${[retard > 0 ? `Cotisation : ${eur(retard)} en retard` : '', resteParts > 0 ? `Participations : ${eur(resteParts)} à régler` : ''].filter(Boolean).join(' · ')}</b><small>Voir comment régler</small></span>${icone('suivant', 18)}</a>` : '';
   const regles = cot.filter((p) => ['regle', 'dispense'].includes(p.statut)).map((p) => p.periode).sort();
   const an = new Date().getFullYear();
@@ -904,9 +886,28 @@ function vueMembre(o) {
   const carteVersements = versements?.length ? rubrique('m-versements', 'Mes versements', `${versements.length} dernier${versements.length > 1 ? 's' : ''}`,
     `<ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul>`, { ouverte: false }) : '';
   return `<div class="vue-membre">
-    <div class="vm-hero">${hero}${alerte}</div>
+    ${alerte ? `<div class="vm-hero">${alerte}</div>` : ''}
     <div class="vm-suite">${rubrique('m-planning', 'Ensuite au planning', suite.length ? `${suite.length} rendez-vous` : 'Rien d’autre', suite.length ? listePlanningCouleur(suite) : '<p class="muted" style="margin:0">Rien d’autre d’annoncé pour l’instant.</p>')}</div>
     <div class="vm-cote">${carteCotis}${carteRegler}${carteParts}${carteAnniv}${carteVersements}</div>
+  </div>`;
+}
+
+// Prochain rendez-vous posé sur la bannière photo (panneau acrylique Fluent 2) : la bannière reste le seul
+// élément fort de la page, plus grande que ce qui suit ; le détail et l'agenda à portée de main
+function rdvBanniere(planning, parts = []) {
+  const e = planning[0];
+  if (!e) return `<div class="banniere-rdv acrylique banniere-rdv-vide"><span class="rdv-sur">Prochain rendez-vous</span><b class="rdv-titre">Rien de prévu pour l’instant</b></div>`;
+  const d = dateDe(e.date_debut), j = Math.round((d - dateDe(aujourdhui())) / 864e5);
+  const p = parts.find((x) => e.collecte_id && x.collecte_id === e.collecte_id);
+  return `<div class="banniere-rdv acrylique ${j <= 1 ? 'rdv-imminent' : ''}" style="${styleEvt(e)}">
+    <div class="rdv-date"><span>${JOURS_COURTS[(d.getDay() + 6) % 7]}</span><b>${d.getDate()}</b><span>${MOIS_COURTS[d.getMonth()]}</span></div>
+    <div class="rdv-corps">
+      <span class="rdv-sur">Prochain rendez-vous <span class="rdv-compte">${dansJours(e.date_debut)}</span></span>
+      <b class="rdv-titre">${esc(e.nom)}</b>
+      <span class="rdv-meta">${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Toute la journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}${e.participation ? ` · participation ${eur(e.participation)}${p ? ` (donné ${eur(p.donne)})` : ''}` : ''}</span>
+    </div>
+    <div class="rdv-actions"><button type="button" class="rdv-btn" data-ics="${e.id}">${icone('agenda', 18)}<span>Agenda</span></button>
+      <button type="button" class="rdv-btn rdv-btn-plein" data-evt="${e.id}">Détail</button></div>
   </div>`;
 }
 
@@ -944,11 +945,11 @@ function detailEvenementMembre(e) {
 }
 
 function brancherVueMembre(planning, ouvrir) {
-  document.querySelectorAll('.vue-membre [data-evt]').forEach((li) => {
+  document.querySelectorAll('.vue-membre [data-evt], .banniere-rdv [data-evt]').forEach((li) => {
     const go = (ev) => { ev.stopPropagation(); const e = planning.find((p) => String(p.id) === li.dataset.evt); if (e) ouvrir(e); };
     li.addEventListener('click', go); li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(ev); });
   });
-  document.querySelectorAll('.vue-membre [data-ics]').forEach((b) => b.addEventListener('click', (ev) => {
+  document.querySelectorAll('.banniere-rdv [data-ics]').forEach((b) => b.addEventListener('click', (ev) => {
     ev.stopPropagation(); const e = planning.find((p) => String(p.id) === b.dataset.ics); if (e) telechargerIcs(e);
   }));
   $('.alerte-membre')?.addEventListener('click', (ev) => { ev.preventDefault(); const r = $('[data-rub=m-regler]'); if (r) { r.open = true; r.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
@@ -957,7 +958,7 @@ function brancherVueMembre(planning, ouvrir) {
 
 async function pageTableauAdherent(anniv, mois) {
   const [cot, planning, parts] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('planning_activites', { p_debut: isoLocal(new Date()) })), q(sb.rpc('mes_participations'))]);
-  rendre(`<div class="page accueil accueil-membre">${banniere('')}
+  rendre(`<div class="page accueil accueil-membre">${banniere(rdvBanniere(planning, parts))}
     ${vueMembre({ planning, cot, parts, infos: S.textes?.infos_paiement, anniv, mois, connecte: true })}</div>`);
   brancherVueMembre(planning, (e) => detailEvenement(e, () => router()));
   marquerVu('cotisations');
@@ -1845,7 +1846,7 @@ async function ongletCotisations(zone) {
 
 function lienRelance(m, objet) {
   const l = (S.liensMembres || {})[m.id];
-  const msg = `Bonjour ${m.prenom}, ${objet}. ${S.textes?.infos_paiement ? 'Pour régler : ' + S.textes.infos_paiement.replace(/\s*\n\s*/g, ' ; ') + '.' : 'Vous pouvez régler en espèces auprès du trésorier ou par virement.'}${l ? ` Votre situation : ${urlLien(l.jeton)}` : ''} Merci.`;
+  const msg = `Bonjour ${m.prenom}, ${objet}. ${S.textes?.infos_paiement ? 'Pour régler : ' + S.textes.infos_paiement.replace(/\s*\n\s*/g, ' ; ') + '.' : 'Vous pouvez régler en espèces auprès du trésorier ou par virement.'}${l ? ` Votre espace membre : ${urlLien(l, m)}` : ''} Merci.`;
   return `https://wa.me/${numeroWa(m.whatsapp)}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -3826,7 +3827,15 @@ const CLE_JETON = 'jetonMembre';
 const lireJeton = () => { try { return localStorage.getItem(CLE_JETON); } catch { return null; } };
 const garderJeton = (j) => { try { if (j) localStorage.setItem(CLE_JETON, j); else localStorage.removeItem(CLE_JETON); } catch { /* stockage indisponible */ } };
 const adresseSite = () => location.origin + location.pathname;
-const urlLien = (j) => `${adresseSite()}?m=${j}`;
+// Lien court et rassurant : …/?m=grace-k7qp2xyz9abc (le prénom, puis le code de 12 caractères) ; les anciens liens
+// (jeton de 32 caractères) restent valables. Le prénom n'est qu'un repère : seul le code ouvre la page.
+const slugPrenom = (p) => String(p || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]+/g, '').slice(0, 16);
+const urlLien = (l, m) => (l?.code ? `${adresseSite()}?m=${slugPrenom(m?.prenom) ? slugPrenom(m.prenom) + '-' : ''}${l.code}` : `${adresseSite()}?m=${l?.jeton || l}`);
+const jetonDuLien = (v) => (v && v.includes('-') ? v.split('-').pop() : v);
+// Message envoyé avec le lien : l'association d'abord, le lien seul sur sa ligne, une phrase qui rassure
+// Nom de l'association lisible dans un message (« JEUNES DE TOUS PAYS » → « Jeunes de Tous Pays »)
+const nomAssoLisible = (n) => (n && n === n.toUpperCase() ? n.toLowerCase().split(' ').map((x, i) => (i && ['de', 'des', 'du', 'la', 'le', 'les', 'et', 'd’', "d'"].includes(x) ? x : majuscule(x))).join(' ') : n || '');
+const messageLien = (m, u) => `Bonjour ${m.prenom},\n\nVoici votre espace membre ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'de l’association'} : votre cotisation, vos participations et les prochains rendez-vous.\n\n👉 ${u}\n\nCe lien est personnel et sûr : il ouvre seulement votre page, sans compte ni mot de passe. Gardez-le pour vous.`;
 const urlPublique = (chemin) => { if (!chemin) return ''; const u = sb.storage.from('logos').getPublicUrl(chemin).data.publicUrl; return u.startsWith('blob:') ? u : u + '?v=' + encodeURIComponent(chemin); };
 
 async function pageLien(jeton, retour = null) {
@@ -3852,8 +3861,9 @@ async function pageLien(jeton, retour = null) {
   const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   document.title = `${d.association?.nom || 'Association'} · ${d.membre?.prenom || ''}`;
   $('#app').innerHTML = `<main class="espace-membre">
-    <section class="banniere banniere-compacte ${photo ? 'avec-photo' : ''}" ${photo ? `style="--photo:url('${esc(photo)}')"` : ''}>
+    <section class="banniere ${photo ? 'avec-photo' : ''}" ${photo ? `style="--photo:url('${esc(photo)}')"` : ''}>
       <div class="banniere-tete"><img src="${esc(logo)}" alt=""><div><b>${esc(d.association?.nom || '')}</b><span>Bonjour ${esc(d.membre?.prenom || '')} · ${date}</span></div></div>
+      ${rdvBanniere(planning, d.participations || [])}
     </section>
     ${retour ? `<div class="info info-action"><span>Aperçu de ce que voit ${esc(d.membre?.prenom || '')} avec son lien.</span><button class="btn-primaire btn-petit" id="b-retour">Revenir</button></div>` : ''}
     ${vueMembre({ planning, cot: d.periodes || [], parts: d.participations || [], infos: d.reglages?.infos_paiement, versements: d.versements || [], avance: Number(d.avance || 0), montant: d.reglages?.montant })}
@@ -3873,12 +3883,14 @@ async function pageLien(jeton, retour = null) {
 async function feuilleLien(m) {
   const l = (S.liensMembres || {})[m.id];
   const wa = numeroWa(m.whatsapp || '');
-  const message = (u) => `Bonjour ${m.prenom}, voici votre lien personnel pour suivre votre cotisation, vos participations et les rendez-vous de ${S.org?.nom || 'l’association'} : ${u} Il ouvre directement votre page, sans compte ni mot de passe. Gardez-le pour vous.`;
-  const u = l ? urlLien(l.jeton) : '';
+  const message = (u) => messageLien(m, u);
+  const u = l ? urlLien(l, m) : '';
   ouvrirFeuille(`<h2>Lien personnel</h2>
-    <div class="identite">${avatar(m)}<div><b>${esc(nomComplet(m))}</b><span class="muted">${l ? (l.nb_consultations ? `Ouvert ${l.nb_consultations} fois, dernière fois le ${dateFr(String(l.derniere_consultation).slice(0, 10))}` : 'Lien créé, pas encore ouvert') : 'Pas encore de lien'}</span></div></div>
+    <div class="identite">${avatar(m)}<div><b>${esc(nomComplet(m))}</b><span class="muted">${l ? (l.nb_consultations ? `Ouvert ${l.nb_consultations} fois${l.derniere_consultation ? `, dernière fois le ${dateFr(String(l.derniere_consultation).slice(0, 10))}` : ''}` : 'Lien créé, pas encore ouvert') : 'Pas encore de lien'}</span></div></div>
     <p class="muted" style="margin:0">Le lien ouvre la page de ${esc(m.prenom)} : cotisation, participations, rendez-vous à venir. Aucun compte ni mot de passe. Il ne montre rien d’autre et peut être coupé à tout moment.</p>
-    ${l ? `<label class="champ">Adresse du lien<input id="i-lien" readonly value="${esc(u)}"></label>
+    ${l ? `<div class="apercu-lien" aria-label="Aperçu du lien tel que le membre le reçoit">
+        <img src="${esc(S.logoUrl)}" alt=""><div><b>Votre espace membre · ${esc(S.org?.nom || '')}</b><span>Cotisation, participations et prochains rendez-vous</span><small>${esc(u.replace(/^https?:\/\//, ''))}</small></div></div>
+      <input id="i-lien" class="sr-only" readonly value="${esc(u)}" aria-label="Adresse du lien">
       <div class="actions-gauche">
         ${wa ? `<a class="btn btn-primaire btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(message(u))}">Envoyer par WhatsApp</a>` : ''}
         ${m.email ? `<a class="btn btn-tonal btn-petit" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Votre page personnelle')}&body=${encodeURIComponent(message(u))}">Envoyer par e-mail</a>` : ''}
@@ -3916,7 +3928,7 @@ async function feuilleLiens() {
   const sans = actifs.filter((m) => !S.liensMembres?.[m.id]);
   const ligneEnvoi = (m) => {
     const l = S.liensMembres?.[m.id]; const wa = numeroWa(m.whatsapp || '');
-    const msg = l ? `Bonjour ${m.prenom}, voici votre lien personnel pour suivre votre cotisation et les rendez-vous de ${S.org?.nom || 'l’association'} : ${urlLien(l.jeton)} Gardez-le pour vous.` : '';
+    const msg = l ? messageLien(m, urlLien(l, m)) : '';
     return `<li>${avatar(m)}<div class="corps"><b>${esc(nomComplet(m))}</b><span>${!l ? 'Pas de lien' : l.nb_consultations ? `Ouvert ${l.nb_consultations} fois` : 'Pas encore ouvert'}${wa ? '' : ' · sans numéro WhatsApp'}</span></div>
       ${l && wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}">WhatsApp</a>` : l && m.email ? `<a class="btn btn-texte btn-petit" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Votre page personnelle')}&body=${encodeURIComponent(msg)}">E-mail</a>` : ''}</li>`;
   };

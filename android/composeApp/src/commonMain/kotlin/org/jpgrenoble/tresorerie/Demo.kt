@@ -275,13 +275,14 @@ object Demo {
     fun majTexte(cle: String, texte: String?, profil: Profil?) { exiger(profil, "administrer"); textes[cle] = texte }
 
     // ---------- Liens personnels (même règle que la fonction lien_membre de la base) ----------
-    val liens = mutableListOf(LienMembre("m0", "a1b2c3d4e5f60718293a4b5c6d7e8f90", 3, ilYa(2)))
+    val liens = mutableListOf(LienMembre("m0", "a1b2c3d4e5f60718293a4b5c6d7e8f90", 3, ilYa(2), code = "k7qp2xyz9abc"))
     fun lienMembre(membreId: String, renouveler: Boolean, profil: Profil?): String {
         exiger(profil, "gerer_membres", "gerer_cotisations")
         val l = liens.firstOrNull { it.membreId == membreId }
         if (l != null && !renouveler) return l.jeton
         val jeton = (1..32).map { "0123456789abcdef".random() }.joinToString("")
-        liens.removeAll { it.membreId == membreId }; liens += LienMembre(membreId, jeton)
+        val code = (1..12).map { "abcdefghjkmnpqrstuvwxyz23456789".random() }.joinToString("")
+        liens.removeAll { it.membreId == membreId }; liens += LienMembre(membreId, jeton, code = code)
         return jeton
     }
     fun couperLien(membreId: String, profil: Profil?) { exiger(profil, "gerer_membres", "gerer_cotisations"); liens.removeAll { it.membreId == membreId } }

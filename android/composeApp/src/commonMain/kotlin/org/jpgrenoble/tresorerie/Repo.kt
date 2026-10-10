@@ -584,7 +584,11 @@ object Repo {
         client.from("liens_membres").delete { filter { eq("member_id", membreId) } }
     }
 
-    fun urlLien(jeton: String) = Config.SITE_URL + "?m=" + jeton
+    // Lien court et rassurant (même règle qu'urlLien du site) : …/?m=grace-k7qp2xyz9abc ; les anciens liens gardent le jeton
+    fun urlLien(l: LienMembre, m: Membre?): String {
+        val prenom = slugPrenom(m?.prenom)
+        return Config.SITE_URL + "?m=" + (l.code?.let { (if (prenom.isNotEmpty()) "$prenom-" else "") + it } ?: l.jeton)
+    }
 
     // ---------- Inventaire du matériel ----------
     suspend fun materiel(): List<Materiel> =
@@ -732,3 +736,13 @@ object Repo {
         client.from("categories").update({ set("nom", nom) }) { filter { eq("id", id) } }
     }
 }
+
+/** Prénom sans accent ni espace pour l'adresse du lien (« Grâce » → « grace »), comme slugPrenom du site. */
+fun slugPrenom(p: String?): String {
+    val sans = (p ?: "").lowercase().map { c -> when (c) { 'à', 'â', 'ä', 'á' -> 'a'; 'é', 'è', 'ê', 'ë' -> 'e'; 'î', 'ï', 'í' -> 'i'; 'ô', 'ö', 'ó' -> 'o'; 'ù', 'û', 'ü', 'ú' -> 'u'; 'ç' -> 'c'; 'ñ' -> 'n'; 'ÿ' -> 'y'; else -> c } }
+    return sans.filter { it in 'a'..'z' }.joinToString("").take(16)
+}
+
+/** Nom de l'association lisible dans un message (« JEUNES DE TOUS PAYS » → « Jeunes de Tous Pays »), comme nomAssoLisible du site. */
+fun nomAssoLisible(n: String): String = if (n.isNotEmpty() && n == n.uppercase())
+    n.lowercase().split(' ').mapIndexed { i, x -> if (i > 0 && x in listOf("de", "des", "du", "la", "le", "les", "et")) x else x.replaceFirstChar { it.uppercase() } }.joinToString(" ") else n
