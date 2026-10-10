@@ -10,6 +10,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -732,7 +733,7 @@ fun sectionsParametres(d: Donnees): List<Pair<String, List<SectionParam>>> {
             SectionParam("roles", "Rôles et droits", "Ce que chaque rôle peut faire", Icons.Outlined.Shield)) else emptyList(),
         "Données" to listOfNotNull(if (corbeille) SectionParam("corbeille", "Corbeille", "Éléments supprimés, à restaurer", Icons.Outlined.Delete) else null,
             if (admin) SectionParam("sauvegarde", "Sauvegarde", "Télécharger toutes les données", Icons.Outlined.Storage) else null,
-            if (admin && !d.organisation.configuree) SectionParam("assistant", "Assistant de configuration", "Terminer la configuration pas à pas", Icons.Outlined.AutoFixHigh) else null),
+            if (admin && (!d.organisation.configuree || EtatMiseEnRoute.restantes > 0)) SectionParam("miseenroute", "Mise en route", "Les étapes restantes, assistant de configuration", Icons.Outlined.AutoFixHigh) else null),
     ).filter { it.second.isNotEmpty() }
 }
 
@@ -806,4 +807,80 @@ fun EnteteSection(s: SectionParam) {
         Text(s.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(s.description, color = Couleurs.Texte2, fontSize = 14.sp)
     }
+}
+
+
+// =====================================================================
+// Mise en route et rappels dosés (mêmes règles que le site : rappelPermis, repousser, discretPermis)
+// « Plus tard » repousse d'une semaine ; après deux refus, plus de fenêtre automatique, seulement un rappel
+// discret (petit message en bas), au plus une fois par semaine.
+// =====================================================================
+object EtatMiseEnRoute { var restantes by mutableStateOf(1); var fenetreMontree = false }
+
+object Rappels {
+    private const val SEMAINE = 7L * 86_400_000L
+    private fun maintenant() = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+    private fun lire(cle: String): Pair<Int, Long>? = lirePreference(cle)?.split('|')?.let { (it.getOrNull(0)?.toIntOrNull() ?: 0) to (it.getOrNull(1)?.toLongOrNull() ?: 0L) }
+    fun permis(profil: String, cle: String): Boolean { val r = lire("rappel.$profil.$cle") ?: return true; return r.first < 2 && maintenant() >= r.second }
+    fun repousser(profil: String, cle: String) { val n = (lire("rappel.$profil.$cle")?.first ?: 0) + 1; garderPreference("rappel.$profil.$cle", "$n|${maintenant() + SEMAINE}") }
+    fun discretPermis(profil: String, cle: String) = maintenant() >= (lire("discret.$profil.$cle")?.second ?: 0L)
+    fun marquerDiscret(profil: String, cle: String) = garderPreference("discret.$profil.$cle", "0|${maintenant() + SEMAINE}")
+}
+
+/** Étapes de mise en route, cochées automatiquement : (libellé, fait, cible). Cibles : assistant, fiche, apparence, comptes, membres, cotisations. */
+suspend fun etapesMiseEnRoute(d: Donnees): List<Triple<String, Boolean, String>> {
+    val fiche = Triple("Remplir votre fiche de membre", d.profil.memberId != null, "fiche")
+    if (!d.peut("administrer")) return listOf(fiche)
+    val comptes = try { Repo.tousLesComptes() } catch (_: Exception) { d.comptes }
+    val nbComptes = try { Repo.profilsComplets().size + Repo.invitations().size } catch (_: Exception) { 1 }
+    val cotis = try { Repo.cotisations(aujourdhui().year).isNotEmpty() } catch (_: Exception) { false }
+    return listOfNotNull(
+        if (!d.organisation.configuree) Triple("Configurer l’association avec l’assistant", false, "assistant") else null,
+        fiche,
+        Triple("Ajouter le logo et la photo de l’association", d.organisation.logo != null || d.organisation.banniere != null, "apparence"),
+        Triple("Saisir les soldes de départ de la caisse et de la banque", comptes.any { it.soldeInitial != 0.0 }, "comptes"),
+        Triple("Ajouter les membres (un par un ou par import)", d.membres.size > 1, "membres"),
+        Triple("Désigner le bureau : président, secrétaire…", nbComptes > 1, "membres"),
+        Triple("Générer les cotisations de l’année", cotis, "cotisations"),
+    )
+}
+
+@Composable
+fun ListeMiseEnRoute(etapes: List<Triple<String, Boolean, String>>, onChoix: (String) -> Unit) {
+    etapes.forEach { (titre, fait, cible) ->
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = !fait) { onChoix(cible) }.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(26.dp).background(if (fait) Couleurs.Bleu else Color.Transparent, CircleShape)
+                .then(if (fait) Modifier else Modifier.border(2.dp, Color(0xFFD9D3D0), CircleShape)), contentAlignment = Alignment.Center) {
+                if (fait) Text("✓", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+            }
+            Text(titre, fontWeight = FontWeight.SemiBold, color = if (fait) Couleurs.Texte2 else Couleurs.Texte, modifier = Modifier.weight(1f),
+                textDecoration = if (fait) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
+            if (!fait) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FeuilleMiseEnRoute(etapes: List<Triple<String, Boolean, String>>, onChoix: (String) -> Unit, onPlusTard: () -> Unit, onFermer: () -> Unit) {
+    val reste = etapes.count { !it.second }
+    ModalBottomSheet(onDismissRequest = onFermer) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Mise en route", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(if (reste > 0) "$reste étape${if (reste > 1) "s" else ""} restante${if (reste > 1) "s" else ""}. Touchez une étape pour la faire maintenant." else "Tout est en place.", color = Couleurs.Texte2)
+            ListeMiseEnRoute(etapes) { onFermer(); onChoix(it) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton(onClick = onPlusTard) { Text("Me le rappeler dans une semaine") }
+                Button(onClick = onFermer) { Text("Fermer") }
+            }
+        }
+    }
+}
+
+@Composable
+fun ParamMiseEnRoute(d: Donnees, onChoix: (String) -> Unit) {
+    var etapes by remember { mutableStateOf<List<Triple<String, Boolean, String>>>(emptyList()) }
+    LaunchedEffect(Unit) { etapes = etapesMiseEnRoute(d) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) { item { CarteBlanche { ListeMiseEnRoute(etapes, onChoix) } } }
 }

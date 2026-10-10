@@ -68,8 +68,9 @@ private fun nombre(s: String) = s.replace(',', '.').replace(" ", "").replace(NBS
 // deux volets sur tablette, menu puis section sur téléphone (comme le site)
 // =====================================================================
 @Composable
-fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit, onAssistant: () -> Unit = {}, onFermer: () -> Unit = {}) {
-    var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit, onAssistant: () -> Unit = {}, onFermer: () -> Unit = {},
+                    sectionInitiale: String? = null, onCible: (String) -> Unit = {}) {
+    var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(sectionInitiale) }
     val toutes = sectionsParametres(d).flatMap { it.second }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val large = maxWidth >= 840.dp
@@ -88,13 +89,8 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
             "roles" -> ParamRoles(d, message, recharger)
             "corbeille" -> ParamCorbeille(d, message, recharger)
             "sauvegarde" -> ParamSauvegarde(message)
-            else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-                item {
-                    CarteBlanche {
-                        Text("L’assistant guide pas à pas : identité de l’association, coordonnées, exercice, comptes et soldes de départ, cotisation. Les informations déjà saisies sont conservées.", color = Couleurs.Texte2)
-                        Button(onClick = onAssistant) { Text("Lancer l’assistant") }
-                    }
-                }
+            else -> ParamMiseEnRoute(d) { cible ->
+                when (cible) { "assistant" -> onAssistant(); "apparence", "comptes" -> section = cible; else -> onCible(cible) }
             }
         }
         Column(Modifier.fillMaxSize().background(Color(0xFFEEF1F6))) {
@@ -1270,32 +1266,27 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     @Composable fun Hero() = Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         HeroRendezVous(prochain, parts.firstOrNull { it.collecteId != null && it.collecteId == prochain?.collecteId }, onAgenda = { prochain?.let(agenda) }) { prochain?.let { detail = it } }
         if (du) AlerteMembre(listOfNotNull(if (retard > 0.005) "Cotisation : ${euros(retard)} en retard" else null, if (resteParts > 0.005) "Participations : ${euros(resteParts)} à régler" else null).joinToString(" · ")) {
-            scope.launch { liste.animateScrollToItem(4) }   // « Comment régler »
+            EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(4) }   // « Comment régler »
         }
     }
-    @Composable fun Suite() = CarteBlanche {
-        Text("Ensuite au planning", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    val etatCotis = if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour"
+    @Composable fun Suite() = Rubrique("m-planning", "Ensuite au planning", if (suite.isEmpty()) "Rien d’autre" else "${suite.size} rendez-vous") {
         if (suite.isEmpty()) Text("Rien d’autre d’annoncé pour l’instant.", color = Couleurs.Texte2)
         suite.forEach { p -> LigneRendezVous(p) { detail = p } }
     }
-    @Composable fun Cotisation() = CarteStatut(retard > 0.005, cotis.isNotEmpty(), "Ma cotisation ${aujourdhui().year}",
-        if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour",
-        if (retard > 0.005) "Périodes commencées et non réglées" else cotis.filter { it.statut == "regle" || it.statut == "dispense" }.maxOfOrNull { it.periode }?.let { "réglée jusqu’à ${nomPeriode(it, pas)}" } ?: "") {
+    @Composable fun Cotisation() = Rubrique("m-cotisation", "Ma cotisation", etatCotis, alerte = retard > 0.005) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(if (retard > 0.005) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle, null, tint = if (retard > 0.005) Couleurs.Erreur else Color(0xFF2E8B4E), modifier = Modifier.size(20.dp))
+            Text(etatCotis, fontWeight = FontWeight.Bold, color = if (retard > 0.005) Couleurs.Erreur else Couleurs.Texte)
+            val regle = cotis.filter { it.statut == "regle" || it.statut == "dispense" }.maxOfOrNull { it.periode }
+            if (retard <= 0.005 && regle != null) Text("· réglée jusqu’à ${nomPeriode(regle, pas)}", fontSize = 14.sp, color = Couleurs.Texte2)
+        }
         val l = cotis.filter { it.annee == aujourdhui().year }.sortedBy { it.periode }
         if (l.isNotEmpty()) GrillePeriodes(l.map { it.periode to it.statut }, pas)
     }
-    @Composable fun Regler() { if (du) CarteBlanche { Text("Comment régler", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text(infos ?: "Adressez-vous au trésorier.", fontSize = 14.sp) } }
-    @Composable fun Participations() { if (parts.isNotEmpty()) CarteBlanche {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Mes participations", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (resteParts > 0.005) Puce("${euros(resteParts)} à régler", Couleurs.JauneClair, Couleurs.SurJaune)
-        }
-        ListeParticipations(parts)
-    } }
-    @Composable fun Anniversaires() = CarteBlanche {
-        Text("Anniversaires ${deMois(mois)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        ListeAnniversaires(anniv, mois)
-    }
+    @Composable fun Regler() { if (du) Rubrique("m-regler", "Comment régler", "À régler") { Text(infos ?: "Adressez-vous au trésorier.", fontSize = 14.sp) } }
+    @Composable fun Participations() { if (parts.isNotEmpty()) Rubrique("m-participations", "Mes participations", if (resteParts > 0.005) "${euros(resteParts)} à régler" else "${parts.size}") { ListeParticipations(parts) } }
+    @Composable fun Anniversaires() = Rubrique("m-anniversaires", "Anniversaires ${deMois(mois)}", if (anniv.isEmpty()) "Aucun" else "${anniv.size}", ouverteParDefaut = false) { ListeAnniversaires(anniv, mois) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val large = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxWidth > maxHeight)
@@ -1324,69 +1315,47 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     }
 }
 
-// Prochain rendez-vous : grand, en couleur (couleurEvt), compte à rebours, « Ajouter à mon agenda » et « Voir le détail »
+// Prochain rendez-vous : carte sobre sous la bannière (pas une seconde bannière, comme .prochain du site) ;
+// la couleur du rendez-vous tient dans la date et le filet de gauche ; toucher la carte ouvre le détail
 @Composable
 fun HeroRendezVous(p: Projet?, part: Participation?, onAgenda: () -> Unit = {}, onClick: () -> Unit) {
     if (p == null || p.debut == null) {
         CarteBlanche {
-            Text("PROCHAIN RENDEZ-VOUS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Couleurs.Texte2, letterSpacing = 0.6.sp)
-            Text("Rien de prévu pour l’instant", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Le prochain rendez-vous s’affichera ici dès qu’il sera annoncé.", color = Couleurs.Texte2, fontSize = 14.sp)
+            Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+            Text("Rien de prévu pour l’instant", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Il s’affichera ici dès qu’il sera annoncé.", color = Couleurs.Texte2, fontSize = 14.sp)
         }
         return
     }
-    val (_, encre, accent) = couleurEvt(p.id)
+    val (fond, encre, accent) = couleurEvt(p.id)
     val j = LocalDate.parse(p.debut.take(10))
-    val ecart = aujourdhui().daysUntil(j)
-    val pulsation = rememberInfiniteTransition(label = "imminent")
-    val halo by pulsation.animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Restart), label = "halo")
-    Surface(shape = RoundedCornerShape(24.dp), color = Color.Transparent, contentColor = Color.White, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.background(Brush.linearGradient(listOf(encre, accent))).drawBehind {
-                drawCircle(Color.White.copy(alpha = 0.18f), radius = 90.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width - 30.dp.toPx(), 10.dp.toPx()))
-                drawCircle(Color.White.copy(alpha = 0.10f), radius = 140.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.75f, size.height + 40.dp.toPx()))
-            }.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Outlined.Event, null, modifier = Modifier.size(16.dp))
-                    Text("PROCHAIN RENDEZ-VOUS", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp, maxLines = 1)
-                }
-                Spacer(Modifier.weight(1f))
-                Surface(color = Color.White, contentColor = encre, shape = RoundedCornerShape(50), shadowElevation = 3.dp,
-                    modifier = if (ecart <= 1) Modifier.drawBehind { drawRoundRect(Color.White.copy(alpha = 0.6f * (1 - halo)), topLeft = androidx.compose.ui.geometry.Offset(-10.dp.toPx() * halo, -10.dp.toPx() * halo),
-                        size = androidx.compose.ui.geometry.Size(size.width + 20.dp.toPx() * halo, size.height + 20.dp.toPx() * halo), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height)) } else Modifier) {
-                    Row(Modifier.padding(horizontal = 14.dp, vertical = 4.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        when {
-                            ecart <= 0 -> Text("Aujourd’hui", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                            ecart == 1 -> Text("Demain", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                            else -> { Text("Dans", fontSize = 13.sp, fontWeight = FontWeight.Bold); Text("$ecart", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, lineHeight = 24.sp); Text("jours", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-                        }
-                    }
-                }
+    val imminent = aujourdhui().daysUntil(j) <= 1
+    Surface(onClick = onClick, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(start = 16.dp, top = 14.dp, end = 12.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.width(56.dp).clip(RoundedCornerShape(14.dp)).background(accent).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(JOURS_COURTS[j.dayOfWeek.ordinal].uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("${j.dayOfMonth}", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, lineHeight = 28.sp)
+                Text(MOIS_COURTS[j.monthNumber - 1].uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Surface(color = Color.White, contentColor = encre, shape = RoundedCornerShape(16.dp), shadowElevation = 4.dp) {
-                    Column(Modifier.width(76.dp).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(JOURS_COURTS[j.dayOfWeek.ordinal].uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("${j.dayOfMonth}", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 38.sp)
-                        Text(MOIS_COURTS[j.monthNumber - 1].uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+                    Text(dansJours(p.debut), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (imminent) Color.White else encre,
+                        modifier = Modifier.background(if (imminent) accent else fond, RoundedCornerShape(50)).padding(horizontal = 9.dp, vertical = 1.dp))
                 }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(p.nom, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text(jourLong(p.debut) + " · " + (if (p.heureDebut != null) heureFr(p.heureDebut) + (p.heureFin?.let { " – " + heureFr(it) } ?: "") else "toute la journée"), fontSize = 15.sp)
-                    p.lieu?.let { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { Icon(Icons.Outlined.Place, null, modifier = Modifier.size(16.dp)); Text(it, fontSize = 15.sp) } }
-                    p.description?.let { Text(it, fontSize = 13.sp, color = Color.White.copy(alpha = 0.85f), maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                    p.participation?.let { m -> Text("Participation ${euros(m)}" + (part?.let { " · vous avez donné ${euros(it.donne)}" } ?: ""), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = encre,
-                        modifier = Modifier.padding(top = 4.dp).background(Color.White.copy(alpha = 0.95f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp)) }
-                }
+                Text(p.nom, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(listOfNotNull(if (p.heureDebut != null) heureFr(p.heureDebut) + (p.heureFin?.let { " – " + heureFr(it) } ?: "") else "Toute la journée", p.lieu).joinToString(" · "),
+                    fontSize = 14.sp, color = Couleurs.Texte2)
+                p.description?.let { Text(it, fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                p.participation?.let { m -> Puce("Participation ${euros(m)}" + (part?.let { " · donné ${euros(it.donne)}" } ?: ""), Couleurs.JauneClair, Couleurs.SurJaune) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = onAgenda, border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.7f)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White), modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Outlined.EditCalendar, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Mon agenda", maxLines = 1)
+            Surface(onClick = onAgenda, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, contentColor = encre,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE6E2E0))) {
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp).widthIn(min = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Outlined.EditCalendar, contentDescription = "Ajouter à mon agenda", modifier = Modifier.size(20.dp))
+                    Text("Agenda", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Button(onClick = onClick, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = encre), modifier = Modifier.weight(1f)) { Text("Voir le détail", maxLines = 1) }
             }
         }
     }
@@ -1403,25 +1372,6 @@ fun AlerteMembre(texte: String, onClick: () -> Unit) =
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
         }
     }
-
-// Carte de situation : l'état en tête et en couleur (vert à jour, rouge en retard)
-@Composable
-fun CarteStatut(alerte: Boolean, commencee: Boolean, titre: String, valeur: String, detail: String, content: @Composable ColumnScope.() -> Unit) {
-    val (clair, fort) = when { alerte -> Couleurs.ErreurClair to Couleurs.Erreur; commencee -> Color(0xFFDDF3E2) to Color(0xFF2E8B4E); else -> Color(0xFFEFEDEC) to Couleurs.Texte2 }
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.drawBehind { drawRect(fort, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(44.dp).background(clair, CircleShape), contentAlignment = Alignment.Center) { Icon(if (alerte) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle, null, tint = fort) }
-                Column {
-                    Text(titre, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
-                    Text(valeur, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = if (alerte) Couleurs.Erreur else Couleurs.Texte)
-                    if (detail.isNotEmpty()) Text(detail, fontSize = 13.sp, color = Couleurs.Texte2)
-                }
-            }
-            content()
-        }
-    }
-}
 
 // Rendez-vous dans une liste, avec sa couleur (filet, date pleine, « Dans N jours »)
 @Composable

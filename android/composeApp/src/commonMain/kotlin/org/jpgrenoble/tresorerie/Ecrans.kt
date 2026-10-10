@@ -128,18 +128,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     // Opérations saisies puis toutes annulées : rien à représenter sur 12 mois
     val sansMouvementNet = operations.isNotEmpty() && serie.all { kotlin.math.abs(it.rec) < 0.005 && kotlin.math.abs(it.dep) < 0.005 }
     val ecart12 = serie.firstOrNull()?.let { serie.last().solde - (it.solde - it.rec + it.dep) } ?: 0.0
-    // Bien démarrer : étapes de mise en route, cochées automatiquement
-    val etapesDemarrage = if (d.peut("administrer")) listOf(
-        "Créer votre fiche de membre" to (d.profil.memberId != null),
-        "Renseigner l’association : nom, logo, photo" to (d.organisation.logo != null || d.organisation.banniere != null),
-        "Saisir les soldes de départ des comptes" to comptesTous.ifEmpty { d.comptes }.any { it.soldeInitial != 0.0 },
-        "Ajouter les membres" to (d.membres.size > 1),
-        "Désigner le bureau : président, secrétaire…" to (nbComptes > 1),
-        "Générer les cotisations de l’année" to cotis.isNotEmpty(),
-    ) else emptyList()
-    val faites = etapesDemarrage.count { it.second }
     val rubriques = buildList {
-        if (etapesDemarrage.isNotEmpty() && faites < etapesDemarrage.size) add("demarrer")
         if (d.profil.memberId != null) add("masituation")
         if (taches.isNotEmpty()) add("traiter")
         if (voitSoldes && operations.isNotEmpty()) addAll(listOf("chiffres", "evolution", "repartition"))
@@ -183,22 +172,6 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { val v = !toutOuvert; rubriques.forEach { EtatAccueil.ouvertes[it] = v } }) {
                     Text(if (toutOuvert) "Tout replier" else "Tout déplier")
-                }
-            }
-        }
-        if (etapesDemarrage.isNotEmpty() && faites < etapesDemarrage.size) item {
-            Rubrique("demarrer", "Bien démarrer", "$faites sur ${etapesDemarrage.size}") {
-                etapesDemarrage.forEachIndexed { i, (titre, fait) ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
-                        onAller(when (i) { 0, 3, 4 -> "membres"; 5 -> "cotisations"; else -> "parametres" })
-                    }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.size(26.dp).background(if (fait) Couleurs.Bleu else Color.Transparent, CircleShape)
-                            .then(if (fait) Modifier else Modifier.border(2.dp, Color(0xFFD9D3D0), CircleShape)), contentAlignment = Alignment.Center) {
-                            if (fait) Text("✓", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-                        }
-                        Text(titre, fontWeight = FontWeight.SemiBold, color = if (fait) Couleurs.Texte2 else Couleurs.Texte,
-                            textDecoration = if (fait) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
-                    }
                 }
             }
         }
@@ -371,8 +344,8 @@ internal fun ListeAnniversaires(anniv: List<Anniversaire>, mois: Int) {
 
 // Rubrique dépliable : un appui sur l'en-tête ouvre ou ferme ; repliée, elle montre un résumé
 @Composable
-internal fun Rubrique(id: String, titre: String, resume: String, alerte: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
-    val ouverte = EtatAccueil.ouvertes[id] ?: true
+internal fun Rubrique(id: String, titre: String, resume: String, alerte: Boolean = false, ouverteParDefaut: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    val ouverte = EtatAccueil.ouvertes[id] ?: ouverteParDefaut
     val rotation by androidx.compose.animation.core.animateFloatAsState(if (ouverte) 180f else 0f)
     Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large,
         border = if (alerte) androidx.compose.foundation.BorderStroke(2.dp, Couleurs.Erreur.copy(alpha = 0.5f)) else null) {

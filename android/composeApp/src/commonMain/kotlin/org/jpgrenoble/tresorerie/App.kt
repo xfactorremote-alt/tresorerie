@@ -271,8 +271,9 @@ fun Principal(cle: String) {
     when {
         sansProfil -> MessagePlein("Accès en attente",
             "Votre adresse n’a pas encore d’accès. Demandez à l’administrateur de vous inviter.") { scope.launch { Repo.deconnecter() } }
-        d != null && d.peut("administrer") && !d.organisation.configuree && !assistantRepousse ->
-            AssistantConfiguration(d, onFini = { assistantRepousse = true; version++ }, onPlusTard = { assistantRepousse = true })
+        // Assistant : proposé à l'administrateur tant que l'association n'est pas configurée, mais dosé (Rappels)
+        d != null && d.peut("administrer") && !d.organisation.configuree && !assistantRepousse && remember(d.profil.id) { Rappels.permis(d.profil.id, "assistant") } ->
+            AssistantConfiguration(d, onFini = { assistantRepousse = true; version++ }, onPlusTard = { Rappels.repousser(d.profil.id, "assistant"); EtatMiseEnRoute.fenetreMontree = true; assistantRepousse = true })
         d != null && assistantDemande -> AssistantConfiguration(d, onFini = { assistantDemande = false; version++ }, onPlusTard = { assistantDemande = false })
         d != null -> Navigation(d, recharger = { version++ }, onAssistant = { assistantDemande = true })
         err != null -> MessagePlein("Connexion impossible", err, action = "Réessayer") { version++ }
@@ -328,16 +329,22 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
     var sousEcran by rememberSaveable { mutableStateOf<String?>(null) }
     var compteFiltre by remember { mutableStateOf<String?>(null) }
     // Paramètres : un espace à part (plus de barre d'onglets ni de barre du haut de l'application) ; « Fermer » ramène où l'on était
+    var sectionParam by remember { mutableStateOf<String?>(null) }
     var avantParam by remember { mutableStateOf<Pair<Onglet, String?>?>(null) }
     val enParametres = sousEcran == "parametres"
     val ouvrirParametres = { if (sousEcran != "parametres") avantParam = onglet to sousEcran; if (!d.droits.isEmpty()) onglet = Onglet.Plus; sousEcran = "parametres" }
-    val fermerParametres = { val a = avantParam; if (a != null) { onglet = a.first; sousEcran = a.second } else sousEcran = null; avantParam = null }
+    val fermerParametres = { val a = avantParam; if (a != null) { onglet = a.first; sousEcran = a.second } else sousEcran = null; avantParam = null; sectionParam = null }
     val snackbar = remember { SnackbarHostState() }
     Annulation.hote = snackbar
     val scope = rememberCoroutineScope()
     val message: (String) -> Unit = { m -> scope.launch { snackbar.showSnackbar(m) } }
     var nouveautesOuvertes by remember { mutableStateOf(false) }
     var ficheRepoussee by rememberSaveable { mutableStateOf(false) }
+    var ficheDemandee by remember { mutableStateOf(false) }
+    // Fiche de membre : demandée une fois par ouverture, jamais dans les Paramètres, et dosée (Rappels)
+    val ficheAuto = remember(d.profil.id) { d.profil.memberId == null && Rappels.permis(d.profil.id, "fiche") }
+    var etapes by remember { mutableStateOf<List<Triple<String, Boolean, String>>?>(null) }
+    var miseEnRouteOuverte by remember { mutableStateOf(false) }
     // Nouveautés : rechargées chaque minute tant que l'application est ouverte
     LaunchedEffect(d.profil.id) { while (true) { EtatNouveautes.charger(); kotlinx.coroutines.delay(60_000) } }
     // Personne sans droit financier : espace adhérent seul
@@ -367,6 +374,28 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
             "depenses" -> onglet = Onglet.Depenses
             "cotisations" -> onglet = if (Onglet.Cotisations in onglets) Onglet.Cotisations else Onglet.Accueil
             else -> { sousEcran = section; onglet = Onglet.Plus }
+        }
+    }
+    val allerCible: (String) -> Unit = { cible ->
+        when (cible) {
+            "assistant" -> onAssistant()
+            "fiche" -> ficheDemandee = true
+            "apparence", "comptes" -> { sectionParam = cible; ouvrirParametres() }
+            else -> { if (enParametres) fermerParametres(); aller(cible) }
+        }
+    }
+    // Rappel discret de la mise en route : petit message en bas, au plus une fois par semaine, jamais par-dessus une fenêtre
+    LaunchedEffect(d.profil.id) {
+        val l = etapesMiseEnRoute(d); etapes = l
+        val reste = l.count { !it.second }
+        EtatMiseEnRoute.restantes = reste
+        if (reste > 0 && !ficheAuto && !EtatMiseEnRoute.fenetreMontree && Rappels.discretPermis(d.profil.id, "miseenroute")) {
+            kotlinx.coroutines.delay(2500)
+            Rappels.marquerDiscret(d.profil.id, "miseenroute")
+            val admin = d.peut("administrer")
+            val r = snackbar.showSnackbar(if (admin) "Mise en route : $reste étape${if (reste > 1) "s" else ""} restante${if (reste > 1) "s" else ""}" else "Votre fiche de membre est à compléter",
+                actionLabel = if (admin) "Voir" else "Remplir", withDismissAction = true, duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) { if (admin) miseEnRouteOuverte = true else ficheDemandee = true }
         }
     }
     val c = EtatNouveautes.n.value.compteurs
@@ -409,7 +438,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
             label = "ecran") { (ongletVu, sousEcranVu, vueVu) ->
         Box(Modifier.fillMaxSize()) {
             if (adherentSeul) {
-                if (sousEcranVu == "parametres") EcranParametres(d, message, recharger, onFermer = fermerParametres)
+                if (sousEcranVu == "parametres") EcranParametres(d, message, recharger, onFermer = fermerParametres, sectionInitiale = sectionParam, onCible = allerCible)
                 else if (vueVu == 1) EcranPlanning(d, message) else EcranAdherent(d, message, onReglages = ouvrirParametres, onCloche = { nouveautesOuvertes = true })
             }
             else when (ongletVu) {
@@ -434,7 +463,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
                     "rapprochement" -> EcranRapprochement(d, message)
                     "materiel" -> EcranMateriel(d, message)
                     "rapports" -> EcranRapports(d, message)
-                    "parametres" -> EcranParametres(d, message, recharger, onAssistant = onAssistant, onFermer = fermerParametres)
+                    "parametres" -> EcranParametres(d, message, recharger, onAssistant = onAssistant, onFermer = fermerParametres, sectionInitiale = sectionParam, onCible = allerCible)
                     else -> EcranPlus(d) { sousEcran = it }
                 }
             }
@@ -443,5 +472,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
     }
     if (nouveautesOuvertes) FeuilleNouveautes(onAller = aller) { nouveautesOuvertes = false }
     // Nouveau membre : sa fiche lui est demandée tant qu'elle n'est pas remplie (« Plus tard » jusqu'à la prochaine ouverture)
-    if (d.profil.memberId == null && !ficheRepoussee) FeuilleMaFiche(d, message) { ok -> ficheRepoussee = true; if (ok) recharger() }
+    if (d.profil.memberId == null && (ficheDemandee || (ficheAuto && !ficheRepoussee && !enParametres)))
+        FeuilleMaFiche(d, message) { ok -> if (!ok && !ficheDemandee) { Rappels.repousser(d.profil.id, "fiche"); message("D’accord, on vous le rappellera plus tard") }; ficheRepoussee = true; ficheDemandee = false; if (ok) recharger() }
+    if (miseEnRouteOuverte) etapes?.let { l -> FeuilleMiseEnRoute(l, onChoix = allerCible, onPlusTard = { Rappels.marquerDiscret(d.profil.id, "miseenroute"); miseEnRouteOuverte = false }) { miseEnRouteOuverte = false } }
 }

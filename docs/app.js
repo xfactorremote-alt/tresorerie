@@ -173,10 +173,11 @@ async function entrer() {
     await chargerReferentiels();
     // Ordre de l'arrivée : configuration de l'association (administrateur, une fois), puis l'accueil ;
     // la fiche de membre est demandée par-dessus l'accueil tant qu'elle n'est pas remplie
-    if (peut('administrer') && S.org && S.org.configuree === false && !S.assistantRepousse) return assistantConfiguration();
-    if (!location.hash) location.hash = '#tableau';
+    if (peut('administrer') && S.org && S.org.configuree === false && !S.assistantRepousse && rappelPermis('assistant')) return assistantConfiguration();
+    if (!location.hash) history.replaceState(null, '', location.pathname + location.search + '#tableau');
     router();
     demarrerNouveautes();
+    verifierRappels();
   } catch (e) { erreur(e); }
 }
 
@@ -367,7 +368,7 @@ function feuilleMaFiche() {
     <div class="actions"><button type="button" class="btn-texte" id="b-plus-tard">Plus tard</button><button class="btn-primaire">Enregistrer ma fiche</button></div>
   </form>`, (root) => {
     const f = $('#f-ma-fiche', root);
-    $('#b-plus-tard', root).addEventListener('click', () => { S.ficheRepoussee = true; fermerFeuille(); });
+    $('#b-plus-tard', root).addEventListener('click', () => { S.ficheRepoussee = true; repousser('fiche'); fermerFeuille(); toast('D’accord, on vous le rappellera plus tard'); });
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const bouton = f.querySelector('.btn-primaire'); bouton.disabled = true;
@@ -449,7 +450,7 @@ async function assistantConfiguration(etape = 0) {
   }));
   f.debut?.addEventListener('change', () => { if (!f.debut.value) return; const e = exerciceDe(f.debut.value); f.fin.value = e.fin; f.libelle.value = e.libelle; });
   $('#b-precedent')?.addEventListener('click', () => assistantConfiguration(etape - 1));
-  $('#b-assistant-plus-tard')?.addEventListener('click', () => { S.assistantRepousse = true; if (!location.hash) location.hash = '#tableau'; router(); demarrerNouveautes(); });
+  $('#b-assistant-plus-tard')?.addEventListener('click', () => { S.assistantRepousse = true; repousser('assistant'); S.rappelFait = true; if (!location.hash) history.replaceState(null, '', location.pathname + location.search + '#tableau'); router(); demarrerNouveautes(); });
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
     const bouton = f.querySelector('.btn-primaire'); bouton.disabled = true;
@@ -477,7 +478,7 @@ async function assistantConfiguration(etape = 0) {
       } else {
         await q(sb.from('organisation').update({ configuree: true }).eq('id', 1));
         await chargerOrganisation(); S.assistant = null;
-        if (!location.hash) location.hash = '#tableau';
+        if (!location.hash) history.replaceState(null, '', location.pathname + location.search + '#tableau');
         router(); demarrerNouveautes(); toast('Configuration enregistrée');
         return;
       }
@@ -667,8 +668,9 @@ async function router() {
   try { await PAGES[page](); } catch (e) { erreur(e); }
   window.scrollTo(0, 0);
   marquerVu(page);
-  // Nouveau membre : sa fiche lui est demandée tant qu'elle n'est pas remplie (« Plus tard » la repousse à la prochaine connexion)
-  if (!S.profil.member_id && !S.ficheRepoussee) feuilleMaFiche();
+  // Nouveau membre : sa fiche lui est demandée une fois par session, jamais dans les Paramètres ; « Plus tard » la repousse
+  // d'une semaine et, après deux refus, il ne reste qu'un rappel discret (verifierRappels)
+  if (!S.profil.member_id && !S.ficheRepoussee && !S.ficheMontree && page !== 'parametres' && rappelPermis('fiche')) { S.ficheMontree = true; feuilleMaFiche(); }
 }
 window.addEventListener('hashchange', router);
 // Chiffres clés qui « montent » jusqu'à leur valeur (désactivé si la personne préfère moins d'animations)
@@ -819,19 +821,6 @@ async function pageTableau() {
       <a class="btn btn-texte" href="#ecritures" style="align-self:flex-start">Toutes les opérations</a>`
     : '<div class="vide">Aucune opération.</div>';
 
-  // Bien démarrer : étapes de mise en route, cochées automatiquement
-  const etapesDemarrage = peut('administrer') ? [
-    ['Créer votre fiche de membre', !!S.profil.member_id, '#membres', 'b-dem-fiche'],
-    ['Renseigner l’association : nom, logo, photo', !!(S.org?.logo_path || S.org?.banniere_path), '#parametres', 'b-dem-asso'],
-    ['Saisir les soldes de départ de la caisse et de la banque', S.comptes.some((c) => Number(c.solde_initial)), '#parametres', 'b-dem-soldes'],
-    ['Ajouter les membres (un par un ou par import)', S.membres.length > 1, '#membres'],
-    ['Désigner le bureau : président, secrétaire…', (S.profils?.length || 0) > 1 || (S.invitations?.length || 0) > 0, '#membres'],
-    ['Générer les cotisations de l’année', cotis.length > 0, '#cotisations'],
-  ] : [];
-  const faites = etapesDemarrage.filter((e) => e[1]).length;
-  const demarrage = etapesDemarrage.length && faites < etapesDemarrage.length
-    ? rubrique('demarrer', 'Bien démarrer', `${faites} sur ${etapesDemarrage.length}`, `<ol class="etapes-demarrage">${etapesDemarrage.map(([t, fait, lien, id]) => `<li class="${fait ? 'fait' : ''}"><span class="coche" aria-hidden="true">${fait ? '✓' : ''}</span><a href="${lien}" ${id ? `id="${id}"` : ''}>${t}</a>${fait ? '<span class="sr-only"> (fait)</span>' : ''}</li>`).join('')}</ol>`, { classe: 'rub-demarrer' })
-    : '';
   const sansOperations = !toutes.length;
   // Opérations saisies puis toutes annulées : rien à représenter sur 12 mois
   const sansMouvementNet = !sansOperations && serie.every((x) => !Math.round(x.rec * 100) && !Math.round(x.dep * 100));
@@ -839,7 +828,6 @@ async function pageTableau() {
     ${situation}
     ${comptes}
     <div class="rub-outils"><button class="btn-texte btn-petit" id="b-rubriques">Tout replier</button></div>
-    ${demarrage}
     ${S.profil.member_id ? rubrique('masituation', 'Ma situation', retardDe(maCot) > 0 ? `Cotisation : ${eur(retardDe(maCot))} en retard` : 'Cotisation à jour',
       `${blocMaCotisation(maCot)}${mesParts.length ? `<h3>Mes participations</h3>${listeParticipations(mesParts)}` : ''}`, { ouverte: retardDe(maCot) > 0 }) : ''}
     ${taches.length ? rubrique('traiter', 'À traiter', pl(taches.length, 'action'), `<ul class="liste">${taches.join('')}</ul>`, { classe: retardsActifs.length || aRegul.length ? 'rub-alerte' : '' }) : ''}
@@ -856,9 +844,6 @@ async function pageTableau() {
   brancherInfobulles($('.contenu'));
   brancherRubriques();
   document.querySelectorAll('[data-filtre-dep]').forEach((a) => a.addEventListener('click', () => { S.filtreDepenses = a.dataset.filtreDep; }));
-  $('#b-dem-fiche')?.addEventListener('click', (e) => { e.preventDefault(); feuilleMembre(null, { lierAMoi: true, apres: () => router() }); });
-  $('#b-dem-soldes')?.addEventListener('click', () => { S.ongletParam = 'comptes'; S.sectionDemandee = true; });
-  $('#b-dem-asso')?.addEventListener('click', () => { S.ongletParam = 'apparence'; S.sectionDemandee = true; });
   document.querySelectorAll('[data-compte]').forEach((a) => a.addEventListener('click', () => {
     S.filtres = { periode: 'annee', compte: a.dataset.compte };
   }));
@@ -883,44 +868,44 @@ function vueMembre(o) {
   const aRegler = parts.filter((p) => Number(p.montant_attendu) > 0 && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
   const resteParts = aRegler.reduce((t, p) => t + Number(p.montant_attendu) - Number(p.donne), 0);
   const partDe = (e) => parts.find((x) => e?.collecte_id && x.collecte_id === e.collecte_id);
+  // Prochain rendez-vous : une carte sobre sous la bannière (pas une seconde bannière) ; la couleur du rendez-vous
+  // tient dans la pastille de date et le filet de gauche, le compte à rebours dans une petite pastille
   const hero = prochain ? (() => {
     const d = dateDe(prochain.date_debut), p = partDe(prochain);
     const j = Math.round((d - dateDe(aujourdhui())) / 864e5);
-    const compte = j <= 0 ? '<b>Aujourd’hui</b>' : j === 1 ? '<b>Demain</b>' : `<span>Dans</span><b class="num">${j}</b><span>jours</span>`;
-    return `<article class="hero-evt hero-plein ${j <= 1 ? 'hero-imminent' : ''}" style="${styleEvt(prochain)}" aria-label="Prochain rendez-vous : ${esc(prochain.nom)}">
-      <div class="hero-haut"><span class="hero-etiquette">${icone('activites', 16)} Prochain rendez-vous</span><span class="hero-compte">${compte}</span></div>
-      <div class="hero-milieu">
-        <div class="hero-date"><span>${JOURS_COURTS[(d.getDay() + 6) % 7]}</span><b>${d.getDate()}</b><span>${MOIS_COURTS[d.getMonth()]}</span></div>
-        <div class="hero-corps"><h2>${esc(prochain.nom)}</h2>
-          <p>${[jourLong(prochain.date_debut), prochain.heure_debut ? heure(prochain.heure_debut) + (prochain.heure_fin ? ' – ' + heure(prochain.heure_fin) : '') : 'toute la journée'].join(' · ')}</p>
-          ${prochain.lieu ? `<p>${icone('lieu', 16)} ${esc(prochain.lieu)}</p>` : ''}
-          ${prochain.description ? `<p class="hero-descr">${esc(prochain.description)}</p>` : ''}
-          ${prochain.participation ? `<span class="hero-puce">Participation ${eur(prochain.participation)}${p ? ` · vous avez donné ${eur(p.donne)}` : ''}</span>` : ''}</div></div>
-      <div class="hero-actions"><button type="button" class="hero-btn" data-ics="${prochain.id}">${icone('agenda', 18)} Ajouter à mon agenda</button>
-        <button type="button" class="hero-btn hero-btn-plein" data-evt="${prochain.id}">Voir le détail</button></div></article>`;
-  })() : `<article class="hero-evt hero-vide"><div class="hero-corps"><span class="hero-etiquette">Prochain rendez-vous</span><h2>Rien de prévu pour l’instant</h2><p>Le prochain rendez-vous s’affichera ici dès qu’il sera annoncé.</p></div></article>`;
+    return `<article class="prochain ${j <= 1 ? 'prochain-imminent' : ''} cliquable" data-evt="${prochain.id}" tabindex="0" role="button" style="${styleEvt(prochain)}" aria-label="Prochain rendez-vous : ${esc(prochain.nom)}, ${esc(dansJours(prochain.date_debut))}">
+      <div class="prochain-date"><span>${JOURS_COURTS[(d.getDay() + 6) % 7]}</span><b>${d.getDate()}</b><span>${MOIS_COURTS[d.getMonth()]}</span></div>
+      <div class="prochain-corps">
+        <div class="prochain-sur"><span>Prochain rendez-vous</span><span class="prochain-compte">${dansJours(prochain.date_debut)}</span></div>
+        <h2>${esc(prochain.nom)}</h2>
+        <p>${[prochain.heure_debut ? heure(prochain.heure_debut) + (prochain.heure_fin ? ' – ' + heure(prochain.heure_fin) : '') : 'Toute la journée', prochain.lieu ? esc(prochain.lieu) : ''].filter(Boolean).join(' · ')}</p>
+        ${prochain.description ? `<p class="prochain-descr">${esc(prochain.description)}</p>` : ''}
+        ${prochain.participation ? `<span class="puce puce-partiel">Participation ${eur(prochain.participation)}${p ? ` · donné ${eur(p.donne)}` : ''}</span>` : ''}
+      </div>
+      <button type="button" class="prochain-agenda" data-ics="${prochain.id}" aria-label="Ajouter à mon agenda" title="Ajouter à mon agenda">${icone('agenda', 20)}<span>Agenda</span></button>
+    </article>`;
+  })() : `<article class="prochain prochain-vide"><div class="prochain-corps"><div class="prochain-sur"><span>Prochain rendez-vous</span></div><h2>Rien de prévu pour l’instant</h2><p class="muted">Il s’affichera ici dès qu’il sera annoncé.</p></div></article>`;
   const alerte = retard > 0 || resteParts > 0 ? `<a class="alerte-membre" href="#m-regler">${icone('attention', 20)}<span><b>${[retard > 0 ? `Cotisation : ${eur(retard)} en retard` : '', resteParts > 0 ? `Participations : ${eur(resteParts)} à régler` : ''].filter(Boolean).join(' · ')}</b><small>Voir comment régler</small></span>${icone('suivant', 18)}</a>` : '';
   const regles = cot.filter((p) => ['regle', 'dispense'].includes(p.statut)).map((p) => p.periode).sort();
   const an = new Date().getFullYear();
   const deLAnnee = cot.filter((p) => p.annee === an).sort((a, b) => (a.periode > b.periode ? 1 : -1));
-  const carteCotis = `<section class="carte carte-statut ${retard > 0 ? 'statut-alerte' : cot.length ? 'statut-ok' : ''}" id="m-cotis">
-      <div class="statut-tete"><span class="statut-icone">${icone(retard > 0 ? 'attention' : 'valide', 22)}</span>
-        <div><small>Ma cotisation ${an}</small><b>${!cot.length ? 'Non commencée' : retard > 0 ? `${eur(retard)} en retard` : 'À jour'}</b>
-        <span class="muted">${retard > 0 ? 'Périodes commencées et non réglées' : regles.length ? `réglée jusqu’à ${esc(nomPeriode(regles[regles.length - 1]))}` : ''}</span></div></div>
+  const etatCotis = !cot.length ? 'Non commencée' : retard > 0 ? `${eur(retard)} en retard` : 'À jour';
+  const carteCotis = rubrique('m-cotisation', `<span class="statut-titre ${retard > 0 ? 'statut-alerte' : cot.length ? 'statut-ok' : ''}">${icone(retard > 0 ? 'attention' : 'valide', 18)} Ma cotisation</span>`,
+    etatCotis, `<p style="margin:0"><b class="${retard > 0 ? 'negatif' : ''}">${etatCotis}</b>${retard > 0 ? ' · périodes commencées et non réglées' : regles.length ? ` · réglée jusqu’à ${esc(nomPeriode(regles[regles.length - 1]))}` : ''}</p>
       ${deLAnnee.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${deLAnnee.length},1fr)">${deLAnnee.map((p) => `<i class="case-p p-${p.statut}" role="img" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}" aria-label="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS_COURTS[Number(p.periode.slice(5, 7)) - 1] : ''}</small></i>`).join('')}</div>
         <div class="legende muted">${Object.entries(STATUT_PERIODE).filter(([k]) => deLAnnee.some((p) => p.statut === k)).map(([k, [, l]]) => `<span><i class="case-p p-${k}"></i>${l}</span>`).join('')}</div>` : ''}
-      ${montant != null || avance > 0 ? `<p class="muted" style="margin:0">${montant != null ? `${eur(montant)} par ${{ 1: 'mois', 3: 'trimestre', 6: 'semestre', 12: 'an' }[pasCotis()] || 'période'}` : ''}${avance > 0 ? ` · avance ${eur(avance)}` : ''}</p>` : ''}</section>`;
-  const carteRegler = retard > 0 || resteParts > 0 || !connecte ? (infos ? `<section class="carte carte-regler" id="m-regler"><h2>Comment régler</h2><p class="texte-libre" style="margin:0">${esc(infos)}</p></section>`
-    : retard > 0 || resteParts > 0 ? '<section class="carte carte-regler" id="m-regler"><h2>Comment régler</h2><p style="margin:0">Adressez-vous au trésorier.</p></section>' : '') : '';
-  const carteParts = parts.length ? `<section class="carte"><h2>Mes participations${resteParts > 0 ? ` <span class="puce puce-partiel">${eur(resteParts)} à régler</span>` : ''}</h2>${listeParticipations(parts)}</section>` : '';
-  const carteAnniv = anniv ? `<section class="carte"><h2>Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}</h2>${listeAnniversaires(anniv, mois)}</section>` : '';
-  const carteVersements = versements?.length ? `<details class="carte rubrique"><summary><span class="rub-titre"><h2>Mes versements</h2><span class="rub-resume">${versements.length} dernier${versements.length > 1 ? 's' : ''}</span></span>${icone('chevron')}</summary>
-      <div class="rub-corps"><ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul></div></details>` : '';
+      ${montant != null || avance > 0 ? `<p class="muted" style="margin:0">${montant != null ? `${eur(montant)} par ${{ 1: 'mois', 3: 'trimestre', 6: 'semestre', 12: 'an' }[pasCotis()] || 'période'}` : ''}${avance > 0 ? ` · avance ${eur(avance)}` : ''}</p>` : ''}`,
+    { classe: retard > 0 ? 'rubrique-alerte' : '' });
+  const du = retard > 0 || resteParts > 0;
+  const carteRegler = infos && (du || !connecte) ? rubrique('m-regler', 'Comment régler', du ? 'À régler' : '', `<p class="texte-libre" style="margin:0">${esc(infos)}</p>`, { ouverte: du, classe: 'rub-regler' })
+    : du ? rubrique('m-regler', 'Comment régler', '', '<p style="margin:0">Adressez-vous au trésorier.</p>', { classe: 'rub-regler' }) : '';
+  const carteParts = parts.length ? rubrique('m-participations', 'Mes participations', resteParts > 0 ? `${eur(resteParts)} à régler` : `${parts.length}`, listeParticipations(parts)) : '';
+  const carteAnniv = anniv ? rubrique('m-anniversaires', `Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}`, anniv.length ? `${anniv.length}` : 'Aucun', listeAnniversaires(anniv, mois), { ouverte: false }) : '';
+  const carteVersements = versements?.length ? rubrique('m-versements', 'Mes versements', `${versements.length} dernier${versements.length > 1 ? 's' : ''}`,
+    `<ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul>`, { ouverte: false }) : '';
   return `<div class="vue-membre">
     <div class="vm-hero">${hero}${alerte}</div>
-    <section class="carte vm-suite"><h2>Ensuite au planning</h2>
-      ${suite.length ? listePlanningCouleur(suite) : '<p class="muted">Rien d’autre d’annoncé pour l’instant.</p>'}
-</section>
+    <div class="vm-suite">${rubrique('m-planning', 'Ensuite au planning', suite.length ? `${suite.length} rendez-vous` : 'Rien d’autre', suite.length ? listePlanningCouleur(suite) : '<p class="muted" style="margin:0">Rien d’autre d’annoncé pour l’instant.</p>')}</div>
     <div class="vm-cote">${carteCotis}${carteRegler}${carteParts}${carteAnniv}${carteVersements}</div>
   </div>`;
 }
@@ -966,7 +951,8 @@ function brancherVueMembre(planning, ouvrir) {
   document.querySelectorAll('.vue-membre [data-ics]').forEach((b) => b.addEventListener('click', (ev) => {
     ev.stopPropagation(); const e = planning.find((p) => String(p.id) === b.dataset.ics); if (e) telechargerIcs(e);
   }));
-  $('.alerte-membre')?.addEventListener('click', (ev) => { ev.preventDefault(); $('#m-regler')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+  $('.alerte-membre')?.addEventListener('click', (ev) => { ev.preventDefault(); const r = $('[data-rub=m-regler]'); if (r) { r.open = true; r.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
+  brancherRubriques();
 }
 
 async function pageTableauAdherent(anniv, mois) {
@@ -2171,7 +2157,7 @@ function sectionsParametres() {
     ['Données', [
       ['corbeille', 'Corbeille', 'corbeille', 'Éléments supprimés, à restaurer', paramCorbeille, corbeille],
       ['sauvegarde', 'Sauvegarde', 'donnees', 'Télécharger toutes les données', paramSauvegarde, admin],
-      ['assistant', 'Assistant de configuration', 'assistant', 'Terminer la configuration pas à pas', paramAssistant, admin && S.org?.configuree === false]]],
+      ['miseenroute', 'Mise en route', 'assistant', 'Les étapes restantes, assistant de configuration', paramMiseEnRoute, admin && (S.org?.configuree === false || (S.miseEnRouteRestantes ?? 1) > 0)]]],
   ].map(([g, l]) => [g, l.filter((x) => x[5])]).filter(([, l]) => l.length);
 }
 async function pageParametres() {
@@ -2556,10 +2542,80 @@ async function paramSauvegarde(zone) {
     <button class="btn-primaire" id="b-sauvegarde" style="align-self:flex-start">${icone('donnees')} Télécharger la sauvegarde</button></section>`;
   $('#b-sauvegarde', zone).addEventListener('click', () => sauvegarder().catch(erreur));
 }
-async function paramAssistant(zone) {
-  zone.innerHTML = `<section class="carte"><p class="muted" style="margin:0">L’assistant reprend pas à pas : identité de l’association, coordonnées, exercice, comptes et soldes de départ, cotisation. Les informations déjà saisies sont conservées.</p>
-    <button class="btn-primaire" id="b-assistant" style="align-self:flex-start">${icone('assistant')} Lancer l’assistant</button></section>`;
-  $('#b-assistant', zone).addEventListener('click', () => assistantConfiguration(0).catch(erreur));
+
+// ---------- Mise en route et rappels dosés ----------
+// Une fenêtre automatique (fiche de membre, assistant) n'insiste pas : « Plus tard » la repousse d'une semaine ;
+// après deux refus, plus de fenêtre, seulement un petit rappel discret, au plus une fois par semaine.
+const CLE_RAPPELS = () => 'rappels:' + (S.profil?.id || '');
+const lireRappels = () => { try { return JSON.parse(localStorage.getItem(CLE_RAPPELS()) || '{}'); } catch { return {}; } };
+const ecrireRappels = (r) => { try { localStorage.setItem(CLE_RAPPELS(), JSON.stringify(r)); } catch { /* stockage indisponible */ } };
+const JOUR_MS = 864e5;
+function rappelPermis(cle) { const r = lireRappels()[cle]; return !r || (r.fois < 2 && Date.now() >= r.jusqua); }
+function repousser(cle, jours = 7) { const t = lireRappels(); const fois = (t[cle]?.fois || 0) + 1; t[cle] = { fois, jusqua: Date.now() + jours * JOUR_MS }; ecrireRappels(t); }
+function discretPermis(cle) { const r = lireRappels()['discret:' + cle]; return !r || Date.now() >= r.jusqua; }
+function marquerDiscret(cle, jours = 7) { const t = lireRappels(); t['discret:' + cle] = { fois: 0, jusqua: Date.now() + jours * JOUR_MS }; ecrireRappels(t); }
+
+// Étapes de mise en route (administrateur), cochées automatiquement : [libellé, fait, action]
+async function etapesMiseEnRoute() {
+  const section = (k) => () => { S.ongletParam = k; S.sectionDemandee = true; location.hash = '#parametres'; if (location.hash === '#parametres') router(); };
+  const fiche = [['Remplir votre fiche de membre', !!S.profil.member_id, () => feuilleMaFiche()]];
+  if (!peut('administrer')) return fiche;
+  let cotis = 0; try { cotis = (await q(sb.from('v_cotisations').select('member_id').eq('annee', S.annee).limit(1))).length; } catch { /* sans droit */ }
+  return [
+    ...(S.org?.configuree === false ? [['Configurer l’association avec l’assistant', false, () => assistantConfiguration(0).catch(erreur)]] : []),
+    ...fiche,
+    ['Ajouter le logo et la photo de l’association', !!(S.org?.logo_path || S.org?.banniere_path), section('apparence')],
+    ['Saisir les soldes de départ de la caisse et de la banque', (S.comptes || []).some((c) => Number(c.solde_initial)), section('comptes')],
+    ['Ajouter les membres (un par un ou par import)', (S.membres || []).length > 1, () => { location.hash = '#membres'; }],
+    ['Désigner le bureau : président, secrétaire…', (S.profils?.length || 0) > 1 || (S.invitations?.length || 0) > 0, () => { location.hash = '#membres'; }],
+    ['Générer les cotisations de l’année', cotis > 0, () => { location.hash = '#cotisations'; }],
+  ];
+}
+function listeMiseEnRoute(etapes) {
+  return `<ol class="etapes-demarrage">${etapes.map(([t, fait], i) => `<li class="${fait ? 'fait' : ''}"><span class="coche" aria-hidden="true">${fait ? '✓' : ''}</span>${fait ? `<span>${t}</span><span class="sr-only"> (fait)</span>` : `<a href="#" data-etape="${i}">${t}</a>`}</li>`).join('')}</ol>`;
+}
+function brancherMiseEnRoute(racine, etapes, avant = () => {}) {
+  racine.querySelectorAll('[data-etape]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); avant(); etapes[Number(a.dataset.etape)][2](); }));
+}
+async function feuilleMiseEnRoute() {
+  const etapes = await etapesMiseEnRoute();
+  const reste = etapes.filter((e) => !e[1]).length;
+  ouvrirFeuille(`<h2>Mise en route</h2><p class="muted" style="margin:0">${reste ? `${reste} étape${reste > 1 ? 's' : ''} restante${reste > 1 ? 's' : ''}. Touchez une étape pour la faire maintenant.` : 'Tout est en place.'}</p>
+    ${listeMiseEnRoute(etapes)}
+    <div class="actions"><button class="btn-texte" id="b-rappel-plus-tard">Me le rappeler dans une semaine</button><button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    brancherMiseEnRoute(root, etapes, fermerFeuille);
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#b-rappel-plus-tard', root).addEventListener('click', () => { marquerDiscret('miseenroute', 7); fermerFeuille(); });
+  });
+}
+// Rappel discret (petit message en bas, une fois par session, au plus une fois par semaine)
+async function verifierRappels() {
+  if (S.rappelFait) return; S.rappelFait = true;
+  try {
+    const etapes = await etapesMiseEnRoute();
+    const reste = etapes.filter((e) => !e[1]).length;
+    S.miseEnRouteRestantes = reste;
+    if (!reste || S.ficheMontree || !discretPermis('miseenroute')) return;
+    setTimeout(() => {
+      // jamais par-dessus une fenêtre, ni dans une session où une fenêtre a déjà été proposée
+      if ($('#sheet[open]') || S.ficheMontree || S.assistantRepousse) return;
+      marquerDiscret('miseenroute', 7);
+      toastAction(peut('administrer') ? `Mise en route : ${reste} étape${reste > 1 ? 's' : ''} restante${reste > 1 ? 's' : ''}` : 'Votre fiche de membre est à compléter',
+        peut('administrer') ? 'Voir' : 'Remplir', () => (peut('administrer') ? feuilleMiseEnRoute() : feuilleMaFiche()));
+    }, 2500);
+  } catch (e) { console.warn(e); }
+}
+function toastAction(msg, libelle, action) {
+  const t = $('#toast'); t.innerHTML = `<span>${esc(msg)}</span><button class="btn-texte btn-petit" id="b-toast-action">${esc(libelle)}</button><button class="btn-icone-toast" id="b-toast-fermer" aria-label="Fermer">${icone('fermer', 16)}</button>`; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 9000);
+  $('#b-toast-action').addEventListener('click', () => { t.hidden = true; action(); }, { once: true });
+  $('#b-toast-fermer').addEventListener('click', () => { t.hidden = true; }, { once: true });
+}
+async function paramMiseEnRoute(zone) {
+  const etapes = await etapesMiseEnRoute();
+  S.miseEnRouteRestantes = etapes.filter((e) => !e[1]).length;
+  zone.innerHTML = `<section class="carte">${listeMiseEnRoute(etapes)}</section>`;
+  brancherMiseEnRoute(zone, etapes);
 }
 
 // ---------- Suppression réversible (corbeille) ----------
