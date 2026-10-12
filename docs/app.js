@@ -119,6 +119,7 @@ async function demarrer() {
   if (demo) {
     const { createMockClient, COMPTES_DEMO, MOT_DE_PASSE } = await import('./mock.js');
     sb = createMockClient();
+    window.demoClient = sb;  // démonstration seulement : permet aux tests de recette de simuler une saisie du bureau
     S.comptesDemo = { liste: COMPTES_DEMO, mdp: MOT_DE_PASSE };
     afficherBandeauDemo();
   } else {
@@ -624,6 +625,53 @@ function pastilleIcone(total) {
   const base = document.title.replace(/^\(\d+\+?\) /, '');
   document.title = total > 0 ? `(${total > 99 ? '99+' : total}) ${base}` : base;
 }
+// ---------- Notifications réelles (Web Push) : reçues même page fermée ----------
+// L'appareil s'abonne (clé publique de la base) ; la base met en file chaque nouveauté et la fonction « notifier » l'envoie.
+const URL_NOTIFIER = 'https://kihxkuotukbzrbsiqanq.supabase.co/functions/v1/notifier';
+const pushPossible = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const deB64url = (t) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((t.length + 3) % 4)), (c) => c.charCodeAt(0));
+async function abonnementPush() {
+  if (!pushPossible() || Notification.permission !== 'granted') return null;
+  try { const reg = await navigator.serviceWorker.getRegistration(); return (await reg?.pushManager.getSubscription()) || null; } catch { return null; }
+}
+async function activerPush(jeton) {
+  if (demo) throw new Error('Les notifications ne s’activent pas en démonstration');
+  if (!pushPossible()) throw new Error(/iPhone|iPad/.test(navigator.userAgent) ? 'Sur iPhone, ajoutez d’abord cette page à l’écran d’accueil (bouton Partager › « Sur l’écran d’accueil »), puis ouvrez-la depuis l’icône.' : 'Ce navigateur ne permet pas les notifications.');
+  if (await Notification.requestPermission() !== 'granted') throw new Error('Notifications refusées : autorisez-les dans les réglages du navigateur pour ce site.');
+  const reg = (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.register('sw.js'));
+  await navigator.serviceWorker.ready;
+  let cle = await q(sb.rpc('cle_push'));
+  if (!cle) { await fetch(URL_NOTIFIER, { method: 'POST', mode: 'no-cors' }).catch(() => {}); cle = await q(sb.rpc('cle_push')); }
+  if (!cle) throw new Error('Service de notification indisponible pour l’instant, réessayez plus tard.');
+  const abo = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: deB64url(cle) }));
+  if (!(await q(sb.rpc('abonner_push', { p_jeton: jeton || null, p_abonnement: abo.toJSON() })))) throw new Error('Abonnement refusé : lien ou compte non reconnu.');
+}
+async function couperPush() {
+  const abo = await abonnementPush(); if (!abo) return;
+  try { await q(sb.rpc('desabonner_push', { p_endpoint: abo.endpoint })); } catch (e) { console.warn(e); }
+  await abo.unsubscribe().catch(() => {});
+}
+// Bloc « Alertes sur cet appareil », le même dans Paramètres › Notifications et dans la cloche de la page du lien
+async function blocAlertes(zone, jeton) {
+  const abo = await abonnementPush();
+  const bloque = window.Notification?.permission === 'denied';
+  zone.innerHTML = `<div class="bloc-alertes">
+    <div class="etat-alertes ${abo ? 'ok' : ''}">${icone(abo ? 'valide' : 'cloche', 18)}<div><b>${abo ? 'Notifications activées sur cet appareil' : 'Notifications désactivées sur cet appareil'}</b>
+      <span>${abo ? 'Vous êtes prévenu des communiqués, des rendez-vous (et la veille), des participations demandées, même page fermée.' : bloque ? 'Bloquées par le navigateur : autorisez-les dans ses réglages pour ce site.' : 'Activez-les pour être prévenu même page fermée : communiqués, rendez-vous, participations.'}</span></div></div>
+    <div class="actions-gauche">${abo ? '<button class="btn-texte btn-petit" id="b-push-couper">Couper</button>' : bloque ? '' : '<button class="btn-primaire btn-petit" id="b-push">Recevoir les notifications</button>'}
+      <button class="btn-tonal btn-petit" id="b-essai">Essayer</button></div>
+    <label class="case">${icone('son', 18)}<input type="checkbox" id="c-son" ${prefNotif('son') ? 'checked' : ''}> Son à l’arrivée d’une nouveauté</label>
+    <label class="case">${icone('vibration', 18)}<input type="checkbox" id="c-vibration" ${prefNotif('vibration') ? 'checked' : ''}> Vibration du téléphone</label></div>`;
+  $('#c-son', zone).addEventListener('change', (e) => garderPrefNotif('son', e.target.checked));
+  $('#c-vibration', zone).addEventListener('change', (e) => garderPrefNotif('vibration', e.target.checked));
+  $('#b-essai', zone).addEventListener('click', () => alerterNouveaute({ titre: 'Essai', detail: 'Voici comment une nouveauté vous sera signalée', section: 'tableau' }));
+  $('#b-push', zone)?.addEventListener('click', async (ev) => {
+    ev.target.disabled = true;
+    try { await activerPush(jeton); toast('Notifications activées sur cet appareil'); } catch (e) { toast(e.message); }
+    blocAlertes(zone, jeton);
+  });
+  $('#b-push-couper', zone)?.addEventListener('click', async () => { await couperPush(); toast('Notifications coupées sur cet appareil'); blocAlertes(zone, jeton); });
+}
 async function chargerNouveautes() {
   if (!S.profil) return;
   try {
@@ -721,7 +769,7 @@ function feuilleNouveautes() {
       <span class="puce-section puce-${e.section}">${icone(e.section, 18)}</span>
       <div class="corps"><b>${esc(e.titre)}</b><span>${esc(e.detail)}</span></div><span class="muted">${quand(e.quand)}</span></a></li>`).join('')}</ul>`
       : `<div class="vide">${icone('valide', 32)}<p>Rien de nouveau. Vous êtes à jour.</p></div>`}
-    ${notif ? `<p class="muted" style="margin:0">Pour être alerté même quand la page est en arrière-plan : <a href="#parametres" id="l-notif">Paramètres › Notifications</a>.</p>` : ''}
+    ${notif ? `<p class="muted" style="margin:0">Pour être prévenu même page fermée : <a href="#parametres" id="l-notif">Paramètres › Notifications</a>.</p>` : ''}
     <div class="actions">${els.length ? '<button class="btn-texte" id="b-tout-vu">Tout marquer comme vu</button>' : ''}<button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     root.querySelectorAll('.lien-nouveaute').forEach((a) => a.addEventListener('click', fermerFeuille));
@@ -780,9 +828,9 @@ const rendre = (html) => {
 // Rubriques dépliables : l'état de chacune est mémorisé sur l'appareil.
 const RUB_CLE = 'rubriquesAccueil';
 const etatRubriques = () => { try { return JSON.parse(localStorage.getItem(RUB_CLE) || '{}'); } catch { return {}; } };
-function rubrique(id, titre, resume, contenu, { ouverte = true, classe = '' } = {}) {
+function rubrique(id, titre, resume, contenu, { ouverte = true, classe = '', forcee = false } = {}) {
   const etat = etatRubriques()[id];
-  const ouvert = etat === undefined ? ouverte : etat;
+  const ouvert = forcee || (etat === undefined ? ouverte : etat);
   return `<details class="carte rubrique ${classe}" data-rub="${id}" ${ouvert ? 'open' : ''}>
     <summary><span class="rub-titre"><h2>${titre}</h2>${resume ? `<span class="rub-resume">${resume}</span>` : ''}</span>
       ${icone('chevron')}</summary>
@@ -942,7 +990,7 @@ function listeAnniversaires(anniv, mois) {
 // puis la suite du planning, ma cotisation, mes participations,
 // les anniversaires et mes versements. Deux colonnes sur ordinateur et tablette en paysage.
 function vueMembre(o) {
-  const { planning = [], cot = [], parts = [], infos, anniv = null, mois, versements = null, avance = 0, montant = null, connecte = false } = o;
+  const { planning = [], cot = [], parts = [], communiques = [], infos, anniv = null, mois, versements = null, avance = 0, montant = null, connecte = false } = o;
   // Au programme : tous les rendez-vous de la période choisie par le bouton de filtre (semaine, mois, 3 mois, année),
   // y compris le prochain même s'il passe aussi sur la bannière (sinon un mois qui n'en a qu'un paraît vide)
   S.planningMembre = planning.filter((p) => p.date_debut);
@@ -967,7 +1015,7 @@ function vueMembre(o) {
   const carteVersements = versements?.length ? rubrique('m-versements', 'Mes versements', `${versements.length} dernier${versements.length > 1 ? 's' : ''}`,
     `<ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul>`, { ouverte: false }) : '';
   return `<div class="vue-membre">
-    <div class="vm-suite">${rubrique('m-planning', 'Au programme', resumePlanningMembre(), `${filtrePlanningMembre()}
+    <div class="vm-suite">${rubriqueCommuniques(communiques)}${rubrique('m-planning', 'Au programme', resumePlanningMembre(), `${filtrePlanningMembre()}
       <div id="m-planning-liste">${listePlanningMembre()}</div>`)}</div>
     <div class="vm-cote">${carteCotis}${carteRegler}${carteParts}${carteAnniv}${carteVersements}</div>
   </div>`;
@@ -1085,7 +1133,34 @@ function brancherAnnonces(ouvrirEvt) {
     ev.stopPropagation(); const e = A.donnees.planning.find((p) => String(p.id) === b.dataset.ics); if (e) telechargerIcs(e);
   }));
 }
+// Communiqués lus sur cet appareil : ceux qui n'y sont pas portent « Nouveau » (rubrique, cloche du lien)
+const communiquesVus = () => { try { return JSON.parse(localStorage.getItem('communiquesVus') || '[]'); } catch { return []; } };
+const communiqueVu = (id) => communiquesVus().includes(String(id));
+function marquerCommuniqueVu(id) {
+  const l = communiquesVus(); if (l.includes(String(id))) return;
+  try { localStorage.setItem('communiquesVus', JSON.stringify([...l, String(id)].slice(-200))); } catch { /* stockage indisponible */ }
+  document.querySelectorAll(`.liste-communiques [data-communique="${CSS.escape(String(id))}"]`).forEach((li) => { li.classList.remove('cq-nouveau'); li.querySelector('.puce-nouveau')?.remove(); });
+  const r = $('[data-rub=m-communiques] .rub-resume'); if (r) r.textContent = resumeCommuniques(S.communiquesMembre || []);
+  if (!document.querySelector('.liste-communiques .cq-nouveau')) $('[data-rub=m-communiques]')?.classList.remove('a-du-nouveau');
+  S.majCloche?.();
+}
+const ordreCommuniques = (l) => [...l].sort((a, b) => ((a.priorite === 'haute') !== (b.priorite === 'haute') ? (a.priorite === 'haute' ? -1 : 1) : (a.debut < b.debut ? 1 : -1)));
+function resumeCommuniques(l) { const n = l.filter((c) => !communiqueVu(c.id)).length; return n ? `${n} nouveau${n > 1 ? 'x' : ''}` : `${l.length}`; }
+// Rubrique « Communiqués » de la page des membres : au-dessus du programme, avec un accent ; absente sans communiqué
+function rubriqueCommuniques(liste) {
+  const l = ordreCommuniques(communiquesActifs(liste));
+  S.communiquesMembre = l;
+  if (!l.length) return '';
+  const nouveaux = l.some((c) => !communiqueVu(c.id));
+  return rubrique('m-communiques', `<span class="statut-titre titre-communiques">${icone('communiques', 18)} Communiqués</span>`, resumeCommuniques(l),
+    `<ul class="liste liste-communiques">${l.map((c) => `<li class="cliquable${c.priorite === 'haute' ? ' cq-important' : ''}${communiqueVu(c.id) ? '' : ' cq-nouveau'}" data-communique="${esc(c.id)}" tabindex="0" role="button">
+      <span class="cq-puce" aria-hidden="true">${icone('communiques', 18)}</span>
+      <div class="corps"><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}<small>Publié le ${dateFr(c.debut)}${c.fin ? ` · jusqu’au ${dateFr(c.fin)}` : ''}</small></div>
+      <span class="cq-etiquettes">${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}${communiqueVu(c.id) ? '' : '<span class="puce puce-nouveau">Nouveau</span>'}</span></li>`).join('')}</ul>`,
+    { classe: 'rub-communiques' + (nouveaux ? ' a-du-nouveau' : ''), forcee: nouveaux });
+}
 function feuilleCommunique(c) {
+  marquerCommuniqueVu(c.id);
   ouvrirFeuille(`<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(c.titre)}</h2>${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}</div>
     <p class="muted" style="margin:0">Publié le ${dateFr(c.debut)}${c.fin ? ` · jusqu’au ${dateFr(c.fin)}` : ''}</p>
     ${c.texte ? `<p class="texte-libre">${esc(c.texte)}</p>` : ''}
@@ -1128,6 +1203,10 @@ function detailEvenementMembre(e) {
 
 function brancherVueMembre(planning, ouvrir) {
   brancherPlanningMembre(ouvrir);
+  document.querySelectorAll('.liste-communiques [data-communique]').forEach((li) => {
+    const go = () => { const c = (S.communiquesMembre || []).find((x) => String(x.id) === li.dataset.communique); if (c) feuilleCommunique(c); };
+    li.addEventListener('click', go); li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(); });
+  });
   document.querySelectorAll('.vue-membre [data-evt]:not(#m-planning-liste [data-evt])').forEach((li) => {
     const go = (ev) => { ev.stopPropagation(); const e = planning.find((p) => String(p.id) === li.dataset.evt); if (e) ouvrir(e); };
     li.addEventListener('click', go); li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(ev); });
@@ -1139,7 +1218,7 @@ async function pageTableauAdherent(anniv, mois) {
   const [cot, planning, parts, communiques] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('planning_activites', { p_debut: isoLocal(new Date()) })),
     q(sb.rpc('mes_participations')), q(sb.from('communiques').select('*').order('debut', { ascending: false })).catch(() => [])]);
   rendre(`<div class="page accueil accueil-membre">${banniere(banniereAnnonces({ planning, cot, parts, communiques: communiquesActifs(communiques), regles: S.textes?.banniere }))}
-    ${vueMembre({ planning, cot, parts, infos: S.textes?.infos_paiement, anniv, mois, connecte: true })}</div>`);
+    ${vueMembre({ planning, cot, parts, communiques, infos: S.textes?.infos_paiement, anniv, mois, connecte: true })}</div>`);
   brancherVueMembre(planning, (e) => detailEvenement(e, () => router()));
   brancherAnnonces((e) => detailEvenement(e, () => router()));
   marquerVu('cotisations'); marquerVu('communiques');
@@ -2521,23 +2600,12 @@ async function paramSecurite(zone) {
 
 // Notifications : pastilles sur les onglets (toujours) et alertes du navigateur (sur demande)
 async function paramNotifications(zone) {
-  const n = window.Notification;
-  const etat = !n ? 'non prises en charge par ce navigateur' : n.permission === 'granted' ? 'activées' : n.permission === 'denied' ? 'bloquées (à autoriser dans les réglages du navigateur)' : 'désactivées';
   zone.innerHTML = `<div class="grille grille-2">
     <section class="carte"><h3>Pastilles</h3><p class="muted" style="margin:0">Un chiffre apparaît sur un onglet quand quelque chose vous attend ou est nouveau depuis votre dernière visite : demande à valider ou à payer, opération saisie par un autre, rendez-vous ajouté, participation demandée, nouveau membre. La cloche les rassemble.</p>
 </section>
-    <section class="carte"><h3>Alertes du navigateur</h3><p class="muted" style="margin:0">Une alerte s’affiche quand une nouveauté arrive alors que la page est ouverte en arrière-plan. Actuellement&nbsp;: <b>${etat}</b>.</p>
-      ${n && n.permission === 'default' ? '<button class="btn-primaire btn-petit" id="b-notif" style="align-self:flex-start">Activer les alertes</button>' : ''}
-      <p class="muted" style="margin:0">Sur Android, l’application affiche les mêmes pastilles et une notification du téléphone, même fermée (vérification toutes les 15 minutes).</p></section>
-    <section class="carte"><h3>Son et vibration</h3>
-      <label class="case">${icone('son', 18)}<input type="checkbox" id="c-son" ${prefNotif('son') ? 'checked' : ''}> Jouer un son à l’arrivée d’une nouveauté</label>
-      <label class="case">${icone('vibration', 18)}<input type="checkbox" id="c-vibration" ${prefNotif('vibration') ? 'checked' : ''}> Faire vibrer le téléphone</label>
-      <button class="btn-tonal btn-petit" id="b-essai" style="align-self:flex-start">Essayer</button>
-      <p class="muted" style="margin:0">Le chiffre des nouveautés s’affiche aussi sur l’icône de l’application installée et dans le titre de l’onglet.</p></section></div>`;
-  $('#c-son', zone).addEventListener('change', (e) => garderPrefNotif('son', e.target.checked));
-  $('#c-vibration', zone).addEventListener('change', (e) => garderPrefNotif('vibration', e.target.checked));
-  $('#b-essai', zone).addEventListener('click', () => alerterNouveaute({ titre: 'Essai', detail: 'Voici comment une nouveauté vous sera signalée', section: 'tableau' }));
-  $('#b-notif', zone)?.addEventListener('click', async () => { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Alertes activées' : 'Alertes refusées'); paramNotifications(zone); });
+    <section class="carte"><h3>Alertes sur cet appareil</h3><div id="z-alertes"></div>
+      <p class="muted" style="margin:0">Le chiffre des nouveautés s’affiche aussi sur l’icône de l’application installée et dans le titre de l’onglet. Sur Android, l’application prévient aussi, même fermée.</p></section></div>`;
+  blocAlertes($('#z-alertes', zone), null);
 }
 
 // Bannière et communiqués : les communiqués de l'association et l'ordre / la fréquence des annonces de la bannière des membres
@@ -4176,15 +4244,93 @@ const nomAssoLisible = (n) => (n && n === n.toUpperCase() ? n.toLowerCase().spli
 const messageLien = (m, u) => `Bonjour ${m.prenom},\n\nVoici votre espace membre ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'de l’association'} : votre cotisation, vos participations et les prochains rendez-vous.\n\n👉 ${u}\n\nCe lien est personnel et sûr : il ouvre seulement votre page, sans compte ni mot de passe. Gardez-le pour vous.`;
 const urlPublique = (chemin) => { if (!chemin) return ''; const u = sb.storage.from('logos').getPublicUrl(chemin).data.publicUrl; return u.startsWith('blob:') ? u : u + '?v=' + encodeURIComponent(chemin); };
 
+// Nouveautés de la page du lien (sans compte) : calculées sur l'appareil par rapport à la dernière visite de la cloche
+// (rendez-vous annoncés ou déplacés, communiqués non lus, participations demandées, cotisation passée en retard)
+const cleVuLien = (j) => 'lienVu:' + jetonDuLien(j);
+const empreinteLien = (d) => ({
+  rdv: (d.a_venir || []).map((p) => `${p.id}:${p.date_debut}`),
+  part: (d.participations || []).map((p) => `${p.nom}|${p.cree || ''}`),
+  retard: retardDe(d.periodes || []),
+});
+function nouveautesLien(jeton, d) {
+  let vu = null; try { vu = JSON.parse(localStorage.getItem(cleVuLien(jeton)) || 'null'); } catch { /* stockage indisponible */ }
+  if (!vu) { vu = empreinteLien(d); try { localStorage.setItem(cleVuLien(jeton), JSON.stringify(vu)); } catch { /* stockage indisponible */ } }
+  const l = [];
+  (d.communiques || []).filter((c) => !communiqueVu(c.id)).forEach((c) => l.push({ cle: 'cq:' + c.id, type: 'communique', c, titre: c.priorite === 'haute' ? 'Communiqué important' : 'Communiqué', detail: c.titre }));
+  (d.a_venir || []).filter((p) => !vu.rdv.includes(`${p.id}:${p.date_debut}`)).forEach((p) => l.push({ cle: `rdv:${p.id}:${p.date_debut}`, type: 'rdv', p,
+    titre: vu.rdv.some((x) => x.startsWith(p.id + ':')) ? 'Rendez-vous déplacé' : 'Nouveau rendez-vous', detail: `${p.nom} · ${jourLong(p.date_debut)}` }));
+  (d.participations || []).filter((p) => !p.cloturee && !vu.part.includes(`${p.nom}|${p.cree || ''}`)).forEach((p) => l.push({ cle: 'part:' + p.nom + (p.cree || ''), type: 'participation',
+    titre: 'Participation demandée', detail: p.nom + (Number(p.montant_attendu) > 0 ? ` · ${eur(p.montant_attendu)}` : '') }));
+  const r = retardDe(d.periodes || []);
+  if (r > 0.005 && r > (vu.retard || 0) + 0.005) l.push({ cle: 'cot:' + r, type: 'cotisation', titre: 'Cotisation', detail: `${eur(r)} en retard` });
+  return l;
+}
+function marquerLienVu(jeton, d) {
+  try { localStorage.setItem(cleVuLien(jeton), JSON.stringify(empreinteLien(d))); } catch { /* stockage indisponible */ }
+  (d.communiques || []).forEach((c) => marquerCommuniqueVu(c.id));
+}
+function majClocheLien(n) {
+  const b = $('.b-cloche-lien'); if (!b) return;
+  b.querySelector('.pastille-nav')?.remove();
+  if (n) b.insertAdjacentHTML('beforeend', `<span class="pastille-nav" aria-label="${n} nouveauté${n > 1 ? 's' : ''}">${n > 99 ? '99+' : n}</span>`);
+  b.classList.toggle('a-du-nouveau', n > 0);
+  b.setAttribute('aria-label', n ? `Nouveautés : ${n}` : 'Nouveautés');
+  pastilleIcone(n);
+}
+function feuilleNouveautesLien(jeton, d, planning) {
+  const l = nouveautesLien(jeton, d);
+  const icones = { communique: 'communiques', rdv: 'activites', participation: 'cotisations', cotisation: 'cotisations' };
+  ouvrirFeuille(`<h2>Nouveautés</h2>
+    ${l.length ? `<ul class="liste liste-nouveautes">${l.map((e, k) => `<li><a href="#" class="lien-nouveaute" data-k="${k}"><span class="puce-section puce-${icones[e.type]}">${icone(icones[e.type], 18)}</span>
+      <div class="corps"><b>${esc(e.titre)}</b><span>${esc(e.detail)}</span></div></a></li>`).join('')}</ul>`
+      : `<div class="vide">${icone('valide', 32)}<p>Rien de nouveau depuis votre dernière visite.</p></div>`}
+    <h3 style="margin:8px 0 0">Alertes sur cet appareil</h3><div id="z-alertes"></div>
+    <div class="actions"><button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    blocAlertes($('#z-alertes', root), jeton);
+    root.querySelectorAll('.lien-nouveaute').forEach((a) => a.addEventListener('click', (ev) => {
+      ev.preventDefault(); const e = l[Number(a.dataset.k)];
+      if (e.type === 'communique') return feuilleCommunique(e.c);
+      if (e.type === 'rdv') return detailEvenementMembre(planning.find((p) => String(p.id) === String(e.p.id)) || e.p);
+      fermerFeuille(); const cible = $(e.type === 'participation' ? '[data-rub=m-participations]' : '[data-rub=m-cotisation]');
+      if (cible) { cible.open = true; cible.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    }));
+  });
+  // Ouvrir la cloche vaut lecture : tout est marqué vu, la pastille disparaît
+  marquerLienVu(jeton, d); majClocheLien(0);
+}
+// Alerte d'une nouveauté sur la page du lien : notification du système si la page est cachée (et que la base ne
+// l'envoie pas déjà par Web Push), sinon carillon, vibration et message avec « Voir »
+async function alerterLien(e, jeton) {
+  if (document.hidden) {
+    if (await abonnementPush()) return;  // déjà envoyée par le service de notification
+    if (window.Notification?.permission !== 'granted') return;
+    const options = { body: e.detail, icon: 'icon-192.png', badge: 'icon-192.png', tag: e.cle, silent: !prefNotif('son'),
+      vibrate: prefNotif('vibration') ? [180, 90, 180] : undefined, data: { url: './' } };
+    try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) return reg.showNotification(e.titre, options); } catch { /* repli */ }
+    try { new Notification(e.titre, options); } catch { /* non pris en charge */ }
+    return;
+  }
+  carillon();
+  if (prefNotif('vibration')) navigator.vibrate?.([120, 60, 120]);
+  toastAction(`${e.titre} : ${e.detail}`, 'Voir', () => $('.b-cloche-lien')?.click());
+}
 async function pageLien(jeton, retour = null, silencieux = false) {
   if (!silencieux) $('#app').innerHTML = '<p class="chargement">Chargement…</p>';
   let d = null;
   try { d = await q(sb.rpc('situation_par_lien', { p_jeton: jeton })); } catch (e) { console.warn(e); }
-  // Mise à jour automatique : toutes les minutes tant que la page est visible, redessinée seulement si quelque chose a changé
+  // Mise à jour automatique : toutes les minutes, même page en arrière-plan (pour alerter) ; l'écran n'est redessiné
+  // que s'il est visible, sans fenêtre ouverte, et seulement si quelque chose a changé
   if (silencieux) { if (!d || JSON.stringify(d) === S.lienDernier) return; }
+  if (d && !retour) {
+    const nouv = nouveautesLien(jeton, d);
+    const deja = S.lienAlertees || (S.lienAlertees = new Set(nouv.map((e) => e.cle)));
+    nouv.filter((e) => !deja.has(e.cle)).forEach((e) => { deja.add(e.cle); alerterLien(e, jeton); });
+    if (silencieux && (document.hidden || $('#sheet[open]'))) { majClocheLien(nouv.length); return; }
+  }
   S.lienDernier = JSON.stringify(d);
   if (!retour && !S.minuterieLien) {
-    const verifier = () => { if (!document.hidden && $('.espace-membre') && !$('#sheet[open]')) pageLien(jeton, null, true); };
+    const verifier = () => { if ($('.espace-membre')) pageLien(jeton, null, true); };
     S.minuterieLien = setInterval(verifier, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) verifier(); });
   }
@@ -4210,10 +4356,11 @@ async function pageLien(jeton, retour = null, silencieux = false) {
   $('#app').innerHTML = `<main class="espace-membre ${silencieux ? 'sans-anim' : ''}">
     <section class="banniere ${photo ? 'avec-photo' : ''}" ${photo ? `style="--photo:url('${esc(photo)}')"` : ''}>
       <div class="banniere-tete"><img src="${esc(logo)}" alt=""><div><b>${esc(d.association?.nom || '')}</b><span>Bonjour ${esc(d.membre?.prenom || '')} · ${date}</span></div></div>
+      ${retour ? '' : `<div class="banniere-outils"><button type="button" class="banniere-reglages b-cloche-lien" aria-label="Nouveautés" title="Nouveautés">${icone('cloche')}</button></div>`}
       ${banniereAnnonces({ planning, cot: d.periodes || [], parts: d.participations || [], communiques: d.communiques || [], regles: d.banniere })}
     </section>
     ${retour ? `<div class="info info-action"><span>Aperçu de ce que voit ${esc(d.membre?.prenom || '')} avec son lien.</span><button class="btn-primaire btn-petit" id="b-retour">Revenir</button></div>` : ''}
-    ${vueMembre({ planning, cot: d.periodes || [], parts: d.participations || [], infos: d.reglages?.infos_paiement, versements: d.versements || [], avance: Number(d.avance || 0), montant: d.reglages?.montant })}
+    ${vueMembre({ planning, cot: d.periodes || [], parts: d.participations || [], communiques: d.communiques || [], infos: d.reglages?.infos_paiement, versements: d.versements || [], avance: Number(d.avance || 0), montant: d.reglages?.montant })}
     <section class="pied-membre">
       <p>Ce lien vous est personnel. Pour l’ouvrir en un geste, ajoutez cette page à l’écran d’accueil de votre téléphone (menu du navigateur, « Ajouter à l’écran d’accueil »).</p>
       <p>Mise à jour le ${dateFr(aujourdhui())} · ${esc(d.association?.nom || '')}</p>
@@ -4222,6 +4369,16 @@ async function pageLien(jeton, retour = null, silencieux = false) {
   </main>`;
   brancherVueMembre(planning, detailEvenementMembre);
   brancherAnnonces(detailEvenementMembre);
+  if (!retour) {
+    S.majCloche = () => majClocheLien(nouveautesLien(jeton, d).length);
+    S.majCloche();
+    $('.b-cloche-lien').addEventListener('click', () => feuilleNouveautesLien(jeton, d, planning));
+    // Proposition discrète d'activer les notifications : une fois par semaine au plus, jamais si déjà activées ou bloquées
+    if (!silencieux && pushPossible() && Notification.permission === 'default' && discretPermis('push-lien') && !demo) {
+      setTimeout(() => { if (!$('#sheet[open]')) { marquerDiscret('push-lien'); toastAction('Être prévenu des rendez-vous et communiqués, même page fermée ?', 'Activer', async () => {
+        try { await activerPush(jeton); toast('Notifications activées sur cet appareil'); } catch (e) { toast(e.message); } }); } }, 2500);
+    }
+  }
   if (silencieux) { window.scrollTo(0, yLien); requestAnimationFrame(() => requestAnimationFrame(() => $('.espace-membre')?.classList.remove('sans-anim'))); }
   $('#b-retour')?.addEventListener('click', retour);
   $('#b-co')?.addEventListener('click', seConnecter);

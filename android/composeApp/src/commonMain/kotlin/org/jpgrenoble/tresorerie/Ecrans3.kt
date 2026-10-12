@@ -1282,7 +1282,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     @Composable fun Tete() = Banniere(d, onReglages, onCloche) {
         Spacer(Modifier.height(16.dp))
         BanniereAnnonces(annonces, rotation, onEvt = { detail = it }, onAgenda = agenda,
-            onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(4) } }, onCommunique = { communiqueLu = it })
+            onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(if (communiquesActifs(communiques).isNotEmpty()) 5 else 4) } }, onCommunique = { communiqueLu = it })
     }
     val etatCotis = if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour"
     val nomMois = MOIS[mois - 1]
@@ -1320,11 +1320,12 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
         if (large) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Tete()
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(1) { Suite() } }
+                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { RubriqueCommuniques(communiques) { communiqueLu = it }; Apparition(1) { Suite() } }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(2) { Cotisation() }; Regler(); Participations(); Anniversaires() }
             }
         } else LazyColumn(Modifier.fillMaxSize(), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Tete() }
+            if (communiquesActifs(communiques).isNotEmpty()) item { RubriqueCommuniques(communiques) { communiqueLu = it } }
             item { Apparition(1) { Suite() } }
             item { Apparition(2) { Cotisation() } }
             item { Regler() }

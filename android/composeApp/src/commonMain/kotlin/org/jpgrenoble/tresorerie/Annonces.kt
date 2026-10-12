@@ -230,9 +230,49 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
     }
 }
 
+// Communiqués lus sur cet appareil : les autres portent « Nouveau » (même règle que communiquesVus du site)
+object CommuniquesVus {
+    var version by mutableStateOf(0)
+    private fun liste() = (lirePreference("communiques.vus") ?: "").split(',').filter { it.isNotBlank() }
+    fun vu(id: String): Boolean { version; return id in liste() }
+    fun marquer(id: String) { val l = liste(); if (id in l) return; garderPreference("communiques.vus", (l + id).takeLast(200).joinToString(",")); version++ }
+}
+fun ordreCommuniques(l: List<Communique>) = l.sortedWith(compareBy<Communique> { if (it.priorite == "haute") 0 else 1 }.thenByDescending { it.debut })
+
+/** Rubrique « Communiqués » de la page des membres : au-dessus du programme, accent bleu, absente sans communiqué (comme rubriqueCommuniques du site). */
+@Composable
+fun RubriqueCommuniques(liste: List<Communique>, onOuvrir: (Communique) -> Unit) {
+    val l = ordreCommuniques(communiquesActifs(liste))
+    if (l.isEmpty()) return
+    val nouveaux = l.count { !CommuniquesVus.vu(it.id) }
+    val bleu = Color(0xFF1B77B0)
+    Rubrique("m-communiques", "Communiqués", if (nouveaux > 0) "$nouveaux nouveau" + (if (nouveaux > 1) "x" else "") else "${l.size}",
+        accent = bleu, icone = Icons.Outlined.Campaign, forcee = nouveaux > 0, halo = nouveaux > 0) {
+        l.forEach { c ->
+            val nouveau = !CommuniquesVus.vu(c.id)
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOuvrir(c) }.padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (c.priorite == "haute") Color(0xFFFFDBCF) else Color(0xFFCDE8F8)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Campaign, null, tint = if (c.priorite == "haute") Color(0xFF3B0A00) else Color(0xFF00344F), modifier = Modifier.size(20.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(c.titre, fontWeight = FontWeight.SemiBold, color = if (nouveau) Color(0xFF00344F) else Couleurs.Texte, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    c.texte?.lineSequence()?.firstOrNull()?.let { Text(it, fontSize = 14.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    Text("Publié le ${dateFr(c.debut)}" + (c.fin?.let { " · jusqu’au ${dateFr(it)}" } ?: ""), fontSize = 12.sp, color = Couleurs.Texte2)
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Color(0xFF410002))
+                    if (nouveau) Puce("Nouveau", Color(0xFFCDE8F8), Color(0xFF00344F))
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeuilleCommunique(c: Communique, onFermer: () -> Unit) {
+    LaunchedEffect(c.id) { CommuniquesVus.marquer(c.id) }
     ModalBottomSheet(onDismissRequest = onFermer) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

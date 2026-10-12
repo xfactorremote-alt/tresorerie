@@ -29,6 +29,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -344,14 +345,21 @@ internal fun ListeAnniversaires(anniv: List<Anniversaire>, mois: Int) {
 
 // Rubrique dépliable : un appui sur l'en-tête ouvre ou ferme ; repliée, elle montre un résumé
 @Composable
-internal fun Rubrique(id: String, titre: String, resume: String, alerte: Boolean = false, ouverteParDefaut: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
-    val ouverte = EtatAccueil.ouvertes[id] ?: ouverteParDefaut
+internal fun Rubrique(id: String, titre: String, resume: String, alerte: Boolean = false, ouverteParDefaut: Boolean = true,
+                      accent: Color? = null, icone: androidx.compose.ui.graphics.vector.ImageVector? = null, forcee: Boolean = false, halo: Boolean = false,
+                      content: @Composable ColumnScope.() -> Unit) {
+    val ouverte = forcee || (EtatAccueil.ouvertes[id] ?: ouverteParDefaut)
     val rotation by androidx.compose.animation.core.animateFloatAsState(if (ouverte) 180f else 0f)
+    // Halo à l'arrivée d'une nouveauté : deux pulsations douces autour de la carte (comme le site)
+    val pulsation = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(halo) { if (halo) repeat(2) { kotlinx.coroutines.delay(400); pulsation.animateTo(1f, androidx.compose.animation.core.tween(640)); pulsation.animateTo(0f, androidx.compose.animation.core.tween(960)) } }
     Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large,
-        border = if (alerte) androidx.compose.foundation.BorderStroke(2.dp, Couleurs.Erreur.copy(alpha = 0.5f)) else null) {
-        Column(Modifier.fillMaxWidth()) {
+        border = if (alerte) androidx.compose.foundation.BorderStroke(2.dp, Couleurs.Erreur.copy(alpha = 0.5f))
+            else if (accent != null && pulsation.value > 0f) androidx.compose.foundation.BorderStroke(1.dp + 4.dp * pulsation.value, accent.copy(alpha = 0.35f * pulsation.value)) else null) {
+        Column(Modifier.fillMaxWidth().then(if (accent != null) Modifier.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) } else Modifier)) {
             Row(Modifier.fillMaxWidth().clickable(onClickLabel = if (ouverte) "Replier" else "Déplier") { EtatAccueil.ouvertes[id] = !ouverte }
                 .padding(horizontal = 20.dp, vertical = 16.dp).heightIn(min = 28.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (icone != null) { Icon(icone, null, tint = accent ?: Couleurs.Texte2, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)) }
                 Column(Modifier.weight(1f)) {
                     Text(titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     if (!ouverte && resume.isNotBlank()) Text(resume, fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)

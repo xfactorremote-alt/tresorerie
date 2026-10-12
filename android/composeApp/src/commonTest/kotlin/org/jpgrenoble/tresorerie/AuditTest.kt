@@ -256,4 +256,11 @@ class AuditTest {
         assertEquals("en octobre", periodePlanning("mois", auj).resume)
         assertEquals("Rien de prévu d’ici la fin d’octobre.", periodePlanning("mois", auj).vide)
     }
+
+    // Rubrique « Communiqués » : l'important d'abord, puis le plus récent ; seulement ceux en cours
+    @Test fun ordreDesCommuniques() {
+        val l = listOf(Communique("a", "Ancien", debut = "2026-09-01"), Communique("b", "Récent", debut = "2026-10-10"),
+            Communique("c", "Important", debut = "2026-08-01", priorite = "haute"))
+        assertEquals(listOf("c", "b", "a"), ordreCommuniques(l).map { it.id })
+    }
 }
