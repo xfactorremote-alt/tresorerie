@@ -742,8 +742,7 @@ fun sectionsParametres(d: Donnees): List<Pair<String, List<SectionParam>>> {
             SectionParam("notifications", "Notifications", "Pastilles et notifications du téléphone", Icons.Outlined.Notifications)),
         "Association" to (if (admin) listOf(SectionParam("association", "Identité et coordonnées", "Nom, sigle, objet, adresse, RNA, SIRET", Icons.Outlined.Business),
             SectionParam("apparence", "Logo et bannière", "Logo, photo de l’accueil", Icons.Outlined.Image),
-            SectionParam("exercices", "Exercices", "Créer, clôturer ou rouvrir un exercice", Icons.Outlined.CalendarMonth)) else emptyList()) +
-            (if (admin || d.peut("gerer_activites")) listOf(SectionParam("banniere", "Bannière et communiqués", "Communiqués, ordre et fréquence des annonces", Icons.Outlined.Campaign)) else emptyList()),
+            SectionParam("exercices", "Exercices", "Créer, clôturer ou rouvrir un exercice", Icons.Outlined.CalendarMonth)) else emptyList()),
         "Finances" to if (admin) listOf(SectionParam("comptes", "Comptes et soldes de départ", "Banque, caisse, livret", Icons.Outlined.AccountBalanceWallet),
             SectionParam("categories", "Catégories", "Recettes et dépenses", Icons.Outlined.Sell),
             SectionParam("regles", "Cotisations et dépenses", "Montant, périodicité, délais, seuils", Icons.Outlined.Payments)) else emptyList(),

@@ -48,13 +48,15 @@ import kotlinx.serialization.json.jsonPrimitive
 // Même liste et mêmes règles que la base (communiques.genre, repondre_sondage, calcul_resultats) et que le site
 // (GENRES_COMMUNIQUE, libelleLien, calculResultats, blocResultats, rendreSondage, visionneuse).
 // =====================================================================
-data class GenreCommunique(val libelle: String, val sur: String, val action: String, val icone: ImageVector)
+data class GenreCommunique(val libelle: String, val sur: String, val action: String, val icone: ImageVector,
+                           val rubrique: String, val fort: Color, val clair: Color)
 
+// Une rubrique par genre sur la page des membres, avec sa couleur (mêmes couleurs que les groupes des Paramètres et le site)
 val GENRES_COMMUNIQUE = linkedMapOf(
-    "annonce" to GenreCommunique("Annonce", "Communiqué", "", Icons.Outlined.Campaign),
-    "sondage" to GenreCommunique("Sondage", "Votre avis", "Touchez pour répondre", Icons.Outlined.Poll),
-    "photos" to GenreCommunique("Photos", "Photos", "Touchez pour voir", Icons.Outlined.Image),
-    "lien" to GenreCommunique("Lien", "À voir", "Touchez pour ouvrir", Icons.Outlined.Link),
+    "annonce" to GenreCommunique("Annonce", "Communiqué", "", Icons.Outlined.Campaign, "Communiqués", Color(0xFF1B77B0), Color(0xFFE3F1FB)),
+    "sondage" to GenreCommunique("Sondage", "Votre avis", "Touchez pour répondre", Icons.Outlined.Poll, "Sondages", Color(0xFFC23E10), Color(0xFFFFEDE5)),
+    "photos" to GenreCommunique("Photos", "Photos", "Touchez pour voir", Icons.Outlined.Image, "Photos", Color(0xFF2E8B4E), Color(0xFFE4F5E8)),
+    "lien" to GenreCommunique("Lien", "À voir", "Touchez pour ouvrir", Icons.Outlined.Link, "Liens", Color(0xFF7048B8), Color(0xFFEFE9FA)),
 )
 fun genreDe(c: Communique) = GENRES_COMMUNIQUE[c.genre] ?: GENRES_COMMUNIQUE.getValue("annonce")
 
@@ -311,7 +313,6 @@ fun EtiquetteCommunique(c: Communique, mesReponses: Map<String, JsonObject>) {
     when (c.genre) {
         "sondage" -> if (c.id in mesReponses) Puce("Répondu", Color(0xFFCDE8F8), Color(0xFF00344F)) else Puce("À répondre", Color(0xFFFFDBCF), Color(0xFF3B0A00))
         "photos" -> Puce("${c.photos.size} photo" + if (c.photos.size > 1) "s" else "", Color(0xFFEFEDEC), Couleurs.Texte2)
-        "lien" -> Puce("Lien", Color(0xFFEFEDEC), Couleurs.Texte2)
     }
 }
 

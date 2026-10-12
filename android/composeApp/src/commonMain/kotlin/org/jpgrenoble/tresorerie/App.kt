@@ -84,7 +84,9 @@ fun App() = Theme {
                 when (statut) {
                     is SessionStatus.Authenticated -> connecte = true
                     is SessionStatus.NotAuthenticated -> connecte = false
-                    is SessionStatus.RefreshFailure -> if (connecte == null) connecte = false
+                    // Renouvellement impossible pour l'instant (réseau au démarrage) : la session reste sur le téléphone,
+                    // l'application s'ouvre et réessaie ; seule une vraie déconnexion ramène à l'écran de connexion
+                    is SessionStatus.RefreshFailure -> if (connecte == null) connecte = Repo.client.auth.currentSessionOrNull() != null
                     else -> {}
                 }
             }
@@ -100,8 +102,8 @@ fun App() = Theme {
 @Composable
 fun Chargement() = Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 
-// Connexion : en-tête, deux onglets (Se connecter / Première connexion), œil sur le mot de passe,
-// « Rester connecté », mot de passe oublié sous le champ ; le gestionnaire de mots de passe du téléphone
+// Connexion, à l'usage : logo et nom centrés, titre « Connexion », un seul formulaire, bouton principal pleine
+// largeur, puis en bas « Première connexion ? Créer mon mot de passe » (et le retour), comme le site ; le gestionnaire de mots de passe du téléphone
 // remplit et propose d'enregistrer les identifiants (remplissage automatique Android).
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,18 +140,12 @@ fun Connexion() {
             .wrapContentWidth(Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(64.dp).clip(CircleShape).background(Couleurs.OrangeClair)) { LogoAsso(Modifier.fillMaxSize().padding(3.dp).clip(CircleShape)) }
-            Column {
-                Text(nomAsso, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
-                Text("Trésorerie de l’association", color = Couleurs.Texte2)
-            }
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(72.dp).clip(CircleShape).background(Couleurs.OrangeClair)) { LogoAsso(Modifier.fillMaxSize().padding(3.dp).clip(CircleShape)) }
+            Text(nomAsso, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text("Trésorerie de l’association", color = Couleurs.Texte2)
         }
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf(false to "Se connecter", true to "Première connexion").forEachIndexed { i, (v, l) ->
-                SegmentedButton(selected = premiere == v, onClick = { premiere = v; erreur = null; info = null }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(l, maxLines = 1) }
-            }
-        }
+        Text(if (premiere) "Créer mon mot de passe" else "Connexion", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
         info?.let { Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(12.dp)) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
         if (premiere) Text("Utilisez l’adresse e-mail que le trésorier a enregistrée pour vous, puis choisissez votre mot de passe.", color = Couleurs.Texte2, fontSize = 14.sp)
         OutlinedTextField(
@@ -189,9 +185,15 @@ fun Connexion() {
             enabled = !enCours && email.contains('@') && mdp.length >= 8 && (!premiere || mdp == mdp2),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         ) { Text(if (enCours) "Connexion…" else if (premiere) "Créer mon compte" else "Se connecter", fontWeight = FontWeight.Bold) }
-        if (Repo.demo) {
-            OutlinedButton(onClick = { comptesDemo = true }, modifier = Modifier.fillMaxWidth()) { Text("Comptes de démonstration") }
+        HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFFE8E3E1))
+        // Bascule discrète entre connexion et première connexion
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Text(if (premiere) "Vous avez déjà un compte$NBSP?" else "Première connexion$NBSP?", color = Couleurs.Texte2, fontSize = 14.sp)
+            TextButton(onClick = { premiere = !premiere; erreur = null; info = null; mdp2 = "" }) {
+                Text(if (premiere) "Se connecter" else "Créer mon mot de passe", fontWeight = FontWeight.SemiBold)
+            }
         }
+        if (Repo.demo) TextButton(onClick = { comptesDemo = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Comptes de démonstration") }
     }
 
     if (comptesDemo) {
@@ -367,6 +369,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
         adherentSeul -> if (vueAdherent == 1) "activites" else if (sousEcran == null) "cotisations" else null
         onglet == Onglet.Operations -> "ecritures"; onglet == Onglet.Depenses -> "depenses"; onglet == Onglet.Cotisations -> "cotisations"
         onglet == Onglet.Plus && sousEcran == "activites" -> "activites"; onglet == Onglet.Plus && sousEcran == "membres" -> "membres"
+        onglet == Onglet.Plus && sousEcran == "communiques" -> "communiques"
         else -> null
     }
     LaunchedEffect(sectionVue) { sectionVue?.let { kotlinx.coroutines.delay(1500); EtatNouveautes.vu(it) } }
@@ -376,7 +379,8 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
             "ecritures" -> { compteFiltre = null; onglet = Onglet.Operations }
             "depenses" -> onglet = Onglet.Depenses
             "cotisations" -> onglet = if (Onglet.Cotisations in onglets) Onglet.Cotisations else Onglet.Accueil
-            "communiques" -> onglet = Onglet.Accueil   // les communiqués s'affichent sur la bannière de l'accueil
+            // Le bureau gère les communiqués dans Plus › Communiqués ; les autres les lisent sur l'accueil
+            "communiques" -> if (d.peut("gerer_activites", "administrer")) { sousEcran = "communiques"; onglet = Onglet.Plus } else onglet = Onglet.Accueil
             else -> { sousEcran = section; onglet = Onglet.Plus }
         }
     }
@@ -427,7 +431,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
                                 Onglet.Plus -> Icons.Outlined.GridView
                             }, when (o) {
                                 Onglet.Operations -> c["ecritures"] ?: 0; Onglet.Depenses -> c["depenses"] ?: 0; Onglet.Cotisations -> c["cotisations"] ?: 0
-                                Onglet.Plus -> (c["activites"] ?: 0) + (c["membres"] ?: 0); else -> 0
+                                Onglet.Plus -> (c["activites"] ?: 0) + (c["membres"] ?: 0) + (if (d.peut("gerer_activites", "administrer")) c["communiques"] ?: 0 else 0); else -> 0
                             }, null)
                         },
                         label = { Text(o.titre, maxLines = 1) },
@@ -466,6 +470,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
                     "tiers" -> EcranTiers(d, message)
                     "rapprochement" -> EcranRapprochement(d, message)
                     "materiel" -> EcranMateriel(d, message)
+                    "communiques" -> ParamBanniere(d, message, enPage = true)
                     "rapports" -> EcranRapports(d, message)
                     "parametres" -> EcranParametres(d, message, recharger, onAssistant = onAssistant, onFermer = fermerParametres, sectionInitiale = sectionParam, onCible = allerCible)
                     else -> EcranPlus(d) { sousEcran = it }

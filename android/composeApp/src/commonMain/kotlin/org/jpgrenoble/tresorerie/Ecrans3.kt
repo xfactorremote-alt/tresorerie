@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -96,7 +97,6 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
             "roles" -> ParamRoles(d, message, recharger)
             "corbeille" -> ParamCorbeille(d, message, recharger)
             "sauvegarde" -> ParamSauvegarde(message)
-            "banniere" -> ParamBanniere(d, message)
             else -> ParamMiseEnRoute(d) { cible ->
                 when (cible) { "assistant" -> onAssistant(); "apparence", "comptes" -> section = cible; else -> onCible(cible) }
             }
@@ -1430,6 +1430,7 @@ fun EcranPlus(d: Donnees, onChoix: (String) -> Unit) {
         if (d.peut("voir_membres", "gerer_membres")) add(Triple("membres", "Membres", Icons.Outlined.Groups))
         if (d.peut("consulter_finances", "gerer_budget")) add(Triple("budget", "Budget", Icons.Outlined.PieChart))
         add(Triple("activites", "Planning", Icons.Outlined.Event))
+        if (d.peut("gerer_activites", "administrer")) add(Triple("communiques", "Communiqués", Icons.Outlined.Campaign))
         if (d.peut("consulter_finances", "saisir_ecritures", "gerer_cotisations")) add(Triple("tiers", "Tiers", Icons.Outlined.Contacts))
         if (d.peut("gerer_materiel", "consulter_finances", "voir_membres")) add(Triple("materiel", "Matériel", Icons.Outlined.Inventory2))
         if (d.peut("rapprocher", "consulter_finances")) add(Triple("rapprochement", "Rapprochement", Icons.Outlined.AccountBalance))

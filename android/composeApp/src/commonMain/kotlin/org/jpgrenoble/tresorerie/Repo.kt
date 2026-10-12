@@ -57,7 +57,8 @@ object Repo {
 
     suspend fun deconnecter() {
         if (demo) { profilDemo.value = null; return }
-        client.auth.signOut()
+        // Ce téléphone seulement : par défaut Supabase fermerait toutes les sessions du compte (site, autres appareils)
+        client.auth.signOut(io.github.jan.supabase.auth.SignOutScope.LOCAL)
     }
 
     suspend fun profil(): Profil? {

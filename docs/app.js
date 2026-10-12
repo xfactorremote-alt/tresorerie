@@ -233,6 +233,9 @@ function avatar(m) {
 }
 
 // ---------- Connexion ----------
+// Se déconnecter ferme la session de CET appareil seulement (« local ») : par défaut, Supabase ferme toutes les
+// sessions du compte (téléphone, application, autre ordinateur), qui demandaient alors à se reconnecter.
+const deconnecter = () => sb.auth.signOut({ scope: 'local' });
 const resterConnecte = () => { try { return localStorage.getItem('resterConnecte') !== '0'; } catch { return true; } };
 const stockageSession = {
   getItem: (k) => { try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); } catch { return null; } },
@@ -261,9 +264,7 @@ function ecranConnexion(message = '', mode = 'connexion') {
   $('#app').innerHTML = `
   <main class="connexion"><div class="carte connexion-carte">
     <div class="connexion-tete"><img src="${esc(S.logoUrl)}" alt=""><div><h1>${esc(S.org?.nom || 'Trésorerie')}</h1><span class="muted">Trésorerie de l’association</span></div></div>
-    <div class="segments" role="tablist" aria-label="Connexion">
-      <button type="button" role="tab" aria-selected="${!premiere}" data-mode="connexion">Se connecter</button>
-      <button type="button" role="tab" aria-selected="${premiere}" data-mode="premiere">Première connexion</button></div>
+    <h2 class="connexion-titre">${premiere ? 'Créer mon mot de passe' : 'Connexion'}</h2>
     ${message ? `<p class="info">${esc(message)}</p>` : ''}
     ${premiere ? `<form id="f-premiere" class="champs" method="post" action="#" autocomplete="on">
       <p class="muted" style="margin:0">Utilisez l’adresse e-mail que le trésorier a enregistrée pour vous, puis choisissez votre mot de passe.</p>
@@ -271,15 +272,18 @@ function ecranConnexion(message = '', mode = 'connexion') {
       ${champMotDePasse('mdp', 'Mot de passe (8 caractères minimum)', 'new-password')}
       ${champMotDePasse('mdp2', 'Confirmez le mot de passe', 'new-password')}
       <button class="btn-primaire btn-large" type="submit">Créer mon compte</button>
-    </form>` : `<form id="f-connexion" class="champs" method="post" action="#" autocomplete="on">
+    </form>
+    <p class="connexion-bascule">Vous avez déjà un compte&#8239;? <button type="button" class="lien-texte" data-mode="connexion">Se connecter</button></p>`
+    : `<form id="f-connexion" class="champs" method="post" action="#" autocomplete="on">
       <label class="champ">Adresse e-mail<input type="email" name="email" id="i-email" autocomplete="username" inputmode="email" required autofocus></label>
       ${champMotDePasse('mdp', 'Mot de passe', 'current-password')}
       <div class="connexion-options">
-        <label class="case"><input type="checkbox" name="rester" ${resterConnecte() ? 'checked' : ''}> Rester connecté sur cet appareil</label>
-        <button class="btn-texte btn-petit" type="button" id="b-oubli">Mot de passe oublié&#8239;?</button></div>
+        <label class="case"><input type="checkbox" name="rester" ${resterConnecte() ? 'checked' : ''}> Rester connecté</label>
+        <button class="lien-texte" type="button" id="b-oubli">Mot de passe oublié&#8239;?</button></div>
       <button class="btn-primaire btn-large" type="submit">Se connecter</button>
-    </form>`}
-    ${demo ? '<button class="btn-tonal" type="button" id="b-demo">Comptes de démonstration</button>' : ''}
+    </form>
+    <p class="connexion-bascule">Première connexion&#8239;? <button type="button" class="lien-texte" data-mode="premiere">Créer mon mot de passe</button></p>`}
+    ${demo ? '<p class="connexion-bascule"><button class="lien-texte" type="button" id="b-demo">Comptes de démonstration</button></p>' : ''}
   </div></main>`;
   brancherYeux($('#app'));
   document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
@@ -346,7 +350,7 @@ function ecranSansAcces() {
     <h1>Accès en attente</h1>
     <p>Votre adresse <b>${esc(S.session?.user?.email)}</b> n’est pas encore autorisée. Demandez au trésorier de vous inviter avec cette adresse, puis reconnectez-vous.</p>
     <button class="btn-tonal" id="b-sortir">Se déconnecter</button></div></main>`;
-  $('#b-sortir').addEventListener('click', () => sb.auth.signOut());
+  $('#b-sortir').addEventListener('click', () => deconnecter());
 }
 
 // ---------- Arrivée d'un nouveau membre : il remplit sa fiche ----------
@@ -514,6 +518,7 @@ function pagesAutorisees() {
     ['cotisations', 'Cotisations', peut('consulter_finances', 'gerer_cotisations')],
     ['budget', 'Budget', peut('consulter_finances', 'gerer_budget')],
     ['activites', 'Planning', true],
+    ['communiques', 'Communiqués', peut('gerer_activites', 'administrer')],
     ['materiel', 'Matériel', peut('gerer_materiel', 'consulter_finances', 'voir_membres')],
     ['tiers', 'Tiers', peut('consulter_finances', 'saisir_ecritures', 'gerer_cotisations')],
     ['membres', 'Membres', peut('voir_membres', 'gerer_membres')],
@@ -588,7 +593,7 @@ function coquille(page, contenu) {
 const SECTIONS_NOUVEAUTES = ['ecritures', 'depenses', 'cotisations', 'activites', 'membres', 'communiques'];
 const LIBELLES_SECTIONS = { ecritures: 'Opérations', depenses: 'Demandes', cotisations: 'Cotisations', activites: 'Planning', membres: 'Membres', communiques: 'Communiqués' };
 // Page où mène une nouveauté (les communiqués s'affichent sur la bannière de l'accueil)
-const pageDeSection = (sec) => (sec === 'communiques' ? 'tableau' : sec);
+const pageDeSection = (sec) => (sec === 'communiques' ? (peut('gerer_activites', 'administrer') ? 'communiques' : 'tableau') : sec);
 // Préférences d'alerte de l'appareil : son et vibration (Paramètres › Notifications)
 const prefNotif = (k) => { try { return localStorage.getItem('notif:' + k) !== '0'; } catch { return true; } };
 const garderPrefNotif = (k, v) => { try { localStorage.setItem('notif:' + k, v ? '1' : '0'); } catch { /* stockage indisponible */ } };
@@ -780,7 +785,7 @@ function feuilleNouveautes() {
   });
 }
 
-const PAGES = { tableau: pageTableau, ecritures: pageEcritures, membres: pageMembres, cotisations: pageCotisations, parametres: pageParametres,
+const PAGES = { communiques: pageCommuniques, tableau: pageTableau, ecritures: pageEcritures, membres: pageMembres, cotisations: pageCotisations, parametres: pageParametres,
   depenses: pageDepenses, budget: pageBudget, activites: pageActivites, rapprochement: pageRapprochement, rapports: pageRapports,
   tiers: pageTiers, materiel: pageMateriel };
 async function router() {
@@ -1022,7 +1027,7 @@ function vueMembre(o) {
 }
 
 // ---------- Annonces de la bannière : rendez-vous, relances, communiqués ----------
-// Règles réglables (Paramètres › Bannière et communiqués) : priorité de chaque type (1 = d'abord), fréquence
+// Règles réglables (Plus › Communiqués, réservé à l'administrateur) : priorité de chaque type (1 = d'abord), fréquence
 // (toujours, une fois par jour sur l'appareil, jamais) et durée de chaque annonce. Même calcul sur Android (annoncesBanniere).
 const REGLES_BANNIERE = { rotation: 8, rdv: { priorite: 1, frequence: 'toujours' }, cotisation: { priorite: 2, frequence: 'toujours' },
   participation: { priorite: 2, frequence: 'toujours' }, communique: { priorite: 1, frequence: 'toujours' } };
@@ -1136,10 +1141,10 @@ function brancherAnnonces(ouvrirEvt) {
 }
 // ---------- Partages avec les membres : annonce, sondage (questionnaire), photos, lien (même liste que la base et Android) ----------
 const GENRES_COMMUNIQUE = {
-  annonce: { libelle: 'Annonce', icone: 'communiques', sur: 'Communiqué', action: '' },
-  sondage: { libelle: 'Sondage', icone: 'sondage', sur: 'Votre avis', action: 'Touchez pour répondre' },
-  photos: { libelle: 'Photos', icone: 'image', sur: 'Photos', action: 'Touchez pour voir' },
-  lien: { libelle: 'Lien', icone: 'lien', sur: 'À voir', action: 'Touchez pour ouvrir' },
+  annonce: { libelle: 'Annonce', rubrique: 'Communiqués', couleur: 'bleu', icone: 'communiques', sur: 'Communiqué', action: '' },
+  sondage: { libelle: 'Sondage', rubrique: 'Sondages', couleur: 'orange', icone: 'sondage', sur: 'Votre avis', action: 'Touchez pour répondre' },
+  photos: { libelle: 'Photos', rubrique: 'Photos', couleur: 'vert', icone: 'image', sur: 'Photos', action: 'Touchez pour voir' },
+  lien: { libelle: 'Lien', rubrique: 'Liens', couleur: 'violet', icone: 'lien', sur: 'À voir', action: 'Touchez pour ouvrir' },
 };
 const genreDe = (c) => GENRES_COMMUNIQUE[c?.genre] || GENRES_COMMUNIQUE.annonce;
 const urlPhotoPartage = (chemin) => sb.storage.from('partages').getPublicUrl(chemin).data.publicUrl;
@@ -1158,7 +1163,6 @@ const aRepondre = (c) => c.genre === 'sondage' && !c.ma_reponse;
 function etiquetteCommunique(c) {
   if (c.genre === 'sondage') return c.ma_reponse ? '<span class="puce puce-ok">Répondu</span>' : '<span class="puce puce-a-repondre">À répondre</span>';
   if (c.genre === 'photos') return `<span class="puce puce-neutre">${(c.photos || []).length} photo${(c.photos || []).length > 1 ? 's' : ''}</span>`;
-  if (c.genre === 'lien') return `<span class="puce puce-neutre">${icone('lien', 14)} Lien</span>`;
   return '';
 }
 // Résultats d'un sondage : barres par choix (même calcul que calcul_resultats de la base)
@@ -1215,7 +1219,7 @@ function rendreSondage(c, zone, modifier = false) {
       rendreSondage(c, zone);
       const li = document.querySelector(`.liste-communiques [data-communique="${CSS.escape(String(c.id))}"] .puce-a-repondre`);
       if (li) li.outerHTML = '<span class="puce puce-ok">Répondu</span>';
-      const res = $('[data-rub=m-communiques] .rub-resume'); if (res) res.textContent = resumeCommuniques(S.communiquesMembre || []);
+      majRubriquesPartages();
     } catch (err) { b.disabled = false; erreur(err); }
   });
 }
@@ -1243,33 +1247,44 @@ function visionneuse(photos, depart) {
 // Communiqués lus sur cet appareil : ceux qui n'y sont pas portent « Nouveau » (rubrique, cloche du lien)
 const communiquesVus = () => { try { return JSON.parse(localStorage.getItem('communiquesVus') || '[]'); } catch { return []; } };
 const communiqueVu = (id) => communiquesVus().includes(String(id));
+function majRubriquesPartages() {
+  Object.keys(GENRES_COMMUNIQUE).forEach((g) => {
+    const rub = $(`[data-rub=m-${g}]`); if (!rub) return;
+    const l = (S.communiquesMembre || []).filter((c) => (c.genre || 'annonce') === g);
+    const r = rub.querySelector('.rub-resume'); if (r) r.textContent = resumeCommuniques(l);
+    if (!l.some((c) => !communiqueVu(c.id) || aRepondre(c))) rub.classList.remove('a-du-nouveau');
+  });
+}
 function marquerCommuniqueVu(id) {
   const l = communiquesVus(); if (l.includes(String(id))) return;
   try { localStorage.setItem('communiquesVus', JSON.stringify([...l, String(id)].slice(-200))); } catch { /* stockage indisponible */ }
   document.querySelectorAll(`.liste-communiques [data-communique="${CSS.escape(String(id))}"]`).forEach((li) => { li.classList.remove('cq-nouveau'); li.querySelector('.puce-nouveau')?.remove(); });
-  const r = $('[data-rub=m-communiques] .rub-resume'); if (r) r.textContent = resumeCommuniques(S.communiquesMembre || []);
-  if (!document.querySelector('.liste-communiques .cq-nouveau')) $('[data-rub=m-communiques]')?.classList.remove('a-du-nouveau');
+  majRubriquesPartages();
   S.majCloche?.();
 }
 const ordreCommuniques = (l) => [...l].sort((a, b) => ((a.priorite === 'haute') !== (b.priorite === 'haute') ? (a.priorite === 'haute' ? -1 : 1) : (a.debut < b.debut ? 1 : -1)));
 function resumeCommuniques(l) {
-  const r = l.filter(aRepondre).length; if (r) return `${r} sondage${r > 1 ? 's' : ''} à répondre`;
+  const r = l.filter(aRepondre).length; if (r) return `${r} à répondre`;
   const n = l.filter((c) => !communiqueVu(c.id)).length; return n ? `${n} nouveau${n > 1 ? 'x' : ''}` : `${l.length}`;
 }
-// Rubrique « Communiqués » de la page des membres : au-dessus du programme, avec un accent ; absente sans communiqué
+// Une rubrique par genre au-dessus du programme : Communiqués, Sondages, Photos, Liens (chacune absente si vide),
+// avec son icône et son filet de couleur ; ouverte d'office et halo quand il y a du nouveau ou un sondage à répondre
 function rubriqueCommuniques(liste) {
-  const l = ordreCommuniques(communiquesActifs(liste));
-  S.communiquesMembre = l;
-  if (!l.length) return '';
-  const nouveaux = l.some((c) => !communiqueVu(c.id) || aRepondre(c));
-  return rubrique('m-communiques', `<span class="statut-titre titre-communiques">${icone('communiques', 18)} Communiqués</span>`, resumeCommuniques(l),
-    `<ul class="liste liste-communiques">${l.map((c) => `<li class="cliquable${c.priorite === 'haute' ? ' cq-important' : ''}${communiqueVu(c.id) ? '' : ' cq-nouveau'}" data-communique="${esc(c.id)}" tabindex="0" role="button">
-      <span class="cq-date" aria-hidden="true"><b>${Number(c.debut.slice(8, 10))}</b>${MOIS_COURTS[Number(c.debut.slice(5, 7)) - 1]}</span>
-      <div class="corps"><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}
-        ${c.genre === 'photos' ? `<span class="cq-vignettes">${(c.photos || []).slice(0, 4).map((p) => `<img src="${esc(urlPhotoPartage(p))}" alt="" loading="lazy">`).join('')}</span>` : ''}
-        ${c.genre === 'lien' ? `<small>${esc(hoteDe(c.lien))}</small>` : ''}${c.fin ? `<small>${c.genre === 'sondage' ? 'Répondre avant le' : 'Jusqu’au'} ${dateFr(c.fin)}</small>` : ''}</div>
-      <span class="cq-etiquettes">${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}${etiquetteCommunique(c)}${communiqueVu(c.id) || aRepondre(c) ? '' : '<span class="puce puce-nouveau">Nouveau</span>'}</span></li>`).join('')}</ul>`,
-    { classe: 'rub-communiques' + (nouveaux ? ' a-du-nouveau' : ''), forcee: nouveaux });
+  const tous = ordreCommuniques(communiquesActifs(liste));
+  S.communiquesMembre = tous;
+  return Object.entries(GENRES_COMMUNIQUE).map(([g, def]) => {
+    const l = tous.filter((c) => (c.genre || 'annonce') === g);
+    if (!l.length) return '';
+    const nouveaux = l.some((c) => !communiqueVu(c.id) || aRepondre(c));
+    return rubrique(`m-${g}`, `<span class="statut-titre titre-partage">${icone(def.icone, 18)} ${def.rubrique}</span>`, resumeCommuniques(l),
+      `<ul class="liste liste-communiques">${l.map((c) => `<li class="cliquable${c.priorite === 'haute' ? ' cq-important' : ''}${communiqueVu(c.id) ? '' : ' cq-nouveau'}" data-communique="${esc(c.id)}" tabindex="0" role="button">
+        <span class="cq-date" aria-hidden="true"><b>${Number(c.debut.slice(8, 10))}</b>${MOIS_COURTS[Number(c.debut.slice(5, 7)) - 1]}</span>
+        <div class="corps"><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}
+          ${g === 'photos' ? `<span class="cq-vignettes">${(c.photos || []).slice(0, 4).map((p) => `<img src="${esc(urlPhotoPartage(p))}" alt="" loading="lazy">`).join('')}</span>` : ''}
+          ${g === 'lien' ? `<small>${esc(hoteDe(c.lien))}</small>` : ''}${c.fin ? `<small>${g === 'sondage' ? 'Répondre avant le' : 'Jusqu’au'} ${dateFr(c.fin)}</small>` : ''}</div>
+        <span class="cq-etiquettes">${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}${etiquetteCommunique(c)}${communiqueVu(c.id) || aRepondre(c) ? '' : '<span class="puce puce-nouveau">Nouveau</span>'}</span></li>`).join('')}</ul>`,
+      { classe: `rub-communiques c-${def.couleur}` + (nouveaux ? ' a-du-nouveau' : ''), forcee: nouveaux });
+  }).join('');
 }
 function feuilleCommunique(c) {
   marquerCommuniqueVu(c.id);
@@ -2603,8 +2618,7 @@ function sectionsParametres() {
     ['Association', [
       ['association', 'Identité et coordonnées', 'association', 'Nom, sigle, objet, adresse, RNA, SIRET', paramAssociation, admin],
       ['apparence', 'Logo et bannière', 'image', 'Logo, photo de l’accueil', paramApparence, admin],
-      ['exercices', 'Exercices', 'exercice', 'Créer, clôturer ou rouvrir un exercice', paramExercices, admin],
-      ['banniere', 'Bannière et communiqués', 'communiques', 'Communiqués, sondages, photos, liens', paramBanniere, admin || peut('gerer_activites')]]],
+      ['exercices', 'Exercices', 'exercice', 'Créer, clôturer ou rouvrir un exercice', paramExercices, admin]]],
     ['Finances', [
       ['comptes', 'Comptes et soldes de départ', 'compte', 'Banque, caisse, livret', paramComptes, admin],
       ['categories', 'Catégories', 'categorie', 'Recettes et dépenses', paramCategories, admin],
@@ -2720,7 +2734,7 @@ async function paramSecurite(zone) {
     if (f.mdp.value !== f.mdp2.value) return toast('Les deux mots de passe sont différents');
     try { await q(sb.auth.updateUser({ password: f.mdp.value })); await memoriserIdentifiants(f); f.reset(); toast('Mot de passe modifié'); } catch (err) { erreur(err); }
   });
-  $('#b-deconnexion', zone).addEventListener('click', () => sb.auth.signOut());
+  $('#b-deconnexion', zone).addEventListener('click', () => deconnecter());
 }
 
 // Notifications : pastilles sur les onglets (toujours) et alertes du navigateur (sur demande)
@@ -2734,7 +2748,13 @@ async function paramNotifications(zone) {
 }
 
 // Bannière et communiqués : les communiqués de l'association et l'ordre / la fréquence des annonces de la bannière des membres
-async function paramBanniere(zone) {
+// Communiqués et partages (menu Plus) : publier une annonce, un sondage, des photos, un lien ; ordre de la bannière
+async function pageCommuniques() {
+  const gere = peut('gerer_activites', 'administrer');
+  rendre(`<div class="page"><div class="page-titre"><h1>Communiqués</h1>${gere ? `<button class="btn-primaire btn-petit" id="b-communique">${icone('ajout', 16)} Publier</button>` : ''}</div><div id="z-communiques"></div></div>`);
+  await paramBanniere($('#z-communiques'), true);
+}
+async function paramBanniere(zone, enPage = false) {
   const gere = peut('gerer_activites', 'administrer');
   const liste = await q(sb.from('communiques').select('*').order('debut', { ascending: false }));
   const nbRep = {}; (await q(sb.from('reponses_sondage').select('communique_id')).catch(() => [])).forEach((x) => { nbRep[x.communique_id] = (nbRep[x.communique_id] || 0) + 1; });
@@ -2746,7 +2766,7 @@ async function paramBanniere(zone) {
   const optFreq = (v) => [['toujours', 'À chaque visite'], ['jour', 'Une fois par jour'], ['jamais', 'Jamais']].map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${l}</option>`).join('');
   const TYPES = [['rdv', 'Prochain rendez-vous'], ['communique', 'Communiqués'], ['cotisation', 'Rappel de cotisation en retard'], ['participation', 'Rappel de participation à régler']];
   zone.innerHTML = `<div class="grille grille-2">
-    <section class="carte"><div class="page-titre"><h3 style="flex:1">Communiqués et partages</h3>${gere ? '<button class="btn-primaire btn-petit" id="b-communique">Publier</button>' : ''}</div>
+    <section class="carte">${enPage ? '<h3>Publications</h3>' : `<div class="page-titre"><h3 style="flex:1">Communiqués et partages</h3>${gere ? '<button class="btn-primaire btn-petit" id="b-communique">Publier</button>' : ''}</div>`}
       <p class="muted" style="margin:0">Annonce, sondage ou questionnaire, photos, lien (Drive, formulaire, vidéo) : chaque publication s’affiche sur la page des membres et sur leur bannière pendant sa période, et chacun reçoit une notification.</p>
       ${liste.length ? `<ul class="liste">${liste.map((c) => `<li class="cliquable" data-communique="${c.id}" tabindex="0" role="button"><span class="avatar">${icone(genreDe(c).icone, 18)}</span>
         <div class="corps"><b>${esc(c.titre)}</b><span>${genreDe(c).libelle} · ${etat(c)}${c.genre === 'sondage' ? ` · ${nbRep[c.id] || 0} réponse${(nbRep[c.id] || 0) > 1 ? 's' : ''}` : ''}${c.visible_adherents ? '' : ' · bureau seulement'}</span></div><span class="puce ${PRIO[c.priorite][1]}">${PRIO[c.priorite][0]}</span></li>`).join('')}</ul>`
@@ -2760,9 +2780,10 @@ async function paramBanniere(zone) {
       </form></section>` : ''}
   </div>`;
   marquerVu('communiques');
-  $('#b-communique', zone)?.addEventListener('click', () => feuilleEditionCommunique(null, () => paramBanniere(zone)));
+  const recharger = () => paramBanniere(zone, enPage);
+  ($('#b-communique', zone) || (enPage ? $('#b-communique') : null))?.addEventListener('click', () => feuilleEditionCommunique(null, recharger));
   zone.querySelectorAll('[data-communique]').forEach((li) => {
-    const ouvrir = () => { const c = liste.find((x) => x.id === li.dataset.communique); if (gere && c.genre === 'sondage') feuilleResultatsSondage(c, () => paramBanniere(zone)).catch(erreur); else if (gere) feuilleEditionCommunique(c, () => paramBanniere(zone)); else feuilleCommunique(c); };
+    const ouvrir = () => { const c = liste.find((x) => x.id === li.dataset.communique); if (gere && c.genre === 'sondage') feuilleResultatsSondage(c, recharger).catch(erreur); else if (gere) feuilleEditionCommunique(c, recharger); else feuilleCommunique(c); };
     li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
   });
   $('#f-banniere', zone)?.addEventListener('submit', async (e) => {

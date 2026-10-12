@@ -243,20 +243,30 @@ fun ordreCommuniques(l: List<Communique>) = l.sortedWith(compareBy<Communique> {
 /** Rubrique « Communiqués » de la page des membres : au-dessus du programme, accent bleu, absente sans communiqué (comme rubriqueCommuniques du site). */
 @Composable
 fun RubriqueCommuniques(liste: List<Communique>, mesReponses: Map<String, JsonObject> = emptyMap(), onOuvrir: (Communique) -> Unit) {
-    val l = ordreCommuniques(communiquesActifs(liste))
-    if (l.isEmpty()) return
+    // Une rubrique par genre (Communiqués, Sondages, Photos, Liens), chacune absente si vide, comme rubriqueCommuniques du site
+    val tous = ordreCommuniques(communiquesActifs(liste))
+    if (tous.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        GENRES_COMMUNIQUE.forEach { (genre, g) ->
+            val l = tous.filter { it.genre == genre || (genre == "annonce" && it.genre !in GENRES_COMMUNIQUE) }
+            if (l.isNotEmpty()) RubriqueGenre("m-$genre", g, l, mesReponses, onOuvrir)
+        }
+    }
+}
+
+@Composable
+private fun RubriqueGenre(id: String, g: GenreCommunique, l: List<Communique>, mesReponses: Map<String, JsonObject>, onOuvrir: (Communique) -> Unit) {
     val nouveaux = l.count { !CommuniquesVus.vu(it.id) && !aRepondre(it, mesReponses) }
     val aRep = l.count { aRepondre(it, mesReponses) }
-    val bleu = Color(0xFF1B77B0)
-    Rubrique("m-communiques", "Communiqués", when { aRep > 0 -> "$aRep sondage" + (if (aRep > 1) "s" else "") + " à répondre"; nouveaux > 0 -> "$nouveaux nouveau" + (if (nouveaux > 1) "x" else ""); else -> "${l.size}" },
-        accent = bleu, icone = Icons.Outlined.Campaign, forcee = nouveaux + aRep > 0, halo = nouveaux + aRep > 0) {
+    Rubrique(id, g.rubrique, when { aRep > 0 -> "$aRep à répondre"; nouveaux > 0 -> "$nouveaux nouveau" + (if (nouveaux > 1) "x" else ""); else -> "${l.size}" },
+        accent = g.fort, icone = g.icone, forcee = nouveaux + aRep > 0, halo = nouveaux + aRep > 0) {
         l.forEach { c ->
             val nouveau = !CommuniquesVus.vu(c.id) && !aRepondre(c, mesReponses)
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOuvrir(c) }.padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                // Date de publication (le mégaphone n'est que dans le titre de la rubrique), comme le site
-                val encre = if (c.priorite == "haute") Color(0xFF3B0A00) else Color(0xFF00344F)
-                Column(Modifier.width(44.dp).clip(RoundedCornerShape(8.dp)).background(if (c.priorite == "haute") Color(0xFFFFDBCF) else Color(0xFFCDE8F8)).padding(vertical = 4.dp),
+                // Date de publication aux couleurs de la rubrique (orange si Important), comme le site
+                val (fond, encre) = if (c.priorite == "haute") Color(0xFFFFDBCF) to Color(0xFF3B0A00) else g.clair to g.fort
+                Column(Modifier.width(44.dp).clip(RoundedCornerShape(8.dp)).background(fond).padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("${c.debut.substring(8, 10).toInt()}", fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = encre)
                     Text(MOIS_COURTS[c.debut.substring(5, 7).toInt() - 1].uppercase(), fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = encre)
@@ -308,7 +318,7 @@ fun FeuilleCommunique(c: Communique, maReponse: JsonObject? = null, onRepondu: (
 // Paramètres › Bannière et communiqués (même section que paramBanniere du site)
 // =====================================================================
 @Composable
-fun ParamBanniere(d: Donnees, message: (String) -> Unit) {
+fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false) {
     val gere = d.peut("gerer_activites", "administrer")
     var version by remember { mutableStateOf(0) }
     var liste by remember { mutableStateOf<List<Communique>>(emptyList()) }
@@ -327,11 +337,18 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit) {
     }
     val auj = aujourdhui().toString()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Page Plus › Communiqués : titre de la page et bouton « Publier » (une seule fois sur l'écran)
+        if (enPage) item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Communiqués", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (gere) Button(onClick = { nouveau = true }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Publier") }
+            }
+        }
         item {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Communiqués et partages", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    if (gere) Button(onClick = { nouveau = true }) { Text("Publier") }
+                    Text(if (enPage) "Publications" else "Communiqués et partages", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    if (gere && !enPage) Button(onClick = { nouveau = true }) { Text("Publier") }
                 }
                 Text("Annonce, sondage ou questionnaire, photos, lien (Drive, formulaire, vidéo) : chaque publication s’affiche sur la page des membres et sur leur bannière pendant sa période, et chacun reçoit une notification.", fontSize = 13.sp, color = Couleurs.Texte2)
                 if (liste.isEmpty()) Text("Aucun communiqué pour l’instant.", color = Couleurs.Texte2)

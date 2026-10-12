@@ -1154,10 +1154,12 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 @media (prefers-reduced-motion:reduce){.menu-periode{animation:none}}
 
 /* Rubrique « Communiqués » des membres : au-dessus du programme, accent bleu (filet, pastille), halo à l'arrivée d'un nouveau */
-.rub-communiques{box-shadow:var(--ombre4),inset 4px 0 0 var(--bleu)}
-.titre-communiques svg{color:var(--bleu)}
+.rub-communiques{box-shadow:var(--ombre4),inset 4px 0 0 var(--g-fort)}
+.rub-communiques .liste-communiques .cq-date{background:var(--g-clair);color:var(--g-fort)}
+.rub-communiques .liste-communiques .cq-important .cq-date{background:var(--primaire-clair);color:var(--sur-primaire-clair)}
+.titre-partage svg{color:var(--g-fort)}
 .rub-communiques.a-du-nouveau{animation:cq-halo 1.6s var(--c-aise) .4s 2}
-@keyframes cq-halo{0%,100%{box-shadow:var(--ombre4),inset 4px 0 0 var(--bleu),0 0 0 0 rgba(27,119,176,0)}40%{box-shadow:var(--ombre8),inset 4px 0 0 var(--bleu),0 0 0 6px rgba(27,119,176,.22)}}
+@keyframes cq-halo{0%,100%{box-shadow:var(--ombre4),inset 4px 0 0 var(--g-fort),0 0 0 0 transparent}40%{box-shadow:var(--ombre8),inset 4px 0 0 var(--g-fort),0 0 0 6px color-mix(in srgb,var(--g-fort) 22%,transparent)}}
 .liste-communiques li{display:flex;align-items:flex-start;gap:12px}
 /* Chaque communiqué porte sa date de publication (le mégaphone n'est que dans le titre de la rubrique) */
 .liste-communiques .cq-date{flex:none;width:44px;padding:4px 0;border-radius:var(--r-xgrand);display:flex;flex-direction:column;align-items:center;line-height:1.1;
@@ -1232,3 +1234,14 @@ dialog.visionneuse img{max-width:100%;max-height:calc(100dvh - 64px);object-fit:
 /* Formulaire de sondage (bureau) */
 .q-edition{border:1px solid var(--bord-doux);border-radius:var(--r-xgrand);padding:10px 12px;margin:0;display:flex;flex-direction:column;gap:8px}
 .q-edition legend{font-weight:600;padding:0 4px}
+
+/* Connexion à l'usage : un seul formulaire, titre, bouton principal pleine largeur, bascule discrète en bas */
+.connexion .connexion-tete{flex-direction:column;text-align:center;gap:10px}
+.connexion .connexion-tete h1{text-align:center}
+.connexion .connexion-tete img{width:64px;height:64px}
+.connexion-titre{margin:4px 0 0;font-size:20px;line-height:28px;font-weight:600}
+.connexion .btn-large{width:100%}
+.lien-texte{background:none;border:0;padding:0;min-height:0;font:inherit;font-weight:600;color:var(--primaire);cursor:pointer;text-decoration:none}
+.lien-texte:hover,.lien-texte:focus-visible{text-decoration:underline}
+.connexion-bascule{margin:0;padding-top:14px;border-top:1px solid var(--bord-doux);text-align:center;color:var(--texte-2);font-size:14px}
+.connexion-bascule + .connexion-bascule{border-top:0;padding-top:0}
