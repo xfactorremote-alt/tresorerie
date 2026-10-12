@@ -45,6 +45,9 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import kotlinx.datetime.LocalDate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.outlined.Campaign
@@ -129,6 +132,8 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
     var i by remember(annonces.size) { mutableStateOf(0) }
     var sens by remember { mutableStateOf(1) }
     var pause by remember { mutableStateOf(false) }
+    val portee = rememberCoroutineScope()
+    var reprise by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val aller = { n: Int, s: Int -> sens = s; i = (n + annonces.size) % annonces.size }
     // Le temps est porté par la barre du point actif (comme le site) : en pause, la barre s'arrête et l'annonce reste
     val progres = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -146,11 +151,18 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
     Box(panneau.drawBehind {
         if (eclat.value > 0f) drawRoundRect(Color.White.copy(alpha = 0.55f * eclat.value), cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = (2.dp + 6.dp * (1f - eclat.value)).toPx()))
+    }.pointerInput(Unit) {
+        // Pause au toucher, reprise 4 secondes après (comme le site : touchstart / touchend)
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            pause = true; reprise?.cancel()
+            waitForUpOrCancellation()
+            reprise = portee.launch { kotlinx.coroutines.delay(4000); pause = false }
+        }
     }.pointerInput(annonces.size) {
         var total = 0f
         detectHorizontalDragGestures(onDragStart = { pause = true; total = 0f }, onDragEnd = {
             if (kotlin.math.abs(total) > 60) aller(i + (if (total < 0) 1 else -1), if (total < 0) 1 else -1)
-            pause = false
         }) { _, d -> total += d }
     }) {
         // Passage d'une annonce à l'autre, fait pour attirer l'œil : glissement avec léger rebond, icône qui saute,
@@ -292,7 +304,7 @@ private fun RubriqueGenre(id: String, g: GenreCommunique, l: List<Communique>, m
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FeuilleCommunique(c: Communique, maReponse: JsonObject? = null, onRepondu: (JsonObject) -> Unit = {}, onFermer: () -> Unit) {
+fun FeuilleCommunique(c: Communique, maReponse: JsonObject? = null, onRepondu: (JsonObject) -> Unit = {}, message: (String) -> Unit = {}, onFermer: () -> Unit) {
     LaunchedEffect(c.id) { CommuniquesVus.marquer(c.id) }
     val g = genreDe(c)
     ModalBottomSheet(onDismissRequest = onFermer) {
@@ -308,8 +320,9 @@ fun FeuilleCommunique(c: Communique, maReponse: JsonObject? = null, onRepondu: (
             Text(c.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Publié le ${dateFr(c.debut)}" + (c.fin?.let { (if (c.genre == "sondage") " · répondre avant le " else " · jusqu’au ") + dateFr(it) } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
             c.texte?.let { Text(it, fontSize = 15.sp) }
-            ContenuCommunique(c, maReponse, onRepondu, onFermer)
-            if (c.genre != "sondage") Button(onClick = onFermer, modifier = Modifier.align(Alignment.End)) { Text("Fermer") }
+            ContenuCommunique(c, maReponse, onRepondu, onFermer, message)
+            // Le lien porte son propre « Fermer » (tonal, à côté du bouton principal), comme le site
+            if (c.genre != "sondage" && c.genre != "lien") Button(onClick = onFermer, modifier = Modifier.align(Alignment.End)) { Text("Fermer") }
         }
     }
 }
@@ -336,15 +349,7 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
         EtatNouveautes.vu("communiques")
     }
     val auj = aujourdhui().toString()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Page Plus › Communiqués : titre de la page et bouton « Publier » (une seule fois sur l'écran)
-        if (enPage) item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Communiqués", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                if (gere) Button(onClick = { nouveau = true }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Publier") }
-            }
-        }
-        item {
+    @Composable fun CartePublications() {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (enPage) "Publications" else "Communiqués et partages", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -352,10 +357,11 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
                 }
                 Text("Annonce, sondage ou questionnaire, photos, lien (Drive, formulaire, vidéo) : chaque publication s’affiche sur la page des membres et sur leur bannière pendant sa période, et chacun reçoit une notification.", fontSize = 13.sp, color = Couleurs.Texte2)
                 if (liste.isEmpty()) Text("Aucun communiqué pour l’instant.", color = Couleurs.Texte2)
-                liste.forEach { c ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { if (gere && c.genre == "sondage") resultats = c else if (gere) edition = c else lu = c }.padding(vertical = 8.dp),
+                liste.forEachIndexed { i, c ->
+                    if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { if (gere && c.genre == "sondage") resultats = c else if (gere) edition = c else lu = c }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.size(40.dp).background(Color(0xFFE3F1FB), CircleShape), contentAlignment = Alignment.Center) { Icon(genreDe(c).icone, null, tint = Color(0xFF1B77B0)) }
+                        Box(Modifier.size(40.dp).background(Couleurs.OrangeClair, CircleShape), contentAlignment = Alignment.Center) { Icon(genreDe(c).icone, null, tint = Couleurs.SurOrangeClair, modifier = Modifier.size(18.dp)) }   // .avatar du site
                         Column(Modifier.weight(1f)) {
                             Text(c.titre, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(genreDe(c).libelle + " · " + (when { c.debut > auj -> "À partir du ${dateFr(c.debut)}"; c.fin != null && c.fin < auj -> "Terminé"; c.fin != null -> "Jusqu’au ${dateFr(c.fin)}"; else -> "En cours" }) +
@@ -366,8 +372,8 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
                     }
                 }
             }
-        }
-        if (d.peut("administrer")) item {
+    }
+    @Composable fun CarteOrdre() {
             CarteBlanche {
                 Text("Ordre et fréquence des annonces", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("La bannière des membres montre une annonce à la fois. Choisissez l’ordre et la fréquence de chaque type ; un communiqué « Important » passe toujours en premier.", fontSize = 13.sp, color = Couleurs.Texte2)
@@ -387,7 +393,29 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
                 Button(onClick = { scope.launch { try { Repo.majTexteReglage("banniere", texteReglesBanniere(regles)); message("Réglages de la bannière enregistrés") } catch (e: Exception) { message(traduireErreur(e)) } } },
                     modifier = Modifier.align(Alignment.End)) { Text("Enregistrer") }
             }
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val large = maxWidth >= 840.dp
+    val admin = d.peut("administrer")
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Page Plus › Communiqués : titre de la page et bouton « Publier » (une seule fois sur l'écran)
+        if (enPage) item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Communiqués", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (gere) Button(onClick = { nouveau = true }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Publier") }
+            }
         }
+        // Deux colonnes au-delà de 840 dp (grille-2 du site) : publications, ordre et fréquence
+        if (large && admin) item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                Box(Modifier.weight(1f)) { CartePublications() }
+                Box(Modifier.weight(1f)) { CarteOrdre() }
+            }
+        } else {
+            item { CartePublications() }
+            if (admin) item { CarteOrdre() }
+        }
+    }
     }
     if (nouveau || edition != null) EditionCommunique(edition, onSupprimer = edition?.let { c -> { edition = null; supprimer("communiques", c.id, c.titre) } }, message = message,
         onFini = { nouveau = false; edition = null; version++ }) { nouveau = false; edition = null }
@@ -445,12 +473,12 @@ private fun EditionCommunique(c: Communique?, onSupprimer: (() -> Unit)?, messag
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 GENRES_COMMUNIQUE.entries.forEachIndexed { k, (cle, g) ->
                     SegmentedButton(selected = genre == cle, onClick = { genre = cle }, shape = SegmentedButtonDefaults.itemShape(k, GENRES_COMMUNIQUE.size),
-                        icon = {}) { Text(g.libelle, fontSize = 12.sp, maxLines = 1) }
+                        icon = { Icon(g.icone, null, Modifier.size(16.dp)) }) { Text(g.libelle, fontSize = 12.sp, maxLines = 1) }
                 }
             }
         }
         OutlinedTextField(titre, { titre = it.take(120) }, label = { Text("Titre *") }, placeholder = { Text("Assemblée générale le 15 novembre") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(texte, { texte = it.take(1500) }, label = { Text("Texte") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(texte, { texte = it.take(1500) }, label = { Text("Texte") }, placeholder = { Text("Ce que les membres doivent savoir") }, minLines = 3, modifier = Modifier.fillMaxWidth())
         when (genre) {
             "sondage" -> {
                 questions.forEachIndexed { k, q ->
@@ -461,14 +489,14 @@ private fun EditionCommunique(c: Communique?, onSupprimer: (() -> Unit)?, messag
                             val T = listOf("unique" to "Un seul choix", "multiple" to "Plusieurs choix", "texte" to "Réponse libre")
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 PuceMenu(T.first { it.first == q.type }.second, false, T.map { it.second }) { n -> questions[k] = q.copy(type = T[n].first) }
-                                Checkbox(q.obligatoire, { questions[k] = q.copy(obligatoire = it) }); Text("Obligatoire", fontSize = 14.sp)
+                                Checkbox(q.obligatoire, { questions[k] = q.copy(obligatoire = it) }); Text("Réponse obligatoire", fontSize = 14.sp)
                             }
-                            if (q.type != "texte") OutlinedTextField(q.choix, { questions[k] = q.copy(choix = it) }, label = { Text("Choix, un par ligne") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                            if (q.type != "texte") OutlinedTextField(q.choix, { questions[k] = q.copy(choix = it) }, placeholder = { Text("Un choix par ligne") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                             if (questions.size > 1) TextButton(onClick = { questions.removeAt(k) }) { Text("Retirer la question") }
                         }
                     }
                 }
-                if (questions.size < 20) OutlinedButton(onClick = { questions += QEd("q" + ((questions.maxOfOrNull { it.id.drop(1).toIntOrNull() ?: 0 } ?: 0) + 1), "", "unique", "", true) }) { Text("Ajouter une question") }
+                if (questions.size < 20) FilledTonalButton(onClick = { questions += QEd("q" + ((questions.maxOfOrNull { it.id.drop(1).toIntOrNull() ?: 0 } ?: 0) + 1), "", "unique", "", true) }) { Text("Ajouter une question") }
                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(anonyme, { anonyme = it }); Text("Réponses anonymes (le bureau voit les totaux, pas les noms)", fontSize = 14.sp) }
                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(resultatsVisibles, { resultatsVisibles = it }); Text("Montrer les résultats aux membres après leur réponse", fontSize = 14.sp) }
             }
@@ -490,7 +518,7 @@ private fun EditionCommunique(c: Communique?, onSupprimer: (() -> Unit)?, messag
                         repeat(3 - l.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
-                if (photos.size + nouvelles.size < 30) OutlinedButton(onClick = choixPhotos) { Icon(Icons.Outlined.AddAPhoto, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Ajouter des photos") }
+                if (photos.size + nouvelles.size < 30) FilledTonalButton(onClick = choixPhotos) { Icon(Icons.Outlined.AddAPhoto, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Ajouter des photos") }
                 Text("${photos.size + nouvelles.size} / 30 photos · réduites automatiquement pour les téléphones. Pour un grand album, publiez plutôt un lien vers le Drive.", fontSize = 13.sp, color = Couleurs.Texte2)
             }
             "lien" -> {
@@ -500,10 +528,10 @@ private fun EditionCommunique(c: Communique?, onSupprimer: (() -> Unit)?, messag
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(debut, { debut = it }, label = { Text("À partir du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDebut == null, modifier = Modifier.weight(1f))
-            OutlinedTextField(fin, { fin = it }, label = { Text(if (genre == "sondage") "Réponses jusqu’au" else "Jusqu’au") }, placeholder = { Text("facultatif") }, singleLine = true, isError = fin.isNotBlank() && (dFin == null || (dDebut != null && dFin < dDebut)), modifier = Modifier.weight(1f))
+            OutlinedTextField(debut, { debut = it }, label = { Text("Afficher à partir du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDebut == null, modifier = Modifier.weight(1f))
+            OutlinedTextField(fin, { fin = it }, label = { Text(if (genre == "sondage") "Réponses jusqu’au (facultatif)" else "Jusqu’au (facultatif)") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = fin.isNotBlank() && (dFin == null || (dDebut != null && dFin < dDebut)), modifier = Modifier.weight(1f))
         }
-        val P = listOf("haute" to "Important (en premier)", "normale" to "Normal", "basse" to "Discret")
+        val P = listOf("haute" to "Important (en premier sur la bannière)", "normale" to "Normal", "basse" to "Discret")
         Text("Priorité", fontWeight = FontWeight.SemiBold)
         PuceMenu(P.first { it.first == priorite }.second, false, P.map { it.second }) { priorite = P[it].first }
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(visible, { visible = it }); Text("Visible par tous les membres (sinon bureau seulement)", fontSize = 14.sp) }

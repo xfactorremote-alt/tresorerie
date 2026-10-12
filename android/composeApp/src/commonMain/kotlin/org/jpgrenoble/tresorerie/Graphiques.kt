@@ -22,6 +22,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,6 +35,9 @@ import kotlin.math.round
 
 // Graphiques : mêmes règles que le site (une seule échelle, traits fins, légende dès deux séries,
 // texte en encre neutre). En SVG pour le rapport imprimé, en Compose pour l'écran.
+// Ligne du zéro, un peu plus marquée que la grille (#CFC8C5 du site)
+private val LIGNE_ZERO = Color(0xFFCFC8C5)
+
 object CouleursGraph {
     val Recette = Color(0xFF1B77B0); val Depense = Color(0xFFC23E10); val Grille = Color(0xFFE9E5E3)
     val Piste = Color(0xFFF1EEEC); val Alerte = Color(0xFFBA1A1A); val Moyen = Color(0xFFB07A00)
@@ -186,16 +190,17 @@ fun GraphColonnes(mois: List<Mois>, modifier: Modifier = Modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             listOf("Recettes" to CouleursGraph.Recette, "Dépenses" to CouleursGraph.Depense).forEach { (l, c) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.size(10.dp).background(c, RoundedCornerShape(3.dp))); Text(l, fontSize = 12.sp, color = Couleurs.Texte2)
+                    Box(Modifier.size(10.dp).background(c, RoundedCornerShape(2.dp))); Text(l, fontSize = 12.sp, color = Couleurs.Texte2)
                 }
             }
         }
-        Canvas(Modifier.fillMaxWidth().height(180.dp)) {
+        // Proportions du site (640 × 220), avec une hauteur minimale lisible sur téléphone
+        Canvas(Modifier.fillMaxWidth().aspectRatio(640f / 220f).heightIn(min = 150.dp)) {
             val g = 34.dp.toPx(); val b = 18.dp.toPx(); val haut = 6.dp.toPx()
-            val t = graduations(0.0, maxOf(1.0, mois.maxOfOrNull { maxOf(it.rec, it.dep) } ?: 1.0))
+            val t = graduations(minOf(0.0, mois.minOfOrNull { minOf(it.rec, it.dep) } ?: 0.0), maxOf(0.0, mois.maxOfOrNull { maxOf(it.rec, it.dep) } ?: 0.0))
             fun y(v: Double) = haut + (size.height - haut - b) * (1 - (v - t.first()) / (t.last() - t.first())).toFloat()
             t.forEach { v ->
-                drawLine(CouleursGraph.Grille, Offset(g, y(v)), Offset(size.width, y(v)), 1f)
+                drawLine(if (v == 0.0) LIGNE_ZERO else CouleursGraph.Grille, Offset(g, y(v)), Offset(size.width, y(v)), 1f)
                 val r = mesure.measure(court(v), style)
                 drawText(r, topLeft = Offset(g - r.size.width - 4.dp.toPx(), y(v) - r.size.height / 2))
             }
@@ -211,7 +216,8 @@ fun GraphColonnes(mois: List<Mois>, modifier: Modifier = Modifier) {
                         drawPath(Path().apply { addRoundRect(RoundRect(x, top, x + l, bas, CornerRadius(r), CornerRadius(r), CornerRadius.Zero, CornerRadius.Zero)) }, c)
                     }
                 }
-                if (mois.size <= 6 || i % 2 == mois.size % 2) {
+                // Tous les mois jusqu'à 12 (comme le site), un sur deux au-delà
+                if (mois.size <= 12 || i % 2 == 0) {
                     val r = mesure.measure(m.libelle, style)
                     drawText(r, topLeft = Offset(g + i * bande + bande / 2 - r.size.width / 2, size.height - r.size.height))
                 }
@@ -225,7 +231,7 @@ fun GraphSolde(mois: List<Mois>, modifier: Modifier = Modifier) {
     val mesure = rememberTextMeasurer()
     val style = TextStyle(fontSize = 10.sp, color = Couleurs.Texte2)
     val styleVal = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte)
-    Canvas(modifier.fillMaxWidth().height(150.dp)) {
+    Canvas(modifier.fillMaxWidth().aspectRatio(640f / 180f).heightIn(min = 130.dp)) {
         if (mois.isEmpty()) return@Canvas
         val g = 34.dp.toPx(); val dr = 58.dp.toPx(); val b = 18.dp.toPx(); val haut = 6.dp.toPx()
         val vals = mois.map { it.solde }
@@ -234,7 +240,7 @@ fun GraphSolde(mois: List<Mois>, modifier: Modifier = Modifier) {
         val pas = if (mois.size > 1) (size.width - g - dr) / (mois.size - 1) else 0f
         fun x(i: Int) = g + i * pas
         t.forEach { v ->
-            drawLine(CouleursGraph.Grille, Offset(g, y(v)), Offset(size.width - dr, y(v)), 1f)
+            drawLine(if (v == 0.0) LIGNE_ZERO else CouleursGraph.Grille, Offset(g, y(v)), Offset(size.width - dr, y(v)), 1f)
             val r = mesure.measure(court(v), style); drawText(r, topLeft = Offset(g - r.size.width - 4.dp.toPx(), y(v) - r.size.height / 2))
         }
         val p = Path().apply { vals.forEachIndexed { i, v -> if (i == 0) moveTo(x(i), y(v)) else lineTo(x(i), y(v)) } }
@@ -245,7 +251,7 @@ fun GraphSolde(mois: List<Mois>, modifier: Modifier = Modifier) {
         drawCircle(Color.White, 6.dp.toPx(), Offset(x(n), y(vals[n]))); drawCircle(CouleursGraph.Tresorerie, 4.dp.toPx(), Offset(x(n), y(vals[n])))
         val r = mesure.measure(euros0(vals[n]), styleVal); drawText(r, topLeft = Offset(x(n) + 8.dp.toPx(), y(vals[n]) - r.size.height / 2))
         mois.forEachIndexed { i, m ->
-            if (mois.size <= 6 || i % 2 == mois.size % 2) {
+            if (mois.size <= 12 || i % 2 == 0) {
                 val rr = mesure.measure(m.libelle, style); drawText(rr, topLeft = Offset(x(i) - rr.size.width / 2, size.height - rr.size.height))
             }
         }
@@ -276,8 +282,8 @@ fun Jauge(titre: String, valeur: Double, cible: Double, detail: String, modifier
     val coul = CouleursGraph.Recette
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row { Text(titre, Modifier.weight(1f), fontSize = 13.sp, color = Couleurs.Texte2); Text("$p$NBSP%", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
-        Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)).background(CouleursGraph.Piste)) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(p / 100f).background(coul, RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)))
+        Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(2.dp)).background(CouleursGraph.Piste)) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(p / 100f).background(coul, RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp)))
         }
         Text(detail, fontSize = 12.sp, color = Couleurs.Texte2)
     }
@@ -334,11 +340,14 @@ fun GraphAnneau(items: List<Element>, sens: String, modifier: Modifier = Modifie
     val parts = secteurs(items, sens); val total = parts.sumOf { it.valeur }
     if (total <= 0) { Text("Aucune donnée sur la période", color = Couleurs.Texte2, fontSize = 13.sp); return }
     val mesure = rememberTextMeasurer()
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Canvas(Modifier.size(120.dp)) {
-            val ep = size.minDimension * 0.17f
-            val rect = Size(size.minDimension - ep, size.minDimension - ep)
-            val coin = Offset(ep / 2, ep / 2)
+    // Site : anneau au-dessus de la légende sur téléphone (≤ 420 px), à côté au-delà ; 170 px au plus ; « total » sous le montant
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+    val empile = maxWidth < 380.dp
+    val anneau = @Composable {
+        Canvas(Modifier.size(if (empile) 170.dp else 150.dp)) {
+            val ep = size.minDimension * 28f / 180f
+            val rect = Size(size.minDimension * 132f / 180f, size.minDimension * 132f / 180f)   // rayons 80 et 52 sur 180, comme le SVG du site
+            val coin = Offset((size.width - rect.width) / 2, (size.height - rect.height) / 2)
             var debut = -90f
             val ecart = if (parts.size > 1) 1.2f else 0f   // fin espace blanc entre secteurs
             parts.forEach { x ->
@@ -346,18 +355,28 @@ fun GraphAnneau(items: List<Element>, sens: String, modifier: Modifier = Modifie
                 drawArc(couleurHex(x.couleur), debut + ecart / 2, (balayage - ecart).coerceAtLeast(0.5f), false, coin, rect, style = Stroke(ep))
                 debut += balayage
             }
-            val r = mesure.measure(euros0(total), TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Couleurs.Texte))
-            drawText(r, topLeft = Offset(center.x - r.size.width / 2, center.y - r.size.height / 2))
+            val r = mesure.measure(euros0(total), TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte))
+            val r2 = mesure.measure("total", TextStyle(fontSize = 11.sp, color = Couleurs.Texte2))
+            drawText(r, topLeft = Offset(center.x - r.size.width / 2, center.y - r.size.height + 2.dp.toPx()))
+            drawText(r2, topLeft = Offset(center.x - r2.size.width / 2, center.y + 2.dp.toPx()))
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    }
+    val legende = @Composable { m: Modifier ->
+        Column(m, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             parts.forEach { x ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(11.dp).background(couleurHex(x.couleur), RoundedCornerShape(3.dp)))
+                    Box(Modifier.size(12.dp).background(couleurHex(x.couleur), RoundedCornerShape(2.dp)))
                     Text(x.nom, Modifier.weight(1f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${round(100 * x.valeur / total).toInt()}$NBSP%", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text(euros0(x.valeur), fontSize = 12.sp, color = Couleurs.Texte2)
+                    Text("${round(100 * x.valeur / total).toInt()}$NBSP%", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(euros0(x.valeur), Modifier.widthIn(min = 64.dp), fontSize = 12.sp, color = Couleurs.Texte2, textAlign = TextAlign.End)
                 }
             }
         }
+    }
+    if (empile) Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        anneau(); legende(Modifier.fillMaxWidth())
+    } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        anneau(); legende(Modifier.weight(1f))
+    }
     }
 }

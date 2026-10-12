@@ -75,6 +75,7 @@ data class Membre(
     val email: String? = null,
     @SerialName("photo_path") val photo: String? = null,
     @SerialName("created_at") val creeLe: String? = null,
+    @SerialName("date_adhesion") val adhesion: String? = null,
 ) { val nomComplet get() = "$prenom $nom" }
 
 @Serializable

@@ -17,7 +17,12 @@ class AuditTest {
 
     @Test fun motifEtLibelleDeCorrection() {
         val l = libelleCorrection("Remboursement reçu", "fournitures", "dépense refusée")
-        assertTrue(l.startsWith("Remboursement reçu"))
+        // « Préfixe : libellé » avec une espace simple, comme la base (annuler_virement) et le site
+        assertTrue(l.startsWith("Remboursement reçu : fournitures"))
+        // Refus de la corbeille pour une opération rapprochée : même message que la base et mock.js
+        val rapprochee = Demo.ecritures().first { it.rapprochementId != null }
+        assertEquals("Opération rapprochée : utilisez la contre-passation",
+            assertFailsWith<IllegalStateException> { Demo.supprimer("transactions", rapprochee.id, null, tresorier) }.message)
         assertEquals("dépense refusée", motifDe(l))
         assertTrue(l.length <= 120)
         assertEquals("", motifDe("Contre-passation : fournitures"))

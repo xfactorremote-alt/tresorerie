@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 // copie, coupure, renouvellement.
 // Même message que messageLien du site : l'association d'abord, le lien seul sur sa ligne, une phrase qui rassure
 private fun messageLien(d: Donnees, m: Membre, url: String) =
-    "Bonjour ${m.prenom},\n\nVoici votre espace membre ${nomAssoLisible(d.organisation.nom)} : votre cotisation, vos participations et les prochains rendez-vous.\n\n" +
+    "Bonjour ${m.prenom},\n\nVoici votre espace membre ${d.organisation.nom.takeIf { it.isNotBlank() }?.let { nomAssoLisible(it) } ?: "de l’association"} : votre cotisation, vos participations et les prochains rendez-vous.\n\n" +
         "👉 $url\n\nCe lien est personnel et sûr : il ouvre seulement votre page, sans compte ni mot de passe. Gardez-le pour vous."
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -81,7 +81,7 @@ fun FeuilleLiens(d: Donnees, membres: List<Membre>, liens: List<LienMembre>, mes
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     var enCours by remember { mutableStateOf(false) }
-    val actifs = membres.filter { it.actif }.sortedBy { it.nomComplet }
+    val actifs = membres.filter { it.actif }.sortedBy { sansAccentsCode(it.nomComplet) }   // ordre alphabétique sans tenir compte des accents (comme localeCompare)
     val sans = actifs.filter { m -> liens.none { it.membreId == m.id } }
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Liens personnels", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -97,6 +97,7 @@ fun FeuilleLiens(d: Donnees, membres: List<Membre>, liens: List<LienMembre>, mes
         }
         actifs.forEach { m ->
             val l = liens.firstOrNull { it.membreId == m.id }; val wa = numeroWa(m.whatsapp)
+            if (m != actifs.first()) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Avatar(m.prenom, m.nom, 40)
                 Column(Modifier.weight(1f)) {

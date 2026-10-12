@@ -178,19 +178,21 @@ fun GaleriePhotos(photos: List<String>, colonnes: Int = 3) {
 }
 
 // ---------- Contenu d'une publication selon son genre (dans la fiche) ----------
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ContenuCommunique(c: Communique, maReponse: JsonObject?, onRepondu: (JsonObject) -> Unit, onFermer: () -> Unit) {
+fun ContenuCommunique(c: Communique, maReponse: JsonObject?, onRepondu: (JsonObject) -> Unit, onFermer: () -> Unit, message: (String) -> Unit = {}) {
     when (c.genre) {
         "photos" -> GaleriePhotos(c.photos)
         "lien" -> {
             val uri = LocalUriHandler.current
             val presse = LocalClipboardManager.current
-            Text(hoteDe(c.lien), fontSize = 13.sp, color = Couleurs.Texte2)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = { presse.setText(AnnotatedString(c.lien ?: "")) }) { Text("Copier le lien") }
+            // Comme feuilleCommunique du site : Copier le lien, le bouton du lien (Drive, formulaire…), Fermer
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { presse.setText(AnnotatedString(c.lien ?: "")); message("Lien copié") }) { Text("Copier le lien") }
                 Button(onClick = { c.lien?.let { runCatching { uri.openUri(it) } } }) {
                     Icon(Icons.Outlined.OpenInNew, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(libelleLien(c.lien))
                 }
+                FilledTonalButton(onClick = onFermer) { Text("Fermer") }
             }
         }
         "sondage" -> SondageMembre(c, maReponse, onRepondu, onFermer)
@@ -221,6 +223,7 @@ fun SondageMembre(c: Communique, maReponse: JsonObject?, onRepondu: (JsonObject)
         val r = resultats
         if (r != null) BlocResultats(c, r, maReponse)
         else if (!c.resultatsVisibles) Text("Les résultats sont réservés au bureau.", color = Couleurs.Texte2, fontSize = 14.sp)
+        else Text("Chargement des résultats…", color = Couleurs.Texte2, fontSize = 14.sp)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             if (ouvert) TextButton(onClick = { modifier = true }) { Text("Modifier ma réponse") }
             Button(onClick = onFermer) { Text("Fermer") }

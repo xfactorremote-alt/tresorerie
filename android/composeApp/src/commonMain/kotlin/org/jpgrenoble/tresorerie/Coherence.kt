@@ -8,7 +8,7 @@ const val SEP_MOTIF = " · motif : "
 fun motifDe(libelle: String?): String = libelle?.substringAfter(SEP_MOTIF, "")?.trim() ?: ""
 fun libelleCorrection(prefixe: String, libelle: String, motif: String): String {
     val fin = if (motif.isBlank()) "" else SEP_MOTIF + motif.trim()
-    return "$prefixe$NBSP: $libelle".take(maxOf(20, 120 - fin.length)) + fin.take(100)
+    return "$prefixe : $libelle".take(maxOf(20, 120 - fin.length)) + fin.take(100)
 }
 
 // Référence courte et stable d'une opération, citée dans l'historique et les échanges

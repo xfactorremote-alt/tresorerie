@@ -95,6 +95,49 @@ actual fun rememberChoixPhotos(quandChoisi: (List<Fichier>, String?) -> Unit): (
 actual fun imageDepuisOctets(octets: ByteArray): ImageBitmap? =
     try { BitmapFactory.decodeByteArray(octets, 0, octets.size)?.asImageBitmap() } catch (_: Exception) { null }
 
+actual fun imageDepuisOctetsReduite(octets: ByteArray, max: Int): ImageBitmap? = try {
+    val bornes = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(octets, 0, octets.size, bornes)
+    var echantillon = 1
+    while (bornes.outWidth / (echantillon * 2) >= max && bornes.outHeight / (echantillon * 2) >= max) echantillon *= 2
+    BitmapFactory.decodeByteArray(octets, 0, octets.size, BitmapFactory.Options().apply { inSampleSize = echantillon })?.asImageBitmap()
+} catch (_: Throwable) { null }   // OutOfMemoryError compris
+
+@Composable
+actual fun rememberPrendrePhoto(quandPrise: (Fichier?, String?) -> Unit): () -> Unit {
+    val contexte = LocalContext.current
+    // Chemin gardé même si l'activité est recréée pendant que l'appareil photo est ouvert
+    var chemin by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val lanceur = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = chemin?.let { java.io.File(it) }
+        if (!ok || f == null || !f.exists() || f.length() == 0L) { f?.delete(); quandPrise(null, null); return@rememberLauncherForActivityResult }
+        try {
+            val rotation = when (android.media.ExifInterface(f.absolutePath).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)) {
+                android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+            var octets = reduirePhoto(f.readBytes())
+            if (rotation != 0f) {
+                val bmp = BitmapFactory.decodeByteArray(octets, 0, octets.size)
+                val tournee = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, android.graphics.Matrix().apply { postRotate(rotation) }, true)
+                octets = ByteArrayOutputStream().use { tournee.compress(Bitmap.CompressFormat.JPEG, 75, it); it.toByteArray() }
+            }
+            quandPrise(Fichier(octets, "image/jpeg", "jpg"), null)
+        } catch (e: Throwable) { quandPrise(null, e.message ?: "Photo illisible") }
+        finally { f.delete(); chemin = null }
+    }
+    return {
+        try {
+            val dossier = java.io.File(contexte.cacheDir, "pieces").apply { mkdirs() }
+            val f = java.io.File(dossier, "photo-${System.currentTimeMillis()}.jpg")
+            chemin = f.absolutePath
+            lanceur.launch(androidx.core.content.FileProvider.getUriForFile(contexte, contexte.packageName + ".fichiers", f))
+        } catch (e: Exception) { quandPrise(null, "Aucun appareil photo disponible") }
+    }
+}
+
 @Composable
 actual fun rememberChoixTexte(quandChoisi: (String?) -> Unit): () -> Unit {
     val contexte = LocalContext.current

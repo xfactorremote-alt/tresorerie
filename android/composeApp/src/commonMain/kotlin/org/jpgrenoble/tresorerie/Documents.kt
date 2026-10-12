@@ -157,12 +157,14 @@ suspend fun documentHtml(d: Donnees, type: String, an: Int, du: String? = null, 
     else -> {
         val ms = Repo.membres().filter { it.actif }
         val profils = try { Repo.profilsComplets() } catch (_: Exception) { emptyList() }
-        fun fonction(m: Membre) = profils.firstOrNull { it.memberId == m.id }?.let { d.nomRole(it.role) } ?: ""
+        fun role(m: Membre) = profils.firstOrNull { it.memberId == m.id }?.role
+        fun fonction(m: Membre) = role(m)?.let { d.nomRole(it) } ?: ""
         val titre = "Liste des membres"
-        titre to page(d, titre, "${ms.size} membres actifs au ${dateFr(aujourdhui().toString())}",
-            table(listOf("Membre" to "", "Fonction" to "", "Anniversaire" to "", "Profession" to "", "WhatsApp" to "", "E-mail" to ""),
-                ms.sortedWith(compareBy({ if (fonction(it).isEmpty() || fonction(it) == "Adhérent") 1 else 0 }, { it.nomComplet })).map {
-                    listOf(e(it.nomComplet), e(fonction(it)), "${it.jour} ${MOIS[it.mois - 1]}", e(it.profession), e(it.whatsapp), e(it.email))
+        // Même document que pdfMembres du site : bureau d'abord (ordre des fonctions), puis par nom ; date d'adhésion
+        titre to page(d, titre, "${ms.size} membre${if (ms.size > 1) "s" else ""} actif${if (ms.size > 1) "s" else ""} au ${dateFr(aujourdhui().toString())}",
+            table(listOf("Membre" to "", "Fonction" to "", "Anniversaire" to "", "Profession" to "", "WhatsApp" to "", "E-mail" to "", "Adhésion" to ""),
+                ms.sortedWith(compareBy<Membre>({ rangRole(role(it) ?: "adherent") }, { sansAccentsCode(it.nomComplet) })).map {
+                    listOf(e(it.nomComplet), e(fonction(it)), "${it.jour} ${MOIS[it.mois - 1]}", e(it.profession), e(it.whatsapp), e(it.email), it.adhesion?.let { a -> dateFr(a.take(10)) } ?: "")
                 }) + "<p class=\"m\">Document interne : données personnelles à ne pas diffuser en dehors du bureau.</p>")
     }
 }

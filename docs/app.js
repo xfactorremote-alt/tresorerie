@@ -820,7 +820,7 @@ const rendre = (html) => {
   const c = $('.contenu'); c.innerHTML = html;
   if (!S.silencieux) animerChiffres(c);
   // Commande principale (+) : bouton dans l'en-tête de page sur tablette et ordinateur, bouton flottant sur téléphone
-  const fab = c.querySelector('.page > .fab'); const titre = c.querySelector('.page > .page-titre');
+  const fab = c.querySelector('.page > .fab, .page > .page-titre > .fab'); const titre = c.querySelector('.page > .page-titre');
   if (fab) {
     fab.closest('.page').classList.add('avec-fab');
     fab.innerHTML = `${icone('ajout', 20)}<span class="fab-texte">${esc(fab.getAttribute('aria-label') || 'Ajouter')}</span>`;
@@ -2451,8 +2451,8 @@ async function ongletParticipations(zone) {
         ${pct != null ? `<div class="barre"><span style="width:${pct}%"></span></div>` : ''}
         <span class="muted">${c.nb_contributeurs} contributeur${c.nb_contributeurs > 1 ? 's' : ''} · ${c.nb_concernes} membre${c.nb_concernes > 1 ? 's' : ''} concerné${c.nb_concernes > 1 ? 's' : ''}</span>
       </article>`;
-    }).join('')}</div>` : `<div class="carte vide">Aucune collecte${gere ? '<button class="btn-primaire" id="b-collecte-vide">Nouvelle collecte</button>' : ''}</div>`}`;
-  ['#b-collecte', '#b-collecte-vide'].forEach((s) => $(s, zone)?.addEventListener('click', () => feuilleCollecte(null, () => pageCotisations())));
+    }).join('')}</div>` : '<div class="carte vide">Aucune collecte</div>'}`;
+  $('#b-collecte', zone)?.addEventListener('click', () => feuilleCollecte(null, () => pageCotisations()));
   zone.querySelectorAll('[data-collecte]').forEach((a) => {
     const ouvrir = () => detailCollecte(coll.find((c) => c.id === a.dataset.collecte));
     a.addEventListener('click', ouvrir); a.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
@@ -3145,6 +3145,8 @@ async function paramCategories(zone) {
 const exerciceClos = (d) => (S.exercices || []).some((e) => e.cloture && d >= e.debut && d <= e.fin);
 const statutExercice = (e) => (e.cloture ? ['puce-neutre', 'Clôturé'] : e.debut > aujourdhui() ? ['puce-neutre', 'À venir'] : e.fin < aujourdhui() ? ['puce-partiel', 'À clôturer'] : ['puce-ok', 'En cours']);
 const exerciceCourant = () => (S.exercices || []).find((e) => e.debut <= aujourdhui() && e.fin >= aujourdhui()) || null;
+// Supprimer un exercice retire la période, jamais les écritures (même texte sur Android : NOTE_SUPPR_EXERCICE)
+const NOTE_SUPPR_EXERCICE = 'Les écritures de cette période ne sont pas supprimées : seule la période l’est. Elles restent dans Opérations ; pour les retirer, supprimez-les une à une.';
 async function paramExercices(zone) {
   S.exercices = await q(sb.from('exercices').select('*').order('debut', { ascending: false }));
   zone.innerHTML = `<section class="carte">
@@ -3161,7 +3163,7 @@ async function paramExercices(zone) {
   $('#b-exercice', zone).addEventListener('click', () => feuilleExercice(null, recharger));
   zone.querySelectorAll('[data-modifier-ex]').forEach((b) => b.addEventListener('click', () => feuilleExercice(S.exercices.find((e) => e.id === b.dataset.modifierEx), recharger)));
   zone.querySelectorAll('[data-suppr-ex]').forEach((b) => b.addEventListener('click', () => {
-    const e = S.exercices.find((x) => x.id === b.dataset.supprEx); supprimerAvecConfirmation('exercices', e.id, e.libelle, recharger);
+    const e = S.exercices.find((x) => x.id === b.dataset.supprEx); supprimerAvecConfirmation('exercices', e.id, e.libelle, recharger, NOTE_SUPPR_EXERCICE);
   }));
   zone.querySelectorAll('[data-rouvrir]').forEach((b) => b.addEventListener('click', () => {
     const e = S.exercices.find((x) => x.id === b.dataset.rouvrir);
@@ -3212,7 +3214,7 @@ function feuilleExercice(e, apres) {
 
 // ---------- Corbeille : tout ce qui a été supprimé, restaurable ----------
 const TYPES_CORBEILLE = { transactions: 'Opération', members: 'Membre', tiers: 'Tiers', projects: 'Rendez-vous', collectes: 'Collecte', materiel: 'Matériel',
-  categories: 'Catégorie', accounts: 'Compte', budgets: 'Ligne de budget', expense_requests: 'Demande', exercices: 'Exercice' };
+  categories: 'Catégorie', accounts: 'Compte', budgets: 'Ligne de budget', expense_requests: 'Demande', exercices: 'Exercice', communiques: 'Communiqué' };
 async function paramCorbeille(zone) {
   const l = await q(sb.from('corbeille').select('*').order('supprime_le', { ascending: false }));
   const nom = (id) => (S.profils || []).find((p) => p.id === id)?.nom || (id === S.profil.id ? S.profil.nom : 'un membre du bureau');
@@ -3323,8 +3325,9 @@ function confirmer(titre, texte, bouton, action, { danger = false } = {}) {
   });
 }
 // Demande le motif, supprime (copie dans la corbeille), propose « Annuler » aussitôt
-function supprimerAvecConfirmation(table, id, libelle, apres = () => router()) {
+function supprimerAvecConfirmation(table, id, libelle, apres = () => router(), note = '') {
   ouvrirFeuille(`<form id="f-suppr" class="champs"><h2>Supprimer «&nbsp;${esc(libelle)}&nbsp;»&#8239;?</h2>
+    ${note ? `<p class="info" style="margin:0">${esc(note)}</p>` : ''}
     <p class="muted" style="margin:0">L’élément part dans la corbeille (Paramètres, Corbeille) avec ses pièces jointes ; il peut être restauré à tout moment.</p>
     <label class="champ">Motif (facultatif)<input name="motif" maxlength="120" placeholder="Doublon, erreur de saisie…"></label>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-danger">${icone('corbeille', 16)} Supprimer</button></div></form>`, (root) => {
@@ -3563,11 +3566,11 @@ async function deposerPiece(file, lien) {
 }
 
 // Aperçu dans la page (fonctionne aussi sur téléphone, où les fenêtres sont souvent bloquées)
-async function ouvrirFichier(bucket, chemin) {
+async function ouvrirFichier(bucket, chemin, titre = '') {
   try {
     const d = await q(sb.storage.from(bucket).createSignedUrl(chemin, 600));
     const image = /\.(jpe?g|png|webp)$/i.test(chemin) || /^data:image|^blob:/.test(d.signedUrl);
-    ouvrirFeuille(`<h2>${bucket === 'signatures' ? 'Signature du président' : bucket === 'releves' ? 'Relevé' : 'Justificatif'}</h2>
+    ouvrirFeuille(`<h2>${titre ? esc(titre) : bucket === 'signatures' ? 'Signature du président' : bucket === 'releves' ? 'Relevé' : 'Justificatif'}</h2>
       ${image ? `<img src="${esc(d.signedUrl)}" alt="Document joint" style="width:100%;border-radius:4px;border:1px solid var(--bord);background:#fff">` : ''}
       <div class="actions"><a class="btn btn-texte" href="${esc(d.signedUrl)}" target="_blank" rel="noopener">Ouvrir dans un onglet</a><button class="btn-tonal" id="b-fermer">Fermer</button></div>`,
       (root) => $('#b-fermer', root).addEventListener('click', fermerFeuille));
@@ -3582,7 +3585,7 @@ function choisirFichier(accept = 'image/*,application/pdf') {
 }
 
 function brancherPieces(rafraichir) {
-  document.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier(b.dataset.bucket || 'justificatifs', b.dataset.voir)));
+  document.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier(b.dataset.bucket || 'justificatifs', b.dataset.voir, b.dataset.titre)));
   document.querySelectorAll('[data-joindre]').forEach((b) => b.addEventListener('click', async () => {
     const file = await choisirFichier(); if (!file) return;
     try { b.disabled = true; await deposerPiece(file, { transaction_id: b.dataset.joindre }); toast('Justificatif joint'); rafraichir(); }
@@ -3696,7 +3699,7 @@ async function pageDepenses() {
     }).join('')}</div>
     ${liste.length ? `<section class="carte"><div class="total-liste"><span class="muted">${liste.length} demande${liste.length > 1 ? 's' : ''}</span><b class="num">${eur(total)}</b></div>
       <ul class="liste liste-demandes">${liste.map(ligneDemande).join('')}</ul></section>`
-      : `<div class="carte vide">${icone('valide', 32)}<p>Aucune demande ${S.filtreDepenses === 'toutes' ? '' : FILTRES[S.filtreDepenses][0].toLowerCase()}.</p></div>`}
+      : `<div class="carte vide">${icone('valide', 32)}<p>Aucune demande${S.filtreDepenses === 'toutes' ? '' : ' ' + FILTRES[S.filtreDepenses][0].toLowerCase()}.</p></div>`}
   </div>`);
 
   const recharger = () => pageDepenses().catch(erreur);
@@ -3742,11 +3745,11 @@ async function pageDepenses() {
       </ol>
       ${annul ? `<p class="info">Paiement du ${dateFr(op.date_op)} neutralisé par contre-passation le ${dateFr(annul.date_op)}${motifDe(annul) ? ` (${esc(motifDe(annul))})` : ''}. Le montant n’entre plus dans les comptes.</p>` : ''}
       ${aRegulariser(d) ? `<div class="alerte">Dépense déjà payée, puis refusée par le président : l’argent est sorti ${S.comptes.find((c) => c.id === op.account_id)?.type === 'caisse' ? 'de la caisse' : 'du compte bancaire'}. ${peut('saisir_ecritures') ? 'Régularisez-la : erreur de saisie, ou remboursement reçu.' : 'Le trésorier doit la régulariser.'}</div>` : ''}
-      ${devis || d.signature_path || piece ? `<div class="pieces-demande">${devis ? `<button class="btn-tonal btn-petit" data-voir="${esc(devis.storage_path)}">${icone('trombone', 16)} Devis</button>` : ''}${d.signature_path ? `<button class="btn-tonal btn-petit" data-voir="${esc(d.signature_path)}" data-bucket="signatures">${icone('valide', 16)} Signature</button>` : ''}${piece ? `<button class="btn-tonal btn-petit" data-voir="${esc(piece.storage_path)}">${icone('trombone', 16)} Justificatif</button>` : ''}</div>` : ''}
+      ${devis || d.signature_path || piece ? `<div class="pieces-demande">${devis ? `<button class="btn-tonal btn-petit" data-voir="${esc(devis.storage_path)}" data-titre="Devis">${icone('trombone', 16)} Devis</button>` : ''}${d.signature_path ? `<button class="btn-tonal btn-petit" data-voir="${esc(d.signature_path)}" data-bucket="signatures">${icone('valide', 16)} Signature</button>` : ''}${piece ? `<button class="btn-tonal btn-petit" data-voir="${esc(piece.storage_path)}">${icone('trombone', 16)} Justificatif</button>` : ''}</div>` : ''}
       ${secondaires.length ? `<div class="actions-gauche">${secondaires.map(([k, l]) => `<button type="button" class="btn-texte btn-petit" data-act="${k}">${l}</button>`).join('')}</div>` : ''}
       <div class="actions" style="justify-content:space-between">${supprimable ? `<button type="button" class="btn-texte btn-texte-danger" data-act="supprimer">${icone('corbeille', 16)} Supprimer</button>` : '<span></span>'}
         <span class="actions" style="margin:0">${actions.length ? actions.map(([k, c, l]) => `<button type="button" class="${c}" data-act="${k}">${l}</button>`).join('') : '<button type="button" class="btn-primaire" data-act="fermer">Fermer</button>'}</span></div>`, (root) => {
-      root.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier(b.dataset.bucket || 'justificatifs', b.dataset.voir)));
+      root.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier(b.dataset.bucket || 'justificatifs', b.dataset.voir, b.dataset.titre)));
       root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
         const a = b.dataset.act;
         if (a === 'fermer') return fermerFeuille();
@@ -3814,13 +3817,13 @@ function feuilleValider(d, nomDe, apres, devis = null) {
   ouvrirFeuille(`<h2>Valider cette dépense&#8239;?</h2>
     <p><b>${esc(d.objet)}</b>, ${eur(d.montant)}<br><span class="muted">Demandée par ${esc(nomDe(d.demandeur))} · ${esc(nomCategorie(d.category_id))}${d.date_souhaitee ? ` · pour le ${dateFr(d.date_souhaitee)}` : ''}</span></p>
     ${d.justification ? `<p class="justification">${esc(d.justification)}</p>` : ''}
-    ${devis ? `<p><button type="button" class="btn-tonal btn-petit" data-voir="${esc(devis.storage_path)}">Voir le devis</button></p>` : ''}
+    ${devis ? `<p><button type="button" class="btn-tonal btn-petit" data-voir="${esc(devis.storage_path)}" data-titre="Devis">Voir le devis</button></p>` : ''}
     <label class="champ obligatoire" for="sig">Signature</label>
     <canvas id="sig" style="width:100%;height:180px;border:1px dashed var(--bord-fort);border-radius:4px;background:#FFF;touch-action:none"></canvas>
     <div class="actions" style="justify-content:space-between"><button class="btn-texte" id="b-effacer">Effacer</button>
       <span><button class="btn-texte" id="b-annuler">Annuler</button> <button class="btn-primaire" id="b-signer">Signer et valider</button></span></div>`, (root) => {
     const zone = zoneSignature($('#sig', root));
-    root.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier('justificatifs', b.dataset.voir)));
+    root.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier('justificatifs', b.dataset.voir, b.dataset.titre)));
     $('#b-effacer', root).addEventListener('click', zone.effacer);
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
     $('#b-signer', root).addEventListener('click', async (e) => {
@@ -5010,7 +5013,7 @@ async function pageActivites() {
     corps = Object.keys(groupes).length ? Object.entries(groupes).map(([m, l]) => `<section class="carte carte-mois" style="--mois:${EVT_PALETTE[(Number(m.slice(5, 7)) - 1) % EVT_PALETTE.length][2]}"><h2>${majuscule(MOIS[Number(m.slice(5, 7)) - 1])} ${m.slice(0, 4)}</h2>
       <ul class="liste agenda">${l.map((e) => `<li class="agenda-jour ${e.date_debut === auj ? 'auj' : ''}" style="${styleEvt(e)}"><span class="agenda-date"><b>${Number(e.date_debut.slice(8))}</b><span>${JOURS_COURTS[(dateDe(e.date_debut).getDay() + 6) % 7]}</span></span>
         <div class="corps">${ligneEvt(e)}${e.date_fin && e.date_fin !== e.date_debut ? `<span class="muted">Jusqu’au ${esc(jourLong(e.date_fin))}</span>` : ''}</div></li>`).join('')}</ul></section>`).join('')
-      : `<div class="carte vide">Aucun rendez-vous prévu.${peut('gerer_activites') ? '<button class="btn-primaire" id="b-evt-vide">Ajouter un rendez-vous</button>' : ''}</div>`;
+      : `<div class="carte vide">Aucun rendez-vous prévu.</div>`;
   } else if (P.affichage === 'mois') {
     const cases = [];
     for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) cases.push(isoLocal(d));
@@ -5101,7 +5104,7 @@ async function pageMateriel() {
   const nbArticles = enService.reduce((s, x) => s + Number(x.quantite || 1), 0);
   const parCat = {};
   vus.forEach((x) => (parCat[x.categorie] = parCat[x.categorie] || []).push(x));
-  const ligneM = (x) => `<li class="cliquable" data-mat="${x.id}" tabindex="0" role="button" data-nom="${esc(sansAccents(x.designation + ' ' + (x.marque || '')))}">
+  const ligneM = (x) => `<li class="cliquable" data-mat="${x.id}" tabindex="0" role="button" data-nom="${esc(sansAccents(x.designation + ' ' + (x.marque || '') + ' ' + (x.numero_serie || '')))}">
       ${x.photo_path && S.photos[x.photo_path] ? `<span class="avatar avatar-carre"><img src="${esc(S.photos[x.photo_path])}" alt=""></span>` : `<span class="avatar avatar-carre" aria-hidden="true">${esc((x.designation[0] || '').toUpperCase())}</span>`}
       <div class="corps"><b>${esc(x.designation)}${x.quantite > 1 ? ` <span class="muted">× ${x.quantite}</span>` : ''}</b>
         <span>${[x.marque, x.lieu].filter(Boolean).map(esc).join(' · ') || ORIGINES_MATERIEL[x.origine]}</span>

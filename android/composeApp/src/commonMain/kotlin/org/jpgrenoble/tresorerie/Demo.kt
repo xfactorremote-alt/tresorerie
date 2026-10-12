@@ -182,26 +182,29 @@ object Demo {
     }
 
     private val moisCourant = aujourdhui().monthNumber
+    // Mêmes membres que mock.js : WhatsApp pour un membre sur trois exclu (i % 3 == 0 sans numéro), adhésion en septembre
+    // de l'an dernier (Josué en mars de cette année)
     val membres = mutableListOf(
-        Membre("m0", "Grâce", "Mbala", 5, moisCourant, "Infirmière", "06 12 34 56 70"),
+        Membre("m0", "Grâce", "Mbala", 5, moisCourant, "Infirmière"),
         Membre("m1", "Daniel", "Kouassi", 12, moisCourant, "Électricien", "06 12 34 56 71"),
-        Membre("m2", "Esther", "Nzeyimana", 27, moisCourant),
-        Membre("m3", "Samuel", "Okafor", 3, 2, "Étudiant", "06 12 34 56 73"),
+        Membre("m2", "Esther", "Nzeyimana", 27, moisCourant, whatsapp = "06 12 34 56 72"),
+        Membre("m3", "Samuel", "Okafor", 3, 2, "Étudiant"),
         Membre("m4", "Ruth", "Diallo", 19, 7, "Comptable", "06 12 34 56 74"),
         Membre("m5", "Jonathan", "Mabiala", 8, 11, whatsapp = "06 12 34 56 75"),
         Membre("m6", "Déborah", "Tshibangu", 30, 4, "Aide-soignante"),
         Membre("m7", "Élie", "Bamba", 14, 9, "Chauffeur", "06 12 34 56 77"),
-        Membre("m8", "Naomie", "Kabongo", 22, 1),
-        Membre("m9", "Josué", "Mensah", 1, 6, "Ingénieur", "06 12 34 56 79"),
-        Membre("m10", "Jean-Marc", "Ilunga", 17, 3, "Enseignant", "06 12 34 56 80"),
-        Membre("m11", "Marthe", "Kalala", 9, 12, "Secrétaire médicale"),
+        Membre("m8", "Naomie", "Kabongo", 22, 1, whatsapp = "06 12 34 56 78"),
+        Membre("m9", "Josué", "Mensah", 1, 6, "Ingénieur"),
+        Membre("m10", "Jean-Marc", "Ilunga", 17, 3, "Enseignant", "06 12 34 56 710"),
+        Membre("m11", "Marthe", "Kalala", 9, 12, "Secrétaire médicale", "06 12 34 56 711"),
         Membre("m12", "Paul", "Ndongo", 25, 5, "Gestionnaire de paie"),
     )
-    // Accord pour afficher l'anniversaire aux adhérents
+    // Accord pour afficher l'anniversaire aux adhérents (tous sauf Esther et Élie, comme mock.js)
     init {
-        val accord = setOf("m0", "m1", "m3", "m4", "m5", "m6", "m8", "m9")
+        val sansAccord = setOf("m2", "m7")
         // Date d'arrivée : Naomie vient d'arriver (apparaît dans « Nouveautés »)
-        for (i in membres.indices) membres[i] = membres[i].copy(consentement = membres[i].id in accord,
+        for (i in membres.indices) membres[i] = membres[i].copy(consentement = membres[i].id !in sansAccord,
+            adhesion = if (membres[i].id == "m9") "${aujourdhui().year}-03-15" else "${aujourdhui().year - 1}-09-01",
             creeLe = aujourdhui().minus(DatePeriod(days = if (membres[i].id == "m8") 2 else 300)).toString() + "T10:00:00Z")
     }
 
@@ -227,9 +230,11 @@ object Demo {
         val an = aujourdhui().year
         fun ajout(j: Int, sens: String, montant: Double, cat: String, libelle: String, compte: String, m: String? = null,
                   cotis: Boolean = false, collecte: String? = null, projet: String? = null, tiersId: String? = null) {
-            lignes += Ligne(Ecriture("e${compteur++}", ilYa(j), compte, sens, montant, cat, libelle,
+            // Comme mock.js : saisie par le trésorier, le jour même ; la dernière ajoutée passe devant à date égale
+            val n = compteur++
+            lignes += Ligne(Ecriture("e$n", ilYa(j), compte, sens, montant, cat, libelle,
                 mode = if (compte == "acc-caisse") "especes" else "virement", membreId = m, estCotisation = cotis,
-                collecteId = collecte, projetId = projet, tiersId = tiersId))
+                collecteId = collecte, projetId = projet, tiersId = tiersId, creePar = "u-t", creeLe = "${ilYa(j)}T10:${p2(n / 60)}:${p2(n % 60)}Z"))
         }
         ajout(2, "recette", 185.0, "c3", "Offrande pour la sortie des jeunes", "acc-caisse")
         lignes.last().e = lignes.last().e.copy(projetId = "p1")
@@ -238,19 +243,19 @@ object Demo {
         lignes.last().e = lignes.last().e.copy(projetId = "p3")
         ajout(15, "recette", 300.0, "c2", "Don anonyme", "acc-banque")
         ajout(52, "depense", 45.0, "c6", "Frais de tenue de compte", "acc-banque")
-        lignes.last().e = lignes.last().e.copy(rapproche = true, rapprochementId = "rec0")
+        lignes.last().e = lignes.last().e.copy(rapproche = true, rapprochementId = "rec0", mode = "autre", dateRapprochement = ilYa(41))
         ajout(10, "depense", 75.0, "c7", "Décoration de la salle", "acc-caisse")
         ajout(29, "depense", 60.0, "c8", "Colis alimentaire famille Diallo", "acc-caisse")
         // Versements de cotisation, imputés sur les mois les plus anciens
         listOf("m0" to 200.0, "m1" to 100.0, "m3" to 180.0, "m4" to 240.0, "m6" to 40.0, "m9" to 140.0, "m2" to 60.0).forEachIndexed { k, (id, v) ->
             val m = membres.first { it.id == id }
-            ajout(3 + k * 4, "recette", v, "c1", "Cotisation$NBSP: ${m.nomComplet}", if (k % 2 == 0) "acc-caisse" else "acc-banque", id, cotis = true)
+            ajout(3 + k * 4, "recette", v, "c1", "Cotisation : ${m.nomComplet}", if (k % 2 == 0) "acc-caisse" else "acc-banque", id, cotis = true)
         }
         listOf("m0" to 15.0, "m1" to 15.0, "m3" to 10.0, "m4" to 15.0, "m5" to 15.0).forEachIndexed { k, (id, v) ->
-            ajout(1 + k, "recette", v, "c4", "Participation sortie$NBSP: ${membres.first { it.id == id }.nomComplet}", "acc-caisse", id, collecte = "co1", projet = "p1")
+            ajout(1 + k, "recette", v, "c4", "Participation sortie : ${membres.first { it.id == id }.nomComplet}", "acc-caisse", id, collecte = "co1", projet = "p1")
         }
         ajout(6, "recette", 50.0, "c2", "Don pour la sortie des jeunes", "acc-banque", collecte = "co1", projet = "p1", tiersId = "ti3")
-        ajout(1, "recette", 20.0, "c4", "Repas de Noël$NBSP: Grâce Mbala", "acc-caisse", "m0", collecte = "co2", projet = "p2")
+        ajout(1, "recette", 20.0, "c4", "Repas de Noël : Grâce Mbala", "acc-caisse", "m0", collecte = "co2", projet = "p2")
         ajout(20, "recette", 150.0, "c2", "Don", "acc-banque", tiersId = "ti4")
         // Historique de 12 mois pour les graphiques d'analyse
         val hist = listOf(listOf(95, 32, 120, 0), listOf(140, 28, 0, 210), listOf(110, 35, 60, 0), listOf(160, 41, 0, 0),
@@ -261,6 +266,7 @@ object Demo {
             ajout(j, "recette", offrande.toDouble(), "c3", "Offrandes du mois", "acc-caisse")
             ajout(j + 2, "depense", fonct.toDouble(), "c6", "Fournitures et photocopies", "acc-caisse")
             ajout(j + 4, "depense", 5.0, "c6", "Frais bancaires", "acc-banque")
+            lignes.last().e = lignes.last().e.copy(mode = "autre")
             if (activite > 0) ajout(j + 6, "depense", activite.toDouble(), "c7", "Activité du mois", "acc-caisse")
             if (don > 0) ajout(j + 8, "recette", don.toDouble(), "c2", "Don", "acc-banque", tiersId = "ti4")
             if (k % 3 == 1) ajout(j + 10, "depense", (45 + k * 5).toDouble(), "c8", "Aide à une famille", "acc-caisse")
@@ -354,14 +360,27 @@ object Demo {
     fun couperLien(membreId: String, profil: Profil?) { exiger(profil, "gerer_membres", "gerer_cotisations"); liens.removeAll { it.membreId == membreId } }
 
     // ---------- Inventaire du matériel (mêmes règles que la base : gestion réservée à gerer_materiel) ----------
-    val materiel = mutableListOf(
-        Materiel("mat1", "Guitare basse", "instrument", "Yamaha TRBX174", "QK0123", 1, "achat", ilYa(400), 249.0, 180.0, "bon", "Église, local du fond", verifieLe = ilYa(30)),
-        Materiel("mat2", "Enceinte portable", "sonorisation", "JBL EON One", null, 2, "achat", ilYa(200), 378.0, 300.0, "bon", "Église", detenteurId = "m3", verifieLe = ilYa(30)),
-        Materiel("mat3", "Micros sans fil", "sonorisation", "Shure BLX", null, 4, "don", ilYa(700), 400.0, 250.0, "usage", "Église", verifieLe = ilYa(420)),
-        Materiel("mat4", "Clavier numérique", "instrument", "Roland FP-10", null, 1, "pret", ilYa(90), null, null, "bon", "Église", notes = "Prêté par M. et Mme Lefèvre", verifieLe = ilYa(60)),
-        Materiel("mat5", "Tenues de chorale", "textile", null, null, 25, "achat", ilYa(800), 625.0, 300.0, "a_reparer", "Armoire du local", verifieLe = ilYa(30)),
+    // Mêmes articles que la démo du site (mock.js)
+    private fun mat(id: String, designation: String, categorie: String, marque: String? = null, serie: String? = null, quantite: Int = 1, origine: String = "achat",
+                    acquis: String? = null, valeur: Double? = null, actuelle: Double? = null, etat: String = "bon", lieu: String? = "Église, local de rangement",
+                    detenteur: String? = null, transaction: String? = null, notes: String? = null, verifie: String? = null) =
+        Materiel(id, designation, categorie, marque, serie, quantite, origine, acquis, valeur, actuelle, etat, lieu, detenteur, transaction, null, notes, verifie)
+    val materiel = aujourdhui().year.let { an -> mutableListOf(
+        mat("mat1", "Guitare électro-acoustique", "instrument", marque = "Yamaha APX600", serie = "HPX09123", acquis = "${an - 2}-04-12", valeur = 320.0, actuelle = 220.0, detenteur = "m1", verifie = ilYa(60)),
+        mat("mat2", "Clavier arrangeur", "instrument", marque = "Yamaha PSR-E473", origine = "don", acquis = "${an - 1}-11-05", valeur = 380.0, actuelle = 300.0, notes = "Don de la famille Lefèvre", verifie = ilYa(60)),
+        mat("mat3", "Batterie complète", "instrument", marque = "Pearl Roadshow", acquis = "${an - 4}-09-01", valeur = 680.0, actuelle = 350.0, etat = "usage", lieu = "Salle de répétition"),
+        mat("mat4", "Djembés", "instrument", quantite = 3, acquis = "${an - 3}-06-20", valeur = 210.0, actuelle = 150.0, verifie = ilYa(60)),
+        mat("mat5", "Table de mixage 12 voies", "sonorisation", marque = "Behringer Xenyx 1202", acquis = "${an - 2}-01-15", valeur = 289.0, actuelle = 180.0),
+        mat("mat6", "Micros sans fil", "sonorisation", marque = "Shure BLX", quantite = 2, acquis = ilYa(9), valeur = 120.0, actuelle = 120.0, etat = "neuf",
+            transaction = lignes.firstOrNull { it.e.libelle == "Câbles et micro" }?.e?.id),
+        mat("mat7", "Vidéoprojecteur", "informatique", marque = "Epson EB-W06", origine = "don", acquis = "${an - 3}-02-10", valeur = 300.0, actuelle = 80.0, etat = "a_reparer", notes = "Lampe à remplacer"),
+        mat("mat8", "Tenues de chorale", "textile", quantite = 20, acquis = "${an - 1}-03-01", valeur = 600.0, actuelle = 400.0, lieu = "Chez la responsable de la chorale"),
+        mat("mat9", "Tables pliantes", "mobilier", quantite = 6, origine = "pret", notes = "Prêtées par la paroisse Saint-Bruno", lieu = "Salle paroissiale"),
+    ) }
+    val mouvements = mutableListOf(
+        MouvementMateriel("mat1", "pret", "m1", "Pour les répétitions à domicile", ilYa(20)),
+        MouvementMateriel("mat7", "reparation", null, "Lampe hors service", ilYa(15)),
     )
-    val mouvements = mutableListOf(MouvementMateriel("mat2", "pret", "m3", "Répétitions", ilYa(5)))
 
     fun ajouterMateriel(n: NouveauMateriel, profil: Profil?): String {
         exiger(profil, "gerer_materiel")
@@ -431,7 +450,7 @@ object Demo {
         if (lignes.any { it.e.virement == virement && it.e.contrepasseDe != null }) throw IllegalStateException("Ce virement est déjà annulé")
         jambes.forEach { j ->
             lignes += Ligne(j.copy(id = "e${compteur++}", date = aujourdhui().toString(), montant = -j.montant, contrepasseDe = j.id, rapproche = false,
-                rapprochementId = null, libelle = "Contre-passation$NBSP: ${j.libelle}".take(100) + SEP_MOTIF + motif.trim().take(60), creePar = profil?.id, creeLe = maintenant()))
+                rapprochementId = null, libelle = "Contre-passation : ${j.libelle}".take(100) + SEP_MOTIF + motif.trim().take(60), creePar = profil?.id, creeLe = maintenant()))
         }
     }
 
@@ -570,7 +589,7 @@ object Demo {
 
     // ---------- Demandes de dépense ----------
     private val demandesListe = mutableListOf(
-        Demande("r1", "u-b", "Décoration de la salle", 75.0, "c7", null, "payee", ilYaPublic(12), ilYaPublic(10), creeLe = ilYaPublic(14), signature = "demo.png", valideePar = "u-p"),
+        Demande("r1", "u-b", "Décoration de la salle", 75.0, "c7", null, "payee", ilYaPublic(12), ilYaPublic(10), creeLe = ilYaPublic(20), signature = "demo.png", valideePar = "u-p"),
         Demande("r2", "u-b", "Location du car pour la sortie", 240.0, "c7", "p1", "soumise", creeLe = ilYaPublic(1)),
         Demande("r3", "u-p", "Enceinte portable", 189.0, "c9", "p3", "validee", ilYaPublic(2), creeLe = ilYaPublic(3), signature = "demo.png", valideePar = "u-p"),
         Demande("r4", "u-t", "Colis alimentaire famille Diallo", 60.0, "c8", null, "justifiee", ilYaPublic(30), ilYaPublic(29), creeLe = ilYaPublic(31), signature = "demo.png", valideePar = "u-p"),
@@ -589,8 +608,7 @@ object Demo {
         }
         lier("r1", "Décoration de la salle", null)
         lier("r4", "Colis alimentaire famille Diallo", ImagesDemo.ticketColis)
-        fichiers["justificatifs/demo-boissons.png"] = ImagesDemo.ticketDecoration
-        pieces += Piece("pj-b", lignes.first { it.e.libelle.startsWith("Boissons") }.e.id, null, "demo-boissons.png", "image/png")
+        // Comme mock.js : la dépense « Boissons et gobelets » n'a pas de pièce (« Sans pièce » des deux côtés)
     }
 
     // Comme la règle de lecture : toutes les demandes si l'on valide, paie ou consulte ; sinon les siennes
@@ -724,7 +742,7 @@ object Demo {
     // ---------- Membres ----------
     fun ajouterMembre(n: NouveauMembre, profil: Profil?): String {
         exiger(profil, "gerer_membres")
-        val m = Membre("m${compteur++}", n.prenom, n.nom, n.jour, n.mois, n.profession, n.whatsapp, consentement = n.consentement, email = n.email, creeLe = maintenant())
+        val m = Membre("m${compteur++}", n.prenom, n.nom, n.jour, n.mois, n.profession, n.whatsapp, consentement = n.consentement, email = n.email, creeLe = maintenant(), adhesion = n.adhesion)
         membres += m
         val auj = aujourdhui()
         for (mo in auj.monthNumber..12) cotisationsDues[m.id to "${auj.year}-${p2(mo)}-01"] = reglages["cotisation_montant"] ?: 20.0

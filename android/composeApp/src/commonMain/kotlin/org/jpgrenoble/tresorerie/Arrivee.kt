@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -164,13 +165,16 @@ fun couleursSection(s: String): Pair<Color, Color> = when (s) {
 // =====================================================================
 // Suppression réversible : motif, corbeille, « Annuler » aussitôt
 // =====================================================================
-object Annulation { var hote: SnackbarHostState? = null }
+// La suppression et son « Annuler » vivent dans une portée de l'application, pas dans celle de l'écran :
+// sinon fermer la fiche qui porte « Supprimer » annulait la suite (liste non rechargée, « Annuler » perdu).
+object Annulation { var hote: SnackbarHostState? = null; val portee = kotlinx.coroutines.MainScope() }
 
 /** Renvoie la fonction qui demande confirmation puis supprime ; « Annuler » dans le message restaure. */
 @Composable
-fun rememberSuppression(message: (String) -> Unit, apres: () -> Unit): (table: String, id: String, libelle: String) -> Unit {
+fun rememberSuppression(message: (String) -> Unit, note: String? = null, apres: () -> Unit): (table: String, id: String, libelle: String) -> Unit {
     var cible by remember { mutableStateOf<Triple<String, String, String>?>(null) }
-    val scope = rememberCoroutineScope()
+    val scope = Annulation.portee
+    val apresActuel by rememberUpdatedState(apres)
     cible?.let { (table, id, libelle) ->
         var motif by remember(id) { mutableStateOf("") }
         var enCours by remember(id) { mutableStateOf(false) }
@@ -180,25 +184,34 @@ fun rememberSuppression(message: (String) -> Unit, apres: () -> Unit): (table: S
             title = { Text("Supprimer «$NBSP$libelle$NBSP»$NBSP?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Précision propre à l'élément (exercice : les écritures restent), comme la bande « info » du site
+                    if (note != null) Surface(color = Color(0xFFEAF4FB), shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB5D6EE))) {
+                        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Info, null, tint = Couleurs.Bleu, modifier = Modifier.size(20.dp))
+                            Text(note, fontSize = 14.sp, color = Couleurs.Texte)
+                        }
+                    }
                     Text("L’élément part dans la corbeille (Paramètres, Corbeille) avec ses pièces jointes ; il peut être restauré à tout moment.", fontSize = 14.sp, color = Couleurs.Texte2)
                     OutlinedTextField(motif, { motif = it.take(120) }, label = { Text("Motif (facultatif)") }, placeholder = { Text("Doublon, erreur de saisie…") }, singleLine = true)
                 }
             },
             confirmButton = {
-                Button(enabled = !enCours, colors = ButtonDefaults.buttonColors(containerColor = Couleurs.Erreur), onClick = {
+                // .btn-danger du site : contour et texte rouges, icône corbeille
+                OutlinedButton(enabled = !enCours, colors = ButtonDefaults.outlinedButtonColors(contentColor = Couleurs.Erreur),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Erreur.copy(alpha = 0.5f)), onClick = {
                     enCours = true
                     scope.launch {
                         try {
                             val idCorbeille = Repo.supprimer(table, id, motif.trim().ifBlank { null })
-                            cible = null; apres(); EtatNouveautes.charger()
+                            cible = null; apresActuel(); EtatNouveautes.charger()
                             val hote = Annulation.hote
                             if (hote != null) {
                                 val r = hote.showSnackbar("Supprimé, placé dans la corbeille", actionLabel = "Annuler", duration = SnackbarDuration.Long)
-                                if (r == SnackbarResult.ActionPerformed) try { Repo.restaurer(idCorbeille); apres(); message("Restauré") } catch (e: Exception) { message(traduireErreur(e)) }
+                                if (r == SnackbarResult.ActionPerformed) try { Repo.restaurer(idCorbeille); apresActuel(); message("Restauré") } catch (e: Exception) { message(traduireErreur(e)) }
                             } else message("Supprimé, placé dans la corbeille")
                         } catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
                     }
-                }) { Text("Supprimer") }
+                }) { Icon(Icons.Outlined.Delete, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Supprimer") }
             },
             dismissButton = { TextButton(onClick = { cible = null }) { Text("Annuler") } },
         )
@@ -450,58 +463,69 @@ fun statutExercice(e: Exercice): Triple<String, Color, Color> {
         e.cloture -> Triple("Clôturé", Color(0xFFEFEDEC), Couleurs.Texte2)
         e.debut > auj -> Triple("À venir", Color(0xFFEFEDEC), Couleurs.Texte2)
         e.fin < auj -> Triple("À clôturer", Couleurs.JauneClair, Couleurs.SurJaune)
-        else -> Triple("En cours", Color(0xFFDDF3E2), Color(0xFF145C2C))
+        else -> Triple("En cours", Couleurs.BleuClair, Couleurs.SurBleuClair)   // puce-ok du site
     }
 }
 
+// Supprimer un exercice retire la période, jamais les écritures (même texte que NOTE_SUPPR_EXERCICE du site)
+const val NOTE_SUPPR_EXERCICE = "Les écritures de cette période ne sont pas supprimées : seule la période l’est. Elles restent dans Opérations ; pour les retirer, supprimez-les une à une."
+
 @Composable
-fun ParamExercices(d: Donnees, message: (String) -> Unit) {
-    var liste by remember { mutableStateOf<List<Exercice>>(emptyList()) }
+fun ParamExercices(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = {}) {
+    var liste by remember { mutableStateOf<List<Exercice>?>(null) }
     var version by remember { mutableStateOf(0) }
     var edition by remember { mutableStateOf<Pair<Boolean, Exercice?>?>(null) }
     var aCloturer by remember { mutableStateOf<Exercice?>(null) }
     var aRouvrir by remember { mutableStateOf<Exercice?>(null) }
     val scope = rememberCoroutineScope()
-    val supprimer = rememberSuppression(message) { version++ }
+    // Après suppression (ou « Annuler ») : la liste ET les données partagées (choix de Rapports, verrou des opérations)
+    val supprimer = rememberSuppression(message, NOTE_SUPPR_EXERCICE) { version++; recharger() }
     LaunchedEffect(version, Synchro.version) { try { liste = Repo.exercices() } catch (e: Exception) { message(traduireErreur(e)) } }
+    val l = liste ?: emptyList()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Text("L’exercice regroupe 12 mois de comptes. Une fois clôturé, ses opérations ne peuvent plus être ajoutées, modifiées ni supprimées (il peut être rouvert).", color = Couleurs.Texte2, fontSize = 14.sp)
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { edition = true to null }) { Text("Nouvel exercice") }
-        }
-        items(liste, key = { it.id }) { e ->
-            val (lib, fond, encre) = statutExercice(e)
             CarteBlanche {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.CalendarMonth, null, tint = Couleurs.Orange)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(e.libelle, fontWeight = FontWeight.Bold)
-                        Text("${dateFr(e.debut)} au ${dateFr(e.fin)}" + (e.clotureLe?.let { " · clôturé le ${dateFr(it.take(10))}" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
-                    }
-                    Puce(lib, fond, encre)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("L’exercice regroupe 12 mois de comptes. Une fois clôturé, ses opérations ne peuvent plus être ajoutées, modifiées ni supprimées (il peut être rouvert).", color = Couleurs.Texte2, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Button(onClick = { edition = true to null }) { Text("Nouvel exercice") }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)) {
-                    if (e.cloture) TextButton(onClick = { aRouvrir = e }) { Text("Rouvrir") }
-                    else {
-                        BoutonSupprimer({ supprimer("exercices", e.id, e.libelle) })
-                        TextButton(onClick = { edition = false to e }) { Text("Modifier") }
-                        FilledTonalButton(onClick = { aCloturer = e }) { Text("Clôturer") }
+                if (liste != null && l.isEmpty()) Text("Aucun exercice. Créez le premier.", color = Couleurs.Texte2)
+                l.forEachIndexed { i, e ->
+                    key(e.id) {
+                        if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
+                        val (lib, fond, encre) = statutExercice(e)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.CalendarMonth, null, tint = Couleurs.Texte2)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(e.libelle, fontWeight = FontWeight.Bold)
+                                Text("${dateFr(e.debut)} au ${dateFr(e.fin)}" + (e.clotureLe?.let { " · clôturé le ${dateFr(it.take(10))}" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
+                            }
+                            Puce(lib, fond, encre)
+                        }
+                        // Même ordre que le site : Modifier, Clôturer, corbeille
+                        Row(Modifier.fillMaxWidth().padding(start = 34.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (e.cloture) TextButton(onClick = { aRouvrir = e }) { Text("Rouvrir") }
+                            else {
+                                TextButton(onClick = { edition = false to e }) { Text("Modifier") }
+                                OutlinedButton(onClick = { aCloturer = e }) { Text("Clôturer") }
+                                IconButton(onClick = { supprimer("exercices", e.id, e.libelle) }) { Icon(Icons.Outlined.Delete, contentDescription = "Supprimer ${e.libelle}", tint = Couleurs.Texte2) }
+                            }
+                        }
                     }
                 }
             }
         }
     }
     edition?.let { (_, e) ->
-        val suivant = liste.firstOrNull()?.let { exerciceDe(kotlinx.datetime.LocalDate.fromEpochDays(kotlinx.datetime.LocalDate.parse(it.fin).toEpochDays() + 1).toString()) } ?: exerciceDe("${aujourdhui().year}-01-01")
+        val suivant = l.firstOrNull()?.let { exerciceDe(kotlinx.datetime.LocalDate.fromEpochDays(kotlinx.datetime.LocalDate.parse(it.fin).toEpochDays() + 1).toString()) } ?: exerciceDe("${aujourdhui().year}-01-01")
         var debut by remember(e) { mutableStateOf(dateFr(e?.debut ?: suivant.debut)) }
         var fin by remember(e) { mutableStateOf(dateFr(e?.fin ?: suivant.fin)) }
         var libelle by remember(e) { mutableStateOf(e?.libelle ?: suivant.libelle) }
         val dD = dateDepuisFr(debut); val dF = dateDepuisFr(fin)
         DialogueSimple(if (e == null) "Nouvel exercice" else "Modifier l’exercice", "Enregistrer", dD != null && dF != null && dF > dD && libelle.isNotBlank(), { edition = null }, {
             scope.launch {
-                try { Repo.enregistrerExercice(e?.id, NouvelExercice(libelle.trim(), dD.toString(), dF.toString())); message(if (e == null) "Exercice créé" else "Exercice modifié"); version++ }
+                try { Repo.enregistrerExercice(e?.id, NouvelExercice(libelle.trim(), dD.toString(), dF.toString())); message(if (e == null) "Exercice créé" else "Exercice modifié"); version++; recharger() }
                 catch (ex: Exception) { message(traduireErreur(ex)) }
                 edition = null
             }
@@ -523,31 +547,31 @@ fun ParamExercices(d: Donnees, message: (String) -> Unit) {
                 val ouvertes = Repo.demandes().count { it.statut in listOf("soumise", "validee", "payee") && it.creeLe.take(10) <= e.fin }
                 points = listOf(
                     (nonRappr == 0) to (if (nonRappr > 0) "$nonRappr opération${if (nonRappr > 1) "s" else ""} bancaire${if (nonRappr > 1) "s" else ""} non rapprochée${if (nonRappr > 1) "s" else ""}" else "Opérations bancaires rapprochées"),
-                    (ouvertes == 0) to (if (ouvertes > 0) "$ouvertes demande${if (ouvertes > 1) "s" else ""} de dépense non soldée${if (ouvertes > 1) "s" else ""}" else "Demandes de dépense soldées"),
+                    (ouvertes == 0) to (if (ouvertes > 0) "$ouvertes demande${if (ouvertes > 1) "s" else ""} de dépense non soldée${if (ouvertes > 1) "s" else ""} (à valider, à payer ou sans justificatif)" else "Demandes de dépense soldées"),
                     (e.fin < aujourdhui().toString()) to (if (e.fin < aujourdhui().toString()) "Période terminée" else "L’exercice n’est pas terminé (fin le ${dateFr(e.fin)})"))
             } catch (ex: Exception) { message(traduireErreur(ex)) }
         }
         AlertDialog(onDismissRequest = { aCloturer = null }, title = { Text("Clôturer ${e.libelle}$NBSP?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    points?.forEach { (ok, t) -> Row(verticalAlignment = Alignment.CenterVertically) { Puce(if (ok) "OK" else "À voir", if (ok) Color(0xFFDDF3E2) else Couleurs.JauneClair, if (ok) Color(0xFF145C2C) else Couleurs.SurJaune); Spacer(Modifier.width(8.dp)); Text(t, fontSize = 14.sp) } }
+                    points?.forEach { (ok, t) -> Row(verticalAlignment = Alignment.CenterVertically) { Puce(if (ok) "OK" else "À voir", if (ok) Couleurs.BleuClair else Couleurs.JauneClair, if (ok) Couleurs.SurBleuClair else Couleurs.SurJaune); Spacer(Modifier.width(8.dp)); Text(t, fontSize = 14.sp) } }
                         ?: LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text("Pensez à imprimer le rapport annuel (Rapports) avant de clôturer. L’exercice pourra être rouvert si besoin.", fontSize = 13.sp, color = Couleurs.Texte2)
                 }
             },
-            confirmButton = { Button(onClick = { scope.launch { try { Repo.cloturerExercice(e.id, true); message("Exercice clôturé"); version++ } catch (ex: Exception) { message(traduireErreur(ex)) }; aCloturer = null } }) { Text("Clôturer") } },
+            confirmButton = { Button(onClick = { scope.launch { try { Repo.cloturerExercice(e.id, true); message("Exercice clôturé"); version++; recharger() } catch (ex: Exception) { message(traduireErreur(ex)) }; aCloturer = null } }) { Text("Clôturer") } },
             dismissButton = { TextButton(onClick = { aCloturer = null }) { Text("Annuler") } })
     }
     aRouvrir?.let { e ->
         AlertDialog(onDismissRequest = { aRouvrir = null }, title = { Text("Rouvrir ${e.libelle}$NBSP?") },
             text = { Text("Les opérations de la période pourront de nouveau être modifiées. La réouverture est tracée.") },
-            confirmButton = { Button(onClick = { scope.launch { try { Repo.cloturerExercice(e.id, false); message("Exercice rouvert"); version++ } catch (ex: Exception) { message(traduireErreur(ex)) }; aRouvrir = null } }) { Text("Rouvrir") } },
+            confirmButton = { Button(onClick = { scope.launch { try { Repo.cloturerExercice(e.id, false); message("Exercice rouvert"); version++; recharger() } catch (ex: Exception) { message(traduireErreur(ex)) }; aRouvrir = null } }) { Text("Rouvrir") } },
             dismissButton = { TextButton(onClick = { aRouvrir = null }) { Text("Annuler") } })
     }
 }
 
 val TYPES_CORBEILLE = mapOf("transactions" to "Opération", "members" to "Membre", "tiers" to "Tiers", "projects" to "Rendez-vous", "collectes" to "Collecte",
-    "materiel" to "Matériel", "categories" to "Catégorie", "accounts" to "Compte", "budgets" to "Ligne de budget", "expense_requests" to "Demande", "exercices" to "Exercice")
+    "materiel" to "Matériel", "categories" to "Catégorie", "accounts" to "Compte", "budgets" to "Ligne de budget", "expense_requests" to "Demande", "exercices" to "Exercice", "communiques" to "Communiqué")
 
 @Composable
 fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit) {
@@ -557,38 +581,53 @@ fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit)
     var voirRestaures by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(version, Synchro.version) { try { liste = Repo.corbeille(); profils = try { Repo.profils() } catch (_: Exception) { emptyList() } } catch (e: Exception) { message(traduireErreur(e)) } }
-    fun nom(id: String?) = if (id == d.profil.id) "vous" else profils.firstOrNull { it.id == id }?.nom ?: "un membre du bureau"
+    // Même règle que le site : le nom du profil (le sien compris), sinon « un membre du bureau »
+    fun nom(id: String?) = profils.firstOrNull { it.id == id }?.nom ?: if (id == d.profil.id) d.profil.nom else "un membre du bureau"
     val l = liste
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Un élément supprimé n’est jamais perdu : il reste ici avec ses pièces jointes et ses liens, et « Restaurer » le remet exactement en place. Chaque suppression et chaque restauration est tracée.", color = Couleurs.Texte2, fontSize = 14.sp) }
-        if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-        else {
-            val attente = l.filter { it.restaureLe == null }; val faits = l.filter { it.restaureLe != null }
-            if (attente.isEmpty()) item {
-                Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.Delete, null, tint = Couleurs.Texte2, modifier = Modifier.size(36.dp)); Text("La corbeille est vide.", color = Couleurs.Texte2)
-                }
+    var enCours by remember { mutableStateOf<String?>(null) }
+    // Une ligne, comme sur le site : type, libellé, « Supprimé le … par … · motif · restauré le … », Restaurer ou « Restauré »
+    @Composable fun Ligne(x: ElementCorbeille) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Puce(TYPES_CORBEILLE[x.table] ?: x.table, Color(0xFFEFEDEC), Couleurs.Texte2)
+            Column(Modifier.weight(1f)) {
+                Text(x.libelle, fontWeight = FontWeight.SemiBold)
+                Text("Supprimé le ${dateFr(x.supprimeLe.take(10))} par ${nom(x.supprimePar)}" + (x.motif?.let { " · $it" } ?: "") +
+                    (x.restaureLe?.let { " · restauré le ${dateFr(it.take(10))}" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
             }
-            items(attente, key = { it.id }) { x ->
-                CarteBlanche {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Puce(TYPES_CORBEILLE[x.table] ?: x.table, Color(0xFFEFEDEC), Couleurs.Texte2)
-                        Column(Modifier.weight(1f)) {
-                            Text(x.libelle, fontWeight = FontWeight.SemiBold)
-                            Text("Supprimé le ${dateFr(x.supprimeLe.take(10))} par ${nom(x.supprimePar)}" + (x.motif?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
-                        }
+            if (x.restaureLe != null) Puce("Restauré", Couleurs.BleuClair, Couleurs.SurBleuClair)
+            else OutlinedButton(enabled = enCours != x.id, contentPadding = PaddingValues(horizontal = 12.dp), onClick = {
+                enCours = x.id
+                scope.launch {
+                    try { Repo.restaurer(x.id); recharger(); message("Élément restauré"); version++; EtatNouveautes.charger() }
+                    catch (e: Exception) { message(traduireErreur(e)) }
+                    enCours = null
+                }
+            }) { Icon(Icons.Outlined.Restore, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Restaurer") }
+        }
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            CarteBlanche {
+                Text("Un élément supprimé n’est jamais perdu : il reste ici avec ses pièces jointes et ses liens, et «$NBSP" + "Restaurer$NBSP» le remet exactement en place. Chaque suppression et chaque restauration est tracée.", color = Couleurs.Texte2, fontSize = 14.sp)
+                if (l == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+                else {
+                    val attente = l.filter { it.restaureLe == null }
+                    if (attente.isEmpty()) Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.Delete, null, tint = Couleurs.Texte2, modifier = Modifier.size(32.dp)); Text("La corbeille est vide.", color = Couleurs.Texte2)
                     }
-                    FilledTonalButton(modifier = Modifier.align(Alignment.End), onClick = {
-                        scope.launch { try { Repo.restaurer(x.id); message("Élément restauré"); version++; recharger(); EtatNouveautes.charger() } catch (e: Exception) { message(traduireErreur(e)) } }
-                    }) { Icon(Icons.Outlined.Restore, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Restaurer") }
+                    attente.forEachIndexed { i, x -> key(x.id) { if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA)); Ligne(x) } }
                 }
             }
-            if (faits.isNotEmpty()) item { TextButton(onClick = { voirRestaures = !voirRestaures }) { Text(if (voirRestaures) "Masquer les éléments restaurés" else "Déjà restaurés (${faits.size})") } }
-            if (voirRestaures) items(faits, key = { it.id }) { x ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { Text(x.libelle); Text("Restauré le ${dateFr(x.restaureLe!!.take(10))}", fontSize = 12.sp, color = Couleurs.Texte2) }
-                    Puce("Restauré", Color(0xFFDDF3E2), Color(0xFF145C2C))
+        }
+        val faits = l?.filter { it.restaureLe != null } ?: emptyList()
+        // « Déjà restaurés (n) » : carte repliable, comme le <details> du site
+        if (faits.isNotEmpty()) item {
+            CarteBlanche {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { voirRestaures = !voirRestaures }, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (voirRestaures) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
+                    Text("Déjà restaurés (${faits.size})", fontWeight = FontWeight.SemiBold)
                 }
+                if (voirRestaures) faits.forEachIndexed { i, x -> key(x.id) { if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA)); Ligne(x) } }
             }
         }
     }
@@ -609,7 +648,11 @@ fun ParamIdentite(d: Donnees, message: (String) -> Unit, recharger: () -> Unit) 
             CarteBlanche {
                 libelles.forEach { (k, l) ->
                     if (k == "adresse") Text("Coordonnées", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-                    OutlinedTextField(c[k] ?: "", { c[k] = it }, label = { Text(l) }, singleLine = k != "objet", modifier = Modifier.fillMaxWidth(),
+                    val texteExemple = when (k) { "rna" -> "W381000000"; "site_web" -> "https://"; else -> null }
+                    val exemple: (@Composable () -> Unit)? = if (texteExemple == null) null else ({ Text(texteExemple) })
+                    OutlinedTextField(c[k] ?: "", { c[k] = it.take(when (k) { "nom" -> 80; "sigle" -> 20; "objet" -> 300; "rna" -> 12; "siret" -> 17; "code_postal" -> 10; else -> 200 }) }, label = { Text(l) },
+                        placeholder = exemple,
+                        singleLine = k != "objet", minLines = if (k == "objet") 2 else 1, modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = when (k) { "email" -> KeyboardType.Email; "telephone" -> KeyboardType.Phone; "code_postal", "siret" -> KeyboardType.Number; "site_web" -> KeyboardType.Uri; else -> KeyboardType.Text }))
                 }
                 Button(enabled = (c["nom"] ?: "").isNotBlank(), modifier = Modifier.align(Alignment.End), onClick = {
@@ -631,7 +674,6 @@ fun ParamCategories(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
     var categories by remember { mutableStateOf(d.categories) }
     var version by remember { mutableStateOf(0) }
     var renommer by remember { mutableStateOf<Categorie?>(null) }
-    var ajouter by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val supprimer = rememberSuppression(message) { version++; recharger() }
     LaunchedEffect(version, Synchro.version) { try { categories = Repo.categories().filter { !it.interne } } catch (e: Exception) { message(traduireErreur(e)) } }
@@ -639,16 +681,23 @@ fun ParamCategories(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
         listOf("recette" to "Recettes (ressources)", "depense" to "Dépenses (emplois)").forEach { (sens, titre) ->
             item(key = sens) {
                 CarteBlanche {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(titre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { ajouter = sens }) { Text("Ajouter") }
-                    }
-                    categories.filter { it.sens == sens }.forEach { c ->
+                    Text(titre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    categories.filter { it.sens == sens }.forEachIndexed { i, c ->
+                        if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(c.nom, Modifier.weight(1f))
+                            Text(c.nom, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                             IconButton(onClick = { renommer = c }) { Icon(Icons.Outlined.Edit, contentDescription = "Renommer ${c.nom}", tint = Couleurs.Texte2) }
-                            IconButton(onClick = { supprimer("categories", c.id, c.nom) }) { Icon(Icons.Outlined.Delete, contentDescription = "Supprimer ${c.nom}", tint = Couleurs.Erreur) }
+                            IconButton(onClick = { supprimer("categories", c.id, c.nom) }) { Icon(Icons.Outlined.Delete, contentDescription = "Supprimer ${c.nom}", tint = Couleurs.Texte2) }
                         }
+                    }
+                    // Ajout dans la carte, comme le site : champ « Nouvelle catégorie » et bouton « Ajouter »
+                    var nouveau by remember(sens) { mutableStateOf("") }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(nouveau, { nouveau = it.take(60) }, placeholder = { Text("Nouvelle catégorie") }, singleLine = true, modifier = Modifier.weight(1f))
+                        FilledTonalButton(enabled = nouveau.isNotBlank(), onClick = {
+                            val n = nouveau.trim()
+                            scope.launch { try { Repo.ajouterCategorie(NouvelleCategorie(n, sens)); nouveau = ""; message("Catégorie ajoutée"); version++; recharger() } catch (e: Exception) { message(traduireErreur(e)) } }
+                        }) { Text("Ajouter") }
                     }
                 }
             }
@@ -659,12 +708,6 @@ fun ParamCategories(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
         var nom by remember(c.id) { mutableStateOf(c.nom) }
         DialogueSimple("Renommer la catégorie", "Enregistrer", nom.isNotBlank(), { renommer = null }, {
             scope.launch { try { Repo.renommerCategorie(c.id, nom.trim()); message("Catégorie renommée"); version++; recharger() } catch (e: Exception) { message(traduireErreur(e)) }; renommer = null }
-        }) { OutlinedTextField(nom, { nom = it.take(60) }, label = { Text("Nom") }, singleLine = true) }
-    }
-    ajouter?.let { sens ->
-        var nom by remember(sens) { mutableStateOf("") }
-        DialogueSimple(if (sens == "recette") "Nouvelle catégorie de recette" else "Nouvelle catégorie de dépense", "Ajouter", nom.isNotBlank(), { ajouter = null }, {
-            scope.launch { try { Repo.ajouterCategorie(NouvelleCategorie(nom.trim(), sens)); message("Catégorie ajoutée"); version++; recharger() } catch (e: Exception) { message(traduireErreur(e)) }; ajouter = null }
         }) { OutlinedTextField(nom, { nom = it.take(60) }, label = { Text("Nom") }, singleLine = true) }
     }
 }
@@ -691,7 +734,7 @@ fun ParamSecurite(message: (String) -> Unit) {
         item {
             CarteBlanche {
                 Text("Session", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Connecté avec $email" + if (lirePreference("resterConnecte") == "0") ", session fermée à la fermeture de l’application." else ", session gardée sur ce téléphone.", color = Couleurs.Texte2, fontSize = 14.sp)
+                Text("Connecté avec $email" + if (lirePreference("resterConnecte") == "0") ", session fermée à la fermeture de l’application." else ", session gardée sur cet appareil.", color = Couleurs.Texte2, fontSize = 14.sp)
                 Button(onClick = { scope.launch { Repo.deconnecter() } }, colors = ButtonDefaults.buttonColors(containerColor = Couleurs.ErreurClair, contentColor = Color(0xFF410002))) { Text("Se déconnecter", fontWeight = FontWeight.Bold) }
             }
         }
@@ -709,22 +752,35 @@ fun ParamNotifications() {
                 Text("Un chiffre apparaît sur un onglet quand quelque chose vous attend ou est nouveau depuis votre dernière visite : demande à valider ou à payer, opération saisie par un autre, rendez-vous ajouté, participation demandée, nouveau membre. La cloche les rassemble.", color = Couleurs.Texte2, fontSize = 14.sp)
             }
         }
+        // « Alertes sur cet appareil » : même bloc que blocAlertes du site (état, Recevoir / Essayer, son, vibration)
         item {
             CarteBlanche {
-                Text("Notifications du téléphone", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Une notification s’affiche quand une nouveauté arrive pendant que l’application est ouverte ou en arrière-plan. Actuellement : ${if (autorise) "activées" else "désactivées"}.", color = Couleurs.Texte2, fontSize = 14.sp)
-                if (!autorise) Button(onClick = demander) { Text("Activer les notifications") }
-                Text("L’application vérifie aussi les nouveautés toutes les 15 minutes quand elle est fermée. Le chiffre des nouveautés s’affiche sur son icône.", color = Couleurs.Texte2, fontSize = 13.sp)
-            }
-        }
-        item {
-            CarteBlanche {
-                Text("Son et vibration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Alertes sur cet appareil", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Surface(color = if (autorise) Couleurs.BleuClair else Color(0xFFF3F1F0), shape = RoundedCornerShape(8.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(if (autorise) Icons.Outlined.CheckCircle else Icons.Outlined.Notifications, null, tint = if (autorise) Couleurs.Bleu else Couleurs.Texte2, modifier = Modifier.size(18.dp))
+                        Column {
+                            Text(if (autorise) "Notifications activées sur cet appareil" else "Notifications désactivées sur cet appareil", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(if (autorise) "Vous êtes prévenu des communiqués, des rendez-vous (et la veille), des participations demandées, même application fermée."
+                                else "Activez-les pour être prévenu même application fermée : communiqués, rendez-vous, participations.", fontSize = 13.sp, color = Couleurs.Texte2)
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!autorise) Button(onClick = demander) { Text("Recevoir les notifications") }
+                    FilledTonalButton(onClick = { notifierSysteme("Essai", "Voici comment une nouveauté vous sera signalée", EtatNouveautes.n.value.total) }) { Text("Essayer") }
+                }
                 var son by remember { mutableStateOf(lirePreference("notif.son") != "0") }
                 var vibre by remember { mutableStateOf(lirePreference("notif.vibration") != "0") }
-                Row(verticalAlignment = Alignment.CenterVertically) { Text("Jouer un son à l’arrivée d’une nouveauté", Modifier.weight(1f)); Switch(son, { son = it; garderPreference("notif.son", if (it) "1" else "0") }) }
-                Row(verticalAlignment = Alignment.CenterVertically) { Text("Faire vibrer le téléphone", Modifier.weight(1f)); Switch(vibre, { vibre = it; garderPreference("notif.vibration", if (it) "1" else "0") }) }
-                FilledTonalButton(onClick = { notifierSysteme("Essai", "Voici comment une nouveauté vous sera signalée", EtatNouveautes.n.value.total) }) { Text("Essayer") }
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { son = !son; garderPreference("notif.son", if (son) "1" else "0") }, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Outlined.VolumeUp, null, tint = Couleurs.Texte2, modifier = Modifier.size(18.dp))
+                    Checkbox(son, { son = it; garderPreference("notif.son", if (it) "1" else "0") }); Text("Son à l’arrivée d’une nouveauté", fontSize = 14.sp)
+                }
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { vibre = !vibre; garderPreference("notif.vibration", if (vibre) "1" else "0") }, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Vibration, null, tint = Couleurs.Texte2, modifier = Modifier.size(18.dp))
+                    Checkbox(vibre, { vibre = it; garderPreference("notif.vibration", if (it) "1" else "0") }); Text("Vibration du téléphone", fontSize = 14.sp)
+                }
+                Text("Le chiffre des nouveautés s’affiche aussi sur l’icône de l’application. Application fermée, elle vérifie les nouveautés toutes les 15 minutes.", color = Couleurs.Texte2, fontSize = 13.sp)
             }
         }
     }

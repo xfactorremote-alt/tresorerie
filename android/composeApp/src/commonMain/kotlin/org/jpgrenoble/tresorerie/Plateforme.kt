@@ -25,6 +25,13 @@ expect fun rememberChoixPhotos(quandChoisi: (List<Fichier>, String?) -> Unit): (
 
 expect fun imageDepuisOctets(octets: ByteArray): androidx.compose.ui.graphics.ImageBitmap?
 
+/** Image décodée en taille réduite (côté le plus petit ≥ max px) : une grande photo d'appareil ne sature pas la mémoire. Null si illisible. */
+expect fun imageDepuisOctetsReduite(octets: ByteArray, max: Int): androidx.compose.ui.graphics.ImageBitmap?
+
+/** Appareil photo : prend une photo (redressée, réduite à 1600 px, JPEG), comme `capture="environment"` du site. Renvoie la fonction qui ouvre l'appareil. */
+@Composable
+expect fun rememberPrendrePhoto(quandPrise: (Fichier?, String?) -> Unit): () -> Unit
+
 /** Choix d'un fichier texte (CSV) ; renvoie son contenu. */
 @Composable
 expect fun rememberChoixTexte(quandChoisi: (String?) -> Unit): () -> Unit

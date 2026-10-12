@@ -14,6 +14,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -67,6 +70,7 @@ suspend fun chargerBudget(an: Int, categories: List<Categorie>): CalculBudget =
 private fun taux(r: Double, p: Double): Int? = if (p > 0) kotlin.math.round(100 * r / p).toInt() else null
 private fun nombreBudget(s: String) = s.replace(',', '.').replace(" ", "").replace(NBSP.toString(), "").toDoubleOrNull()
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EcranBudget(d: Donnees, message: (String) -> Unit) {
     val anCourant = aujourdhui().year
@@ -95,6 +99,8 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
 
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val large = maxWidth >= 840.dp
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -107,15 +113,14 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
         if (x == null) { item { LinearProgressIndicator(Modifier.fillMaxWidth()) }; return@LazyColumn }
         val equilibre = x.resPrevu - x.empPrevu
         val vide = x.resPrevu == 0.0 && x.empPrevu == 0.0
+        // Trois chiffres sur une ligne, comme les .kpis du site
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chiffre("Ressources prévues", x.resPrevu, "réalisé ${euros(x.resReel)}", Couleurs.Bleu, Modifier.weight(1f))
-                Chiffre("Emplois prévus", x.empPrevu, "réalisé ${euros(x.empReel)}", Couleurs.Orange, Modifier.weight(1f))
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChiffreBudget("Ressources prévues", x.resPrevu, "réalisé ${euros(x.resReel)}", Couleurs.Bleu, Modifier.weight(1f).fillMaxHeight())
+                ChiffreBudget("Emplois prévus", x.empPrevu, "réalisé ${euros(x.empReel)}", Couleurs.Orange, Modifier.weight(1f).fillMaxHeight())
+                ChiffreBudget(if (equilibre >= 0) "Excédent prévu" else "Déficit prévu", kotlin.math.abs(equilibre), "résultat réalisé ${euros(x.resReel - x.empReel)}",
+                    if (equilibre < 0) Couleurs.Erreur else MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).fillMaxHeight())
             }
-        }
-        item {
-            Chiffre(if (equilibre >= 0) "Excédent prévu" else "Déficit prévu", kotlin.math.abs(equilibre), "résultat réalisé ${euros(x.resReel - x.empReel)}",
-                if (equilibre < 0) Couleurs.Erreur else MaterialTheme.colorScheme.onSurface, Modifier.fillMaxWidth())
         }
         if (!gere) item {
             Bandeau("Consultation$NBSP: le budget est construit par le trésorier. " +
@@ -123,7 +128,7 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
         }
         if (vide && gere) item {
             val n1 = x.resN1 > 0 || x.empN1 > 0
-            Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Budget $an à construire.", fontWeight = FontWeight.Bold)
                     Text("Saisissez le montant prévu de chaque ressource et de chaque emploi" + (if (n1) ", ou partez du réalisé ${an - 1}." else "."), fontSize = 14.sp)
@@ -140,23 +145,22 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
                 }
             }
         } else if (equilibre < 0) item {
-            Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.Erreur, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.Erreur, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Text("Les emplois prévus dépassent les ressources de ${euros(-equilibre)}. À couvrir par la réserve ou par des ressources supplémentaires.", Modifier.padding(12.dp), fontSize = 14.sp)
             }
         }
-        item { TableauPostes("Ressources", "(recettes)", x.ressources, "recette", an, gere, ::enregistrerPrevu) }
-        item { TableauPostes("Emplois", "(dépenses)", x.emplois, "depense", an, gere, ::enregistrerPrevu) }
-        item {
-            CarteBlanche {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Activités", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    if (gere) FilledTonalButton(onClick = { feuille = "" }) { Text("Prévoir pour une activité") }
-                }
-                if (x.activites.isEmpty()) Text("Aucune activité budgétée. Une activité suivie apparaît ici dès qu’une ligne est prévue ou qu’une opération y est rattachée.", color = Couleurs.Texte2, fontSize = 14.sp)
+        // Ressources et emplois : deux colonnes au-delà de 840 dp (grille-2 du site), l'une sous l'autre sur téléphone
+        if (large) item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                Box(Modifier.weight(1f)) { TableauPostes("Ressources", "(recettes)", x.ressources, "recette", an, gere, ::enregistrerPrevu) }
+                Box(Modifier.weight(1f)) { TableauPostes("Emplois", "(dépenses)", x.emplois, "depense", an, gere, ::enregistrerPrevu) }
             }
+        } else {
+            item { TableauPostes("Ressources", "(recettes)", x.ressources, "recette", an, gere, ::enregistrerPrevu) }
+            item { TableauPostes("Emplois", "(dépenses)", x.emplois, "depense", an, gere, ::enregistrerPrevu) }
         }
-        x.activites.forEach { a -> item(key = "act-" + a.p.id) { CarteActiviteBudget(a, d, gere, onPrevoir = { feuille = a.p.id }, onRetirer = { r ->
-            // Comme sur le site : retirée aussitôt, avec « Annuler » (la ligne passe par la corbeille)
+        // Comme sur le site : ligne retirée aussitôt, avec « Annuler » (elle passe par la corbeille)
+        val retirer: (Budget) -> Unit = { r ->
             scope.launch {
                 try {
                     val idCorbeille = Repo.supprimer("budgets", r.id, "Retirée du budget"); version++
@@ -166,23 +170,49 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
                     }
                 } catch (e: Exception) { message(traduireErreur(e)) }
             }
-        }) } }
-        if (gere) item { Text("Le montant prévu s’enregistre dès que vous validez la case. Les catégories se créent dans Paramètres, Montants et comptes.", color = Couleurs.Texte2, fontSize = 13.sp) }
+        }
+        // Activités : leurs cartes dans la carte « Activités », comme sur le site (deux par ligne sur grand écran)
+        item {
+            CarteBlanche {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Activités", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    if (gere) FilledTonalButton(onClick = { feuille = "" }) { Text("Prévoir pour une activité") }
+                }
+                if (x.activites.isEmpty()) Text("Aucune activité budgétée. Une activité suivie apparaît ici dès qu’une ligne est prévue ou qu’une opération y est rattachée.", color = Couleurs.Texte2, fontSize = 14.sp)
+                val parRang = if (large) 2 else 1
+                x.activites.chunked(parRang).forEach { rang ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                        rang.forEach { a -> key("act-" + a.p.id) { Box(Modifier.weight(1f)) { CarteActiviteBudget(a, d, gere, onPrevoir = { feuille = a.p.id }, onRetirer = retirer) } } }
+                        if (rang.size < parRang) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+        if (gere) item { Text("Le montant prévu s’enregistre dès que vous quittez la case. Les catégories se créent dans Paramètres, Montants et comptes.", color = Couleurs.Texte2, fontSize = 13.sp) }
+    }
     }
 
-    if (exporter) AlertDialog(
-        onDismissRequest = { exporter = false },
-        title = { Text("Exporter le budget $an") },
-        text = { Text("PDF : budget prévu et réalisé mis en page. Excel : tableau modifiable (CSV).") },
-        confirmButton = { Button(onClick = { exporter = false; scope.launch { try { val (t, h) = documentHtml(d, "budget", an); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("PDF") } },
-        dismissButton = { OutlinedButton(onClick = { exporter = false; scope.launch { try { enregistrer("budget-$an.csv", "text/csv", exportCsv(d, "budget", an).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("Excel") } },
-    )
+    // Choix du format comme choisirFormat du site : feuille « Budget <an> », cartes PDF puis Excel
+    if (exporter) ModalBottomSheet(onDismissRequest = { exporter = false }) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Budget $an", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            listOf(
+                Triple<String, String, () -> Unit>("PDF", "Mise en page pour imprimer, archiver ou transmettre") { exporter = false; scope.launch { try { val (t, h) = documentHtml(d, "budget", an); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } }; Unit },
+                Triple<String, String, () -> Unit>("Excel", "Tableau modifiable (CSV)") { exporter = false; scope.launch { try { enregistrer("budget-$an.csv", "text/csv", exportCsv(d, "budget", an).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } }; Unit },
+            ).forEach { (t, sous, action) ->
+                Surface(onClick = action, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE6E1DE)), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) { Text(t, fontWeight = FontWeight.Bold); Text(sous, fontSize = 14.sp, color = Couleurs.Texte2) }
+                }
+            }
+        }
+    }
     feuille?.let { pid -> FeuilleLigneBudget(d, an, pid.ifEmpty { null }, message) { ok -> feuille = null; if (ok) version++ } }
 }
 
 @Composable
 private fun Bandeau(texte: String) =
-    Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
         Text(texte, Modifier.padding(12.dp), fontSize = 14.sp)
     }
 
@@ -196,16 +226,18 @@ private fun TableauPostes(titre: String, sous: String, postes: List<PosteBudget>
         if (postes.isEmpty()) Text("Aucune catégorie. Créez-les dans Paramètres, Montants et comptes.", color = Couleurs.Texte2, fontSize = 14.sp)
         postes.forEach { x -> LignePoste(x, sens, an, gere, onPrevu); HorizontalDivider(color = Color(0xFFE6E1DE)) }
         val tp = postes.sumOf { it.prevu }; val tr = postes.sumOf { it.realise }; val tn = postes.sumOf { it.n1 }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Total comme le pied du tableau du site (téléphone) : « Total », « Prévu … », « Réalisé … » ; N-1 en plus
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Total", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Column(horizontalAlignment = Alignment.End) {
-                Text("${euros(tr)} sur ${euros(tp)}" + (taux(tr, tp)?.let { " · $it$NBSP%" } ?: ""), fontWeight = FontWeight.Bold)
-                Text("Réalisé ${an - 1} : ${euros(tn)}", fontSize = 12.sp, color = Couleurs.Texte2)
-            }
+            Text(buildAnnotatedString { withStyle(SpanStyle(fontSize = 12.sp, color = Couleurs.Texte2, fontWeight = FontWeight.SemiBold)) { append("Prévu ") }; withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(euros(tp)) } })
+            Text(buildAnnotatedString { withStyle(SpanStyle(fontSize = 12.sp, color = Couleurs.Texte2, fontWeight = FontWeight.SemiBold)) { append("Réalisé ") }; withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(euros(tr)) } })
         }
+        Text("Réalisé ${an - 1} : ${euros(tn)}" + (taux(tr, tp)?.let { " · avancement $it$NBSP%" } ?: ""), fontSize = 12.sp, color = Couleurs.Texte2, modifier = Modifier.align(Alignment.End))
     }
 }
 
+// Une ligne comme la carte du tableau du site sur téléphone : poste (et Dépassé / Non prévu) | prévu ;
+// « Réalisé … » | barre d'avancement et % (ou « – ») ; Android ajoute le réalisé N-1 sous le réalisé
 @Composable
 private fun LignePoste(x: PosteBudget, sens: String, an: Int, gere: Boolean, onPrevu: (PosteBudget, Double) -> Unit) {
     val t = taux(x.realise, x.prevu)
@@ -213,27 +245,41 @@ private fun LignePoste(x: PosteBudget, sens: String, an: Int, gere: Boolean, onP
     val hors = x.prevu == 0.0 && x.realise > 0
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(x.cat.nom, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (depasse) Puce("Dépassé", Couleurs.ErreurClair, Couleurs.Erreur)
-            else if (hors) Puce("Non prévu", Color(0xFFEFEDEC), Couleurs.Texte2)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (gere) ChampPrevu(x, onPrevu, Modifier.width(130.dp))
-            else Column { Text("Prévu", fontSize = 12.sp, color = Couleurs.Texte2); Text(euros(x.prevu)) }
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                Text("Réalisé ${euros(x.realise)}", fontWeight = FontWeight.SemiBold)
-                Text("${an - 1} : " + (if (x.n1 != 0.0) euros(x.n1) else "–"), fontSize = 12.sp, color = Couleurs.Texte2)
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(x.cat.nom, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+                if (depasse) Puce("Dépassé", Couleurs.ErreurClair, Couleurs.Erreur)
+                else if (hors) Puce("Non prévu", Color(0xFFEFEDEC), Couleurs.Texte2)
             }
+            if (gere) ChampPrevu(x, onPrevu, Modifier.width(120.dp))
+            else Text(euros(x.prevu), fontWeight = FontWeight.SemiBold)
         }
-        if (t != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val couleur = if (sens == "recette") Couleurs.Bleu else if (depasse) Couleurs.Erreur else Couleurs.Orange
-            Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFFE6E1DE))) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth((t.coerceIn(0, 100)) / 100f).background(couleur))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("Réalisé ${euros(x.realise)}", fontSize = 13.sp)
+                if (x.n1 != 0.0) Text("${an - 1} : ${euros(x.n1)}", fontSize = 12.sp, color = Couleurs.Texte2)
             }
-            Text("$t$NBSP%", fontSize = 12.sp, color = Couleurs.Texte2)
+            if (t == null) Text("–", color = Couleurs.Texte2)
+            else {
+                val couleur = if (sens == "recette") Couleurs.Bleu else if (depasse) Couleurs.Erreur else Couleurs.Orange
+                Box(Modifier.width(64.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color(0xFFE6E1DE))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth((t.coerceIn(0, 100)) / 100f).background(couleur))
+                }
+                Text("$t$NBSP%", fontSize = 12.sp, color = Couleurs.Texte2)
+            }
         }
     }
 }
+
+// Chiffre du haut de page (.kpis du site) : libellé, montant, sous-ligne ; trois par ligne
+@Composable
+private fun ChiffreBudget(titre: String, montant: Double, sous: String, couleur: Color, modifier: Modifier) =
+    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE6E1DE)), modifier = modifier) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
+            Text(titre, fontSize = 12.sp, color = Couleurs.Texte2, lineHeight = 15.sp)
+            Text(euros(montant), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = couleur)
+            Text(sous, fontSize = 12.sp, color = Couleurs.Texte2, lineHeight = 15.sp)
+        }
+    }
 
 // Saisie en ligne du prévu : enregistrée quand la case perd le focus ou à la validation du clavier (comme « change » sur le site)
 @Composable
@@ -262,21 +308,23 @@ private fun CarteActiviteBudget(a: ActiviteBudget, d: Donnees, gere: Boolean, on
             Text(a.p.nom, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
             Text(a.p.debut?.let { dateFr(it) } ?: "Date à fixer", fontSize = 13.sp, color = Couleurs.Texte2)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(Triple("Ressources", a.resReel to a.resPrevu, Couleurs.Bleu), Triple("Emplois", a.empReel to a.empPrevu, Couleurs.Orange)).forEach { (t, v, c) ->
-                Column(Modifier.weight(1f)) {
+        // Trois pavés (.budget-act du site) : Ressources, Emplois, Résultat
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(Triple("Ressources", euros(a.resReel) to a.resPrevu, Couleurs.Bleu), Triple("Emplois", euros(a.empReel) to a.empPrevu, Couleurs.Orange),
+                Triple("Résultat", ((if (res >= 0) "+" else "−") + NBSP + euros(kotlin.math.abs(res))) to (a.resPrevu - a.empPrevu), if (res < 0) Couleurs.Erreur else MaterialTheme.colorScheme.onSurface)
+            ).forEach { (t, v, c) ->
+                Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(Couleurs.Fond).padding(horizontal = 10.dp, vertical = 8.dp)) {
                     Text(t, fontSize = 12.sp, color = Couleurs.Texte2)
-                    Text(euros(v.first), fontWeight = FontWeight.Bold, color = c)
+                    Text(v.first, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text("prévu ${euros(v.second)}", fontSize = 12.sp, color = Couleurs.Texte2)
                 }
             }
-            Column(Modifier.weight(1f)) {
-                Text("Résultat", fontSize = 12.sp, color = Couleurs.Texte2)
-                Text((if (res >= 0) "+" else "−") + NBSP + euros(kotlin.math.abs(res)), fontWeight = FontWeight.Bold, color = if (res < 0) Couleurs.Erreur else MaterialTheme.colorScheme.onSurface)
-                Text("prévu ${euros(a.resPrevu - a.empPrevu)}", fontSize = 12.sp, color = Couleurs.Texte2)
-            }
         }
-        if (a.empPrevu > 0 && a.empReel > a.empPrevu) Text("Emplois de l’activité au-delà du prévu", color = Couleurs.Erreur, fontSize = 13.sp)
+        if (a.empPrevu > 0 && a.empReel > a.empPrevu) Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.Erreur, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Text("Emplois de l’activité au-delà du prévu", Modifier.padding(10.dp), fontSize = 14.sp)
+        }
+        // Même ordre que le site : « Prévoir une ligne », puis les lignes prévues
+        if (gere) TextButton(onClick = onPrevoir) { Text("Prévoir une ligne") }
         a.lignes.forEach { l ->
             val c = d.categoriesToutes.firstOrNull { it.id == l.categorieId }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -288,7 +336,6 @@ private fun CarteActiviteBudget(a: ActiviteBudget, d: Donnees, gere: Boolean, on
                 if (gere) TextButton(onClick = { onRetirer(l) }) { Text("Retirer") }
             }
         }
-        if (gere) TextButton(onClick = onPrevoir) { Text("Prévoir une ligne") }
     }
 }
 

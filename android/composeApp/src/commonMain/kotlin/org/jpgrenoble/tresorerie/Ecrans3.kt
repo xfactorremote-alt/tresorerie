@@ -58,6 +58,9 @@ import androidx.compose.ui.graphics.Brush
 import kotlinx.datetime.daysUntil
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.animation.togetherWith
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -99,11 +102,11 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
             "notifications" -> ParamNotifications()
             "association" -> ParamIdentite(d, message, recharger)
             "apparence" -> ParamAssociation(d, message, recharger)
-            "exercices" -> ParamExercices(d, message)
+            "exercices" -> ParamExercices(d, message, recharger)
             "comptes" -> ParamComptes(d, message, recharger)
             "categories" -> ParamCategories(d, message, recharger)
             "regles" -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) { item { BlocMontants(message) } }
-            "personnes" -> ParamPersonnes(d, message)
+            "personnes" -> ParamPersonnes(d, message, recharger) { onCible("membres") }
             "roles" -> ParamRoles(d, message, recharger)
             "corbeille" -> ParamCorbeille(d, message, recharger)
             "sauvegarde" -> ParamSauvegarde(message)
@@ -135,9 +138,9 @@ private fun ParamSauvegarde(message: (String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item {
             CarteBlanche {
-                Text("Toutes les données (association, membres, opérations, demandes, budget, matériel, exercices, corbeille) dans un fichier à conserver hors ligne, au moins à chaque clôture d’exercice. Les pièces jointes s’archivent depuis Rapports.", color = Couleurs.Texte2)
+                Text("Toutes les données (association, membres, opérations, demandes, budget, matériel, exercices, corbeille) dans un fichier à conserver hors ligne, au moins à chaque clôture d’exercice. Les pièces jointes s’archivent depuis Rapports (archive des pièces).", color = Couleurs.Texte2, fontSize = 14.sp)
                 Button(onClick = { scope.launch { try { enregistrer("sauvegarde-tresorerie-${aujourdhui()}.json", "application/json", Repo.sauvegardeJson().encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } } }) {
-                    Text("Télécharger la sauvegarde")
+                    Icon(Icons.Outlined.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Télécharger la sauvegarde")
                 }
             }
         }
@@ -240,13 +243,15 @@ private fun ParamAssociation(d: Donnees, message: (String) -> Unit, recharger: (
                 }
                 Box(Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFFEFEDEC)), contentAlignment = Alignment.Center) {
                     if (apercuBanniere != null) Image(apercuBanniere, "Bannière", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                    else Text(if (retirerBanniere) "La photo sera retirée à l’enregistrement" else "Aucune photo. Format paysage conseillé.", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.padding(12.dp))
+                    else Text(if (retirerBanniere) "La photo sera retirée à l’enregistrement." else "Aucune photo. Format paysage conseillé, au moins 1600${NBSP}pixels de large.", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.padding(12.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilledTonalButton(onClick = choixBanniere) { Text(if (apercuBanniere != null) "Changer la photo" else "Choisir une photo") }
                     if (apercuBanniere != null) TextButton(onClick = { nouvelleBanniere = null; retirerBanniere = true }) { Text("Retirer la photo") }
                 }
                 Button(enabled = nom.isNotBlank(), modifier = Modifier.align(Alignment.End), onClick = {
+                    // Comme le site : rien de choisi, rien à enregistrer
+                    if (nouveauLogo == null && nouvelleBanniere == null && !retirerBanniere) { message("Choisissez d’abord un logo ou une photo"); return@Button }
                     action({ Repo.majOrganisation(nom.trim(), nouveauLogo, nouvelleBanniere, retirerBanniere); nouveauLogo = null; nouvelleBanniere = null; retirerBanniere = false }, "Association enregistrée")
                 }) { Text("Enregistrer") }
             }
@@ -276,19 +281,21 @@ private fun BlocMontants(message: (String) -> Unit) {
             infos = Repo.texteReglage("infos_paiement") ?: ""
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
+    // Même ordre et mêmes libellés que paramMontants du site
     CarteBlanche {
-        Text("Montants et délais", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        OutlinedTextField(cotisation, { cotisation = it }, label = { Text("Cotisation par période") }, suffix = { Text("€") }, singleLine = true,
+        Text("Cotisation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        OutlinedTextField(cotisation, { cotisation = it }, label = { Text("Montant (€ par période)") }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
         ChoixListe("Périodicité", PERIODICITES[periodicite] ?: "", PERIODICITES.values.toList()) { periodicite = PERIODICITES.keys.toList()[it] }
-        OutlinedTextField(delai, { delai = it.filter { c -> c.isDigit() }.take(2) }, label = { Text("Délai du justificatif après paiement") },
-            suffix = { Text("jours") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(seuilJustif, { seuilJustif = it.filter { c -> c.isDigit() }.take(6) }, label = { Text("Justification obligatoire à partir de") },
-            suffix = { Text("€") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(seuil, { seuil = it.filter { c -> c.isDigit() }.take(3) }, label = { Text("Alerte budget à partir de") },
-            suffix = { Text("%") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(infos, { infos = it.take(500) }, label = { Text("Comment régler (affiché aux membres)") },
-            placeholder = { Text("IBAN, application, remise au trésorier…") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(infos, { infos = it.take(400) }, label = { Text("Comment régler (affiché aux membres)") },
+            placeholder = { Text("Virement : IBAN FR76…\nEspèces : auprès du trésorier après le culte") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+        Text("Demandes de dépense et budget", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+        OutlinedTextField(delai, { delai = it.filter { c -> c.isDigit() }.take(2) }, label = { Text("Délai du justificatif (jours après paiement)") },
+            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(seuilJustif, { seuilJustif = it.filter { c -> c.isDigit() }.take(6) }, label = { Text("Justification obligatoire à partir de (€)") },
+            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(seuil, { seuil = it.filter { c -> c.isDigit() }.take(3) }, label = { Text("Alerte budget (% du prévu)") },
+            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
         Button(modifier = Modifier.align(Alignment.End), enabled = nombre(cotisation) != null && delai.isNotBlank() && seuil.isNotBlank() && seuilJustif.isNotBlank(), onClick = {
             action({
                 Repo.majReglage("cotisation_montant", nombre(cotisation)!!)
@@ -302,77 +309,65 @@ private fun BlocMontants(message: (String) -> Unit) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+// Comptes (comme paramComptes du site) : par compte, icône, « <nom> · solde de départ (€) », case Actif, corbeille ;
+// « Ajouter un compte » et « Enregistrer » (soldes et cases ensemble) en bas
 @Composable
 private fun ParamComptes(d: Donnees, message: (String) -> Unit, recharger: () -> Unit) {
     var version by remember { mutableStateOf(0) }
     var comptes by remember { mutableStateOf<List<Compte>>(emptyList()) }
     var soldes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var categories by remember { mutableStateOf(d.categories) }
+    var actifs by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     var feuille by remember { mutableStateOf<String?>(null) }
     val action = rememberAction(message) { version++; recharger() }
     LaunchedEffect(version, Synchro.version) {
         try {
-            comptes = Repo.tousLesComptes(); soldes = comptes.associate { it.id to montantSaisie(it.soldeInitial) }
-            categories = Repo.categories().filter { !it.interne }
+            comptes = Repo.tousLesComptes().sortedBy { it.nom.lowercase() }
+            soldes = comptes.associate { it.id to montantSaisie(it.soldeInitial) }; actifs = comptes.associate { it.id to it.actif }
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
     val supprimerCompte = rememberSuppression(message) { version++; recharger() }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             CarteBlanche {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Solde de départ et compte actif", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { feuille = "compte" }) { Icon(Icons.Filled.Add, contentDescription = null); Text("Ajouter") }
-                }
                 comptes.forEach { c ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(soldes[c.id] ?: "", { v -> soldes = soldes + (c.id to v) }, label = { Text(c.nom) }, suffix = { Text("€") },
+                        Icon(if (c.type == "caisse") Icons.Outlined.Payments else Icons.Outlined.AccountBalance, null, tint = Couleurs.Texte2)
+                        OutlinedTextField(soldes[c.id] ?: "", { v -> soldes = soldes + (c.id to v) }, label = { Text("${c.nom} · solde de départ (€)") },
                             singleLine = true, isError = nombre(soldes[c.id] ?: "") == null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                        Switch(checked = c.actif, onCheckedChange = { v ->
-                            action({ Repo.majCompte(c.id, c.soldeInitial, v) }, if (v) "Compte réactivé" else "Compte désactivé")
-                        })
-                        IconButton(onClick = { supprimerCompte("accounts", c.id, c.nom) }) { Icon(Icons.Outlined.Delete, contentDescription = "Supprimer ${c.nom}", tint = Couleurs.Erreur) }
+                        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { actifs = actifs + (c.id to !(actifs[c.id] ?: c.actif)) }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(actifs[c.id] ?: c.actif, { v -> actifs = actifs + (c.id to v) }); Text("Actif", fontSize = 14.sp)
+                        }
+                        IconButton(onClick = { supprimerCompte("accounts", c.id, c.nom) }) { Icon(Icons.Outlined.Delete, contentDescription = "Supprimer ${c.nom}", tint = Couleurs.Texte2) }
                     }
                 }
-                Button(modifier = Modifier.align(Alignment.End), enabled = comptes.all { nombre(soldes[it.id] ?: "") != null }, onClick = {
-                    action({ comptes.forEach { c -> nombre(soldes[c.id]!!)!!.let { v -> if (v != c.soldeInitial) Repo.majCompte(c.id, v, c.actif) } } }, "Soldes de départ enregistrés")
-                }) { Text("Enregistrer") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { feuille = "compte" }) { Text("Ajouter un compte") }
+                    Button(enabled = comptes.all { nombre(soldes[it.id] ?: "") != null }, onClick = {
+                        action({
+                            comptes.forEach { c ->
+                                val v = nombre(soldes[c.id]!!)!!; val a = actifs[c.id] ?: c.actif
+                                if (v != c.soldeInitial || a != c.actif) Repo.majCompte(c.id, v, a)
+                            }
+                        }, "Comptes enregistrés")
+                    }) { Text("Enregistrer") }
+                }
             }
         }
-        item { Text("Un compte déjà utilisé ne se supprime pas : désactivez-le pour le masquer.", color = Couleurs.Texte2, fontSize = 13.sp) }
+        item { Text("Un compte déjà utilisé ne se supprime pas : décochez «${NBSP}Actif${NBSP}» pour le masquer.", color = Couleurs.Texte2, fontSize = 13.sp) }
     }
-    when (feuille) {
-        "compte" -> {
-            var nomC by remember { mutableStateOf("") }
-            var type by remember { mutableStateOf("banque") }
-            var solde by remember { mutableStateOf("0") }
-            DialogueSimple("Nouveau compte", "Ajouter", nomC.isNotBlank() && nombre(solde) != null, { feuille = null }, {
-                action({ Repo.ajouterCompte(NouveauCompte(nomC.trim(), type, nombre(solde)!!)) }, "Compte ajouté"); feuille = null
-            }) {
-                OutlinedTextField(nomC, { nomC = it.take(60) }, label = { Text("Nom") }, placeholder = { Text("Livret A") }, singleLine = true)
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf("caisse" to "Caisse", "banque" to "Banque").forEachIndexed { i, (k, v) ->
-                        SegmentedButton(selected = type == k, onClick = { type = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(v) }
-                    }
-                }
-                OutlinedTextField(solde, { solde = it }, label = { Text("Solde de départ") }, suffix = { Text("€") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-            }
-        }
-        "categorie" -> {
-            var nomC by remember { mutableStateOf("") }
-            var sens by remember { mutableStateOf("depense") }
-            DialogueSimple("Nouvelle catégorie", "Ajouter", nomC.isNotBlank(), { feuille = null }, {
-                action({ Repo.ajouterCategorie(NouvelleCategorie(nomC.trim(), sens)) }, "Catégorie ajoutée"); feuille = null
-            }) {
-                OutlinedTextField(nomC, { nomC = it.take(60) }, label = { Text("Nom") }, singleLine = true)
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf("depense" to "Dépense", "recette" to "Recette").forEachIndexed { i, (k, v) ->
-                        SegmentedButton(selected = sens == k, onClick = { sens = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(v) }
-                    }
-                }
+    if (feuille == "compte") {
+        var nomC by remember { mutableStateOf("") }
+        var type by remember { mutableStateOf("banque") }
+        var solde by remember { mutableStateOf("0") }
+        DialogueSimple("Nouveau compte", "Ajouter", nomC.isNotBlank() && nombre(solde.ifBlank { "0" }) != null, { feuille = null }, {
+            action({ Repo.ajouterCompte(NouveauCompte(nomC.trim(), type, nombre(solde.ifBlank { "0" })!!)) }, "Compte ajouté"); feuille = null
+        }) {
+            OutlinedTextField(nomC, { nomC = it.take(60) }, label = { Text("Nom *") }, placeholder = { Text("Livret A") }, singleLine = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) { ChoixListe("Type", if (type == "caisse") "Caisse" else "Banque", listOf("Banque", "Caisse")) { type = if (it == 1) "caisse" else "banque" } }
+                OutlinedTextField(solde, { solde = it }, label = { Text("Solde de départ (€)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
             }
         }
     }
@@ -418,7 +413,7 @@ private fun ParamRoles(d: Donnees, message: (String) -> Unit, recharger: () -> U
             }
             if ((role.code to "valider_depenses") in liens && (role.code to "payer_depenses") in liens) item {
                 Surface(color = Couleurs.JauneClair, contentColor = Couleurs.SurJaune, shape = RoundedCornerShape(14.dp)) {
-                    Text("Ce rôle valide et paie. Une même personne ne paie jamais une dépense qu’elle a validée.", Modifier.padding(12.dp), fontSize = 14.sp)
+                    Text("${role.nom} peut valider et payer. La même personne ne pourra pas payer une dépense qu’elle a validée.", Modifier.padding(12.dp), fontSize = 14.sp)
                 }
             }
             permissions.groupBy { it.groupe }.forEach { (groupe, liste) ->
@@ -477,7 +472,7 @@ private fun ParamRoles(d: Donnees, message: (String) -> Unit, recharger: () -> U
 }
 
 @Composable
-private fun ParamPersonnes(d: Donnees, message: (String) -> Unit) {
+private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = {}, onMembres: () -> Unit = {}) {
     var version by remember { mutableStateOf(0) }
     var roles by remember { mutableStateOf(d.roles) }
     var profils by remember { mutableStateOf<List<Profil>>(emptyList()) }
@@ -485,40 +480,60 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit) {
     var inviter by remember { mutableStateOf(false) }
     val action = rememberAction(message) { version++ }
     LaunchedEffect(version, Synchro.version) {
-        try { roles = Repo.roles(); profils = Repo.profilsComplets(); invitations = Repo.invitations() } catch (e: Exception) { message(traduireErreur(e)) }
+        try { roles = Repo.roles(); profils = Repo.profilsComplets().sortedBy { it.nom.lowercase() }; invitations = Repo.invitations() } catch (e: Exception) { message(traduireErreur(e)) }
     }
     fun nomRole(c: String) = roles.firstOrNull { it.code == c }?.nom ?: c
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            item {
-                Text("Vue d’ensemble des comptes. Pour donner un accès à quelqu’un, ouvrez sa fiche dans Membres, puis « Fonction » : on est d’abord membre, puis on reçoit une fonction.",
-                    color = Couleurs.Texte2, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
-            }
-            items(profils, key = { it.id }) { p ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Avatar(p.nom.substringBefore(' '), p.nom.substringAfter(' ', ""), taille = 40)
-                    Column(Modifier.weight(1f)) {
-                        Text(p.nom + if (p.id == d.profil.id) " (vous)" else "", fontWeight = FontWeight.SemiBold,
-                            color = if (p.actif) Color.Unspecified else Couleurs.Texte2)
-                        PuceMenu(nomRole(p.role), false, roles.map { it.nom }) { i ->
-                            val r = roles[i].code
-                            if (r != p.role) action({ Repo.majProfil(p.id, role = r) }, "Rôle modifié")
+    // Même carte que paramPersonnes du site : bouton « Donner un accès » (vers Membres), texte, puis une ligne par compte
+    // (avatar, nom, état, fiche de membre, rôle, case Actif) et les invitations en attente atténuées
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            CarteBlanche {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Vue d’ensemble des comptes. Pour donner un accès à quelqu’un, ouvrez sa fiche dans Membres, puis «${NBSP}Fonction${NBSP}» : on est d’abord membre, puis on reçoit une fonction.",
+                        color = Couleurs.Texte2, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    FilledTonalButton(onClick = onMembres) { Text("Donner un accès") }
+                }
+                profils.forEachIndexed { i, p ->
+                    key(p.id) {
+                        if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Avatar(p.nom.substringBefore(' '), p.nom.substringAfter(' ', ""), taille = 40)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(p.nom + if (p.id == d.profil.id) " (vous)" else "", fontWeight = FontWeight.SemiBold)
+                                Text(if (p.actif) "Accès actif" else "Accès désactivé", fontSize = 13.sp, color = Couleurs.Texte2)
+                                // Fiche de membre : les fiches actives sans autre compte, ou la sienne
+                                val fiches = d.membres.filter { m -> m.actif && (m.id == p.memberId || profils.none { it.memberId == m.id }) }
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    PuceMenu(fiches.firstOrNull { it.id == p.memberId }?.nomComplet ?: "Sans fiche de membre", false, listOf("Sans fiche de membre") + fiches.map { it.nomComplet }) { j ->
+                                        val m = if (j == 0) null else fiches[j - 1]
+                                        if (m?.id != p.memberId) action({ Repo.lierProfil(p.id, m?.id, m?.nomComplet); if (p.id == d.profil.id) recharger() }, "Fiche rattachée")
+                                    }
+                                    PuceMenu(nomRole(p.role), false, roles.map { it.nom }) { j ->
+                                        val r = roles[j].code
+                                        if (r != p.role) action({ Repo.majProfil(p.id, role = r); if (p.id == d.profil.id) recharger() }, "Rôle attribué")
+                                    }
+                                }
+                            }
+                            Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { action({ Repo.majProfil(p.id, actif = !p.actif) }, if (!p.actif) "Accès réactivé" else "Accès désactivé") },
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(p.actif, { v -> action({ Repo.majProfil(p.id, actif = v) }, if (v) "Accès réactivé" else "Accès désactivé") }); Text("Actif", fontSize = 14.sp)
+                            }
                         }
                     }
-                    Switch(checked = p.actif, onCheckedChange = { v -> action({ Repo.majProfil(p.id, actif = v) }, if (v) "Accès réactivé" else "Accès désactivé") })
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-            }
-            if (invitations.isNotEmpty()) item {
-                Text("Invitations en attente", fontWeight = FontWeight.Bold, color = Couleurs.Texte2, fontSize = 14.sp, modifier = Modifier.padding(top = 16.dp))
-            }
-            items(invitations, key = { "i-" + it.email }) { i ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text(i.nom ?: i.email, fontWeight = FontWeight.SemiBold)
-                        Text("${i.email} · ${nomRole(i.role)}", fontSize = 13.sp, color = Couleurs.Texte2)
+                invitations.forEach { inv ->
+                    key("i-" + inv.email) {
+                        HorizontalDivider(color = Color(0xFFEDEBEA))
+                        Row(Modifier.fillMaxWidth().alpha(0.75f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.size(40.dp).background(Couleurs.OrangeClair, CircleShape), contentAlignment = Alignment.Center) { Text("@", color = Couleurs.SurOrangeClair, fontWeight = FontWeight.Bold) }
+                            Column(Modifier.weight(1f)) {
+                                Text(inv.nom ?: inv.email, fontWeight = FontWeight.SemiBold)
+                                Text("${inv.email} · invitation en attente", fontSize = 13.sp, color = Couleurs.Texte2)
+                            }
+                            Puce(nomRole(inv.role), Color(0xFFEFEDEC), Couleurs.Texte2)
+                            TextButton(onClick = { action({ Repo.retirerInvitation(inv.email) }, "Invitation retirée") }) { Text("Retirer") }
+                        }
                     }
-                    TextButton(onClick = { action({ Repo.retirerInvitation(i.email) }, "Invitation retirée") }) { Text("Retirer") }
                 }
             }
         }
@@ -603,22 +618,26 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
         OutlinedTextField(fin, { fin = it }, label = { Text("Jusqu’au") }, placeholder = { Text("Même jour") }, singleLine = true,
             isError = fin.isNotBlank() && (dFin == null || (dDebut != null && dFin < dDebut)))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(hDebut, { hDebut = it.take(5) }, label = { Text("Début") }, placeholder = { Text("18:30") }, singleLine = true,
+            OutlinedTextField(hDebut, { hDebut = it.take(5) }, label = { Text("Heure de début") }, placeholder = { Text("18:30") }, singleLine = true,
                 isError = hD == null, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            OutlinedTextField(hFin, { hFin = it.take(5) }, label = { Text("Fin") }, placeholder = { Text("20:00") }, singleLine = true,
+            OutlinedTextField(hFin, { hFin = it.take(5) }, label = { Text("Heure de fin") }, placeholder = { Text("20:00") }, singleLine = true,
                 isError = hF == null, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
         OutlinedTextField(lieu, { lieu = it.take(120) }, label = { Text("Lieu") }, singleLine = true)
         OutlinedTextField(description, { description = it.take(500) }, label = { Text("Description") }, minLines = 2)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { visible = !visible }) {
-            Checkbox(visible, { visible = it }); Text("Visible de tous les membres (décochez seulement pour un rendez-vous réservé au bureau)", fontSize = 14.sp)
+            Checkbox(visible, { visible = it })
+            Column {
+                Text("Visible de tous les membres", fontSize = 14.sp)
+                Text("(décochez seulement pour un rendez-vous réservé au bureau)", fontSize = 12.sp, color = Couleurs.Texte2)
+            }
         }
         // Comme le site : une case « Suivre le budget » plutôt qu'un choix Événement / Activité
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { type = if (type == "activite") "evenement" else "activite" }) {
             Checkbox(type == "activite", { type = if (it) "activite" else "evenement" })
             Column {
                 Text("Suivre le budget de cette activité", fontSize = 14.sp)
-                Text("Ressources, emplois et résultat dans Budget$NBSP; la date peut rester à fixer", fontSize = 12.sp, color = Couleurs.Texte2)
+                Text("(ressources, emplois et résultat dans Budget$NBSP; la date peut rester à fixer)", fontSize = 12.sp, color = Couleurs.Texte2)
             }
         }
         if (p == null) {
@@ -626,7 +645,7 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
                 Checkbox(participation, { participation = it }); Text("Demander une participation aux membres", fontSize = 14.sp)
             }
             if (participation) {
-                OutlinedTextField(attendu, { attendu = it }, label = { Text("Montant par personne") }, placeholder = { Text("Libre") }, suffix = { Text("€") },
+                OutlinedTextField(attendu, { attendu = it }, label = { Text("Montant par personne (€)") }, placeholder = { Text("Libre") },
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 OutlinedTextField(limite, { limite = it }, label = { Text("Date limite") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
                     isError = limite.isNotBlank() && dLimite == null)
@@ -641,7 +660,7 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = {}) {
-    var membres by remember { mutableStateOf(d.membres) }
+    var membres by remember { mutableStateOf(d.membres.sortedBy { sansAccentsCode(it.nom) }) }
     var profils by remember { mutableStateOf<List<Profil>>(emptyList()) }
     var invitations by remember { mutableStateOf<List<Invitation>>(emptyList()) }
     var fonction by remember { mutableStateOf<Membre?>(null) }
@@ -650,7 +669,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     var recherche by remember { mutableStateOf("") }
     var fiche by remember { mutableStateOf<Membre?>(null) }        // modification
     var detail by remember { mutableStateOf<Membre?>(null) }       // fiche du membre (coordonnées et actions)
-    var filtre by remember { mutableStateOf("tous") }
+    var importer by remember { mutableStateOf(false) }
     var menuActions by remember { mutableStateOf(false) }
     var ajout by remember { mutableStateOf(false) }
     var version by remember { mutableStateOf(0) }
@@ -664,12 +683,14 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     val imprimer = rememberImpression()
     val enregistrer = rememberEnregistrer { it?.let(message) }
     val scope = rememberCoroutineScope()
+    var erreurImport by remember { mutableStateOf<String?>(null) }
     val choixCsv = rememberChoixTexte { texte ->
-        if (texte != null) aImporter = try { analyserCsvMembres(texte, membres) } catch (e: Exception) { message(e.message ?: "Fichier illisible"); null }
+        if (texte != null) { erreurImport = null; aImporter = try { analyserCsvMembres(texte, membres) } catch (e: Exception) { erreurImport = e.message ?: "Fichier illisible"; null } }
     }
     LaunchedEffect(version, Synchro.version) {
         try {
-            if (version > 0) membres = Repo.membres()
+            // Rechargé après chaque changement (ajout, suppression, restauration) et à chaque nouvelle de la base (temps réel)
+            if (version > 0 || Synchro.version > 0) membres = Repo.membres()
             if (d.peut("administrer", "consulter_finances", "valider_depenses", "payer_depenses")) profils = Repo.profilsComplets()
             if (admin) invitations = Repo.invitations()
             if (gereLiens) liens = try { Repo.liens() } catch (_: Exception) { emptyList() }
@@ -680,12 +701,15 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     fun fonctionDe(m: Membre): Pair<String, String>? =
         profils.firstOrNull { it.memberId == m.id }?.let { it.role to (if (it.actif) "compte" else "coupe") }
             ?: invitations.firstOrNull { it.membreId == m.id }?.let { it.role to "invite" }
-    val vus = membres.filter { (recherche.isBlank() || it.nomComplet.lowercase().contains(recherche.trim().lowercase())) &&
-        (filtre == "tous" || (filtre == "actifs") == it.actif) }
+    // Comme le site : la recherche ne change pas les sections (sans accents), le filtre Tous / Actifs / Inactifs est gardé
+    val filtre = EtatMembres.filtre.takeIf { it in listOf("tous", "actifs", "inactifs") } ?: "tous"
+    val cle = sansAccents(recherche)
+    val vus = membres.filter { filtre == "tous" || (filtre == "actifs") == it.actif }
     val nbInactifs = membres.count { !it.actif }
+    val nbActifs = membres.size - nbInactifs
     val bureau = vus.filter { fonctionDe(it)?.first?.let { r -> r != "adherent" } == true }.sortedBy { rangRole(fonctionDe(it)!!.first) }
     val autres = vus - bureau.toSet()
-    val sansFiche = d.profil.memberId == null && d.peut("gerer_membres")
+    val trouve = { m: Membre -> cle.isEmpty() || sansAccents(m.nomComplet).contains(cle) }
     @Composable fun PuceFonction(m: Membre) {
         val f = fonctionDe(m)
         when {
@@ -703,71 +727,89 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             Text("${m.prenom.take(1)}${m.nom.take(1)}", color = Couleurs.SurOrangeClair, fontWeight = FontWeight.Bold, fontSize = (taille / 3).sp)
         }
     }
-    // Ligne sobre : photo, nom, anniversaire et profession, fonction ; un appui ouvre la fiche (comme le site)
-    val ligne: @Composable (Membre) -> Unit = { m ->
-        Row(Modifier.fillMaxWidth().clickable { detail = m }.padding(vertical = 10.dp).alpha(if (m.actif) 1f else 0.6f), verticalAlignment = Alignment.CenterVertically) {
+    // Ligne sobre : photo, nom (« (vous) » atténué), anniversaire et profession, fonction ; un appui ouvre la fiche (comme le site)
+    @Composable fun Ligne(m: Membre, derniere: Boolean) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).clickable { detail = m }.padding(horizontal = 4.dp, vertical = 10.dp).alpha(if (m.actif) 1f else 0.6f), verticalAlignment = Alignment.CenterVertically) {
             AvatarMembre(m, 44)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(m.nomComplet + if (m.id == d.profil.memberId) " (vous)" else "", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(m.nomComplet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (m.id == d.profil.memberId) Text(" (vous)", fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1)
+                }
                 Text("${m.jour} ${MOIS[m.mois - 1]}" + (m.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 PuceFonction(m)
                 if (!m.actif) Puce("Inactif", Color(0xFFEFEDEC), Couleurs.Texte2)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+        if (!derniere) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+    }
+    // Section en carte sobre (Bureau, Membres), comme les cartes du site
+    @Composable fun Section(titre: String?, l: List<Membre>, vide: (@Composable () -> Unit)? = null) {
+        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
+                titre?.let { Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 6.dp)) }
+                val v = l.filter(trouve)
+                v.forEachIndexed { k, m -> key(m.id) { Ligne(m, k == v.lastIndex) } }
+                if (l.isEmpty()) vide?.invoke()
+            }
+        }
     }
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Text("Membres", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("${membres.count { it.actif }} actif" + (if (membres.count { it.actif } > 1) "s" else "") + if (nbInactifs > 0) " · $nbInactifs inactif" + (if (nbInactifs > 1) "s" else "") else "",
+                    Text("$nbActifs actif" + (if (nbActifs > 1) "s" else "") + if (nbInactifs > 0) " · $nbInactifs inactif" + (if (nbInactifs > 1) "s" else "") else "",
                         color = Couleurs.Texte2, modifier = Modifier.padding(bottom = 6.dp))
                 }
             }
-            // Recherche et menu « ⋯ » (liens personnels, import, export), comme le site
-            item {
-                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Recherche et menu « ⋯ » (liens personnels, import, export), comme le site ; seulement s'il y a des membres
+            if (membres.isNotEmpty()) item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(recherche, { recherche = it }, placeholder = { Text("Rechercher un membre") }, singleLine = true,
-                        leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.weight(1f))
+                        modifier = Modifier.weight(1f).semantics { contentDescription = "Rechercher un membre" })
                     Box {
-                        OutlinedIconButton(onClick = { menuActions = true }, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.MoreHoriz, "Autres actions") }
+                        OutlinedIconButton(onClick = { menuActions = true }, shape = RoundedCornerShape(4.dp), modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.MoreHoriz, "Autres actions") }
                         DropdownMenu(menuActions, { menuActions = false }) {
                             if (gereLiens && membres.isNotEmpty()) DropdownMenuItem(text = { Text("Liens personnels") }, leadingIcon = { Icon(Icons.Outlined.Link, null) }, onClick = { menuActions = false; tousLiens = true })
-                            if (d.peut("gerer_membres")) DropdownMenuItem(text = { Text("Importer (CSV, Excel)") }, leadingIcon = { Icon(Icons.Outlined.UploadFile, null) }, onClick = { menuActions = false; choixCsv() })
+                            if (d.peut("gerer_membres")) DropdownMenuItem(text = { Text("Importer (CSV, Excel)") }, leadingIcon = { Icon(Icons.Outlined.UploadFile, null) }, onClick = { menuActions = false; importer = true })
                             DropdownMenuItem(text = { Text("Exporter la liste") }, leadingIcon = { Icon(Icons.Outlined.Download, null) }, onClick = { menuActions = false; exporter = true })
                         }
                     }
                 }
             }
-            if (nbInactifs > 0) item {
-                SingleChoiceSegmentedButtonRow(Modifier.padding(bottom = 8.dp)) {
-                    listOf("tous" to "Tous ${membres.size}", "actifs" to "Actifs ${membres.size - nbInactifs}", "inactifs" to "Inactifs $nbInactifs").forEachIndexed { k, (c, l) ->
-                        SegmentedButton(selected = filtre == c, onClick = { filtre = c }, shape = SegmentedButtonDefaults.itemShape(k, 3)) { Text(l, maxLines = 1) }
+            if (membres.isNotEmpty() && nbInactifs > 0) item {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    listOf(Triple("tous", "Tous", membres.size), Triple("actifs", "Actifs", nbActifs), Triple("inactifs", "Inactifs", nbInactifs)).forEachIndexed { k, (c, l, n) ->
+                        SegmentedButton(selected = filtre == c, onClick = { EtatMembres.filtre = c }, shape = SegmentedButtonDefaults.itemShape(k, 3), icon = {}) {
+                            Text(buildAnnotatedString { append("$l "); withStyle(SpanStyle(fontSize = 12.sp, color = Couleurs.Texte2)) { append("$n") } }, maxLines = 1)
+                        }
                     }
                 }
             }
-            if (bureau.isNotEmpty()) {
-                item { Text("Bureau", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
-                items(bureau, key = { "b-" + it.id }) { ligne(it) }
-                item { Text("Membres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp)) }
+            if (bureau.isNotEmpty()) item(key = "bureau") { Section("Bureau", bureau) }
+            item(key = "membres") {
+                Section(if (bureau.isNotEmpty()) "Membres" else null, autres) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(when { membres.isNotEmpty() && filtre == "inactifs" -> "Aucun membre inactif."; membres.isNotEmpty() -> "Tous ces membres font partie du bureau."; else -> "Aucun membre." },
+                            color = Couleurs.Texte2)
+                        if (membres.isEmpty() && d.peut("gerer_membres")) Text("Ajoutez-les avec le bouton +, ou importez votre liste avec ⋯.", fontSize = 13.sp, color = Couleurs.Texte2)
+                    }
+                }
             }
-            items(autres, key = { it.id }) { ligne(it) }
-            if (vus.isEmpty() && membres.isNotEmpty()) item { Text(if (filtre == "inactifs") "Aucun membre inactif." else "Aucun membre trouvé.", color = Couleurs.Texte2, modifier = Modifier.padding(top = 12.dp)) }
         }
+        // Bouton + flottant (rond, couleur principale), comme le site sur téléphone
         if (d.peut("gerer_membres")) {
-            ExtendedFloatingActionButton(onClick = { ajout = true }, containerColor = Couleurs.Jaune, contentColor = Couleurs.SurJaune,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) }, text = { Text("Ajouter") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp))
+            BoutonPlus("Ajouter un membre", Modifier.align(Alignment.BottomEnd)) { ajout = true }
         }
     }
     val supprimerMembre = rememberSuppression(message) { version++; recharger() }
     if (ajout || fiche != null) ModalBottomSheet(onDismissRequest = { ajout = false; fiche = null }) {
-        FicheMembre(fiche, membres, onFini = { ok -> if (ok) { message(if (fiche != null) "Fiche modifiée" else "Membre ajouté"); version++ }; ajout = false; fiche = null }, message,
+        FicheMembre(fiche, membres, onFini = { ok -> if (ok) { message(if (fiche != null) "Fiche modifiée" else "Membre ajouté"); version++; recharger() }; ajout = false; fiche = null }, message,
             onSupprimer = if (d.peut("gerer_membres")) ({ fiche?.let { m -> supprimerMembre("members", m.id, m.nomComplet) }; fiche = null }) else null)
     }
     if (maFiche) ModalBottomSheet(onDismissRequest = { maFiche = false }) {
@@ -788,39 +830,71 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     if (tousLiens) ModalBottomSheet(onDismissRequest = { tousLiens = false }) {
         FeuilleLiens(d, membres, liens, message, onChange = { scope.launch { liens = try { Repo.liens() } catch (_: Exception) { liens } } }) { tousLiens = false }
     }
-    if (exporter) AlertDialog(
-        onDismissRequest = { exporter = false },
-        title = { Text("Exporter la liste des membres") },
-        text = { Text("PDF : mis en page pour imprimer ou transmettre. Excel : tableau modifiable (CSV). Données personnelles : à garder dans le bureau.") },
-        confirmButton = { Button(onClick = { exporter = false; scope.launch { try { val (t, h) = documentHtml(d, "membres", aujourdhui().year); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("PDF") } },
-        dismissButton = { OutlinedButton(onClick = { exporter = false; scope.launch { try { enregistrer("membres.csv", "text/csv", exportCsv(d, "membres", aujourdhui().year).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("Excel") } },
-    )
+    // Choix du format, comme choisirFormat du site : deux cartes, PDF puis Excel
+    if (exporter) ModalBottomSheet(onDismissRequest = { exporter = false }) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Exporter la liste des membres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                @Composable fun Choix(titre: String, sous: String, onClick: () -> Unit) =
+                    Surface(onClick = onClick, shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E0DE)), modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(titre, fontWeight = FontWeight.Bold); Text(sous, fontSize = 13.sp, color = Couleurs.Texte2)
+                        }
+                    }
+                Choix("PDF", "Mise en page pour imprimer, archiver ou transmettre") {
+                    exporter = false; scope.launch { try { val (t, h) = documentHtml(d, "membres", aujourdhui().year); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } }
+                }
+                Choix("Excel", "Tableau modifiable (CSV)") {
+                    exporter = false; scope.launch { try { enregistrer("membres.csv", "text/csv", exportCsv(d, "membres", aujourdhui().year).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } }
+                }
+            }
+        }
+    }
     fonction?.let { m ->
         FeuilleFonction(d, m, profils, invitations, onFini = { msg -> fonction = null; if (msg != null) { message(msg); version++; if (profils.any { it.id == d.profil.id && it.memberId == m.id }) recharger() } }, message = message)
     }
-    aImporter?.let { (ok, erreurs) ->
-        AlertDialog(
-            onDismissRequest = { aImporter = null },
-            title = { Text("Importer des membres") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${ok.size} ligne${if (ok.size > 1) "s" else ""} prête${if (ok.size > 1) "s" else ""}, ${erreurs.size} refusée${if (erreurs.size > 1) "s" else ""}.")
-                    erreurs.forEach { Text(it, fontSize = 13.sp, color = Couleurs.Erreur) }
-                    Text("Colonnes attendues$NBSP: prénom, nom, jour, mois (ou anniversaire jj/mm), profession, whatsapp, email, accord.", fontSize = 12.sp, color = Couleurs.Texte2)
+    // Import : explication, choix du fichier, modèle, puis le résultat dans la même feuille (comme feuilleImport du site)
+    if (importer) ModalBottomSheet(onDismissRequest = { importer = false; aImporter = null; erreurImport = null }) {
+        var enCours by remember { mutableStateOf(false) }
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Importer des membres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(buildAnnotatedString {
+                append("Fichier CSV (depuis Excel : Enregistrer sous › CSV) avec une ligne d’en-têtes : ")
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("prénom, nom, jour, mois") }
+                append(" (obligatoires), profession, whatsapp, email, accord (oui ou non). Les lignes incomplètes sont refusées.")
+            }, fontSize = 14.sp, color = Couleurs.Texte2)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalButton(onClick = choixCsv) { Text("Choisir le fichier") }
+                TextButton(onClick = { enregistrer("modele-membres.csv", "text/csv", csv(listOf("prénom", "nom", "jour", "mois", "profession", "whatsapp", "email", "accord"),
+                    listOf(listOf("Marie", "Exemple", 14, 3, "Infirmière", "06 12 34 56 78", "", "oui"))).encodeToByteArray()) }) { Text("Télécharger le modèle") }
+            }
+            erreurImport?.let { Surface(color = Couleurs.ErreurClair, contentColor = Color(0xFF410002), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
+            aImporter?.let { (ok, erreurs) ->
+                Text(buildAnnotatedString {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("${ok.size}") }; append(" ligne${if (ok.size > 1) "s" else ""} prête${if (ok.size > 1) "s" else ""}, ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("${erreurs.size}") }; append(" refusée${if (erreurs.size > 1) "s" else ""}.")
+                })
+                if (erreurs.isNotEmpty()) Surface(color = Couleurs.ErreurClair, contentColor = Color(0xFF410002), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)) {
+                    Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) { erreurs.forEach { Text(it, fontSize = 13.sp) } }
                 }
-            },
-            confirmButton = {
-                Button(enabled = ok.isNotEmpty(), onClick = {
-                    scope.launch {
-                        try { Repo.importerMembres(ok); message("${ok.size} membres importés"); version++ } catch (e: Exception) { message(traduireErreur(e)) }
-                        aImporter = null
-                    }
-                }) { Text("Importer ${ok.size}") }
-            },
-            dismissButton = { TextButton(onClick = { aImporter = null }) { Text("Annuler") } },
-        )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    TextButton(onClick = { importer = false; aImporter = null }) { Text("Annuler") }
+                    Button(enabled = ok.isNotEmpty() && !enCours, onClick = {
+                        enCours = true
+                        scope.launch {
+                            try { Repo.importerMembres(ok); importer = false; aImporter = null; message("${ok.size} membres importés"); version++; recharger() }
+                            catch (e: Exception) { message(traduireErreur(e)) }
+                            enCours = false
+                        }
+                    }) { Text("Importer ${ok.size} membre${if (ok.size > 1) "s" else ""}") }
+                }
+            }
+        }
     }
 }
+
+private object EtatMembres { var filtre by mutableStateOf("tous") }
 
 /** Fiche d'un membre : coordonnées et toutes les actions (lien personnel, fonction, modifier, inactif, supprimer), comme feuilleFicheMembre du site. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -877,7 +951,7 @@ private fun FicheDetailMembre(d: Donnees, m: Membre, avatar: @Composable () -> U
 }
 
 private val ORDRE_ROLES = listOf("president", "vice_president", "tresorier", "tresorier_adjoint", "secretaire", "bureau")
-private fun rangRole(r: String): Int = ORDRE_ROLES.indexOf(r).let { if (it >= 0) it else if (r == "adherent") 99 else 50 }
+internal fun rangRole(r: String): Int = ORDRE_ROLES.indexOf(r).let { if (it >= 0) it else if (r == "adherent") 99 else 50 }
 
 // Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
 @OptIn(ExperimentalMaterial3Api::class)
@@ -904,29 +978,39 @@ private fun FeuilleFonction(d: Donnees, m: Membre, profils: List<Profil>, invita
                 Avatar(m.prenom, m.nom)
                 Column { Text(m.nomComplet, fontWeight = FontWeight.SemiBold); Text(m.profession ?: "Membre", fontSize = 13.sp, color = Couleurs.Texte2) }
             }
+            // État de l'accès : pastille et nom du compte (ou adresse invitée), comme feuilleAcces du site
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    compte != null -> { if (compte.actif) Puce("Compte actif", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("Accès coupé", Color(0xFFEFEDEC), Couleurs.Texte2)
+                        Text(compte.nom, fontSize = 14.sp, color = Couleurs.Texte2) }
+                    invitation != null -> { Puce("Invitation en attente", Couleurs.JauneClair, Couleurs.SurJaune); Text(invitation.email, fontSize = 14.sp, color = Couleurs.Texte2) }
+                    else -> Puce("Sans accès", Color(0xFFEFEDEC), Couleurs.Texte2)
+                }
+            }
+            if (compte == null && invitation == null && !envoye)
+                OutlinedTextField(email, { email = it.trim() }, label = { Text("E-mail de connexion *") }, singleLine = true, enabled = lier == null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
+            if (!envoye) ChoixListe("Fonction", roles.firstOrNull { it.code == role }?.nom ?: role, roles.map { it.nom }) { role = roles[it].code }
+            if (compte != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(enabled = compte.id != d.profil.id) { actif = !actif }) {
+                Checkbox(if (compte.id == d.profil.id) true else actif, { actif = it }, enabled = compte.id != d.profil.id); Text("Accès à la plateforme", fontSize = 14.sp)
+            }
+            if (invitation != null) Text("La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création.", fontSize = 14.sp, color = Couleurs.Texte2)
+            if (compte == null && invitation == null && libres.isNotEmpty() && !envoye)
+                ChoixListe("Ou rattacher un compte déjà créé", lier?.nom ?: "Aucun", listOf("Aucun") + libres.map { it.nom }) { lier = if (it == 0) null else libres[it - 1] }
             if (envoye) {
-                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(20.dp)) {
+                // Après l'invitation : prévenir la personne (WhatsApp, e-mail), comme le site
+                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(8.dp)) {
                     Column(Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Accès accordé", fontWeight = FontWeight.Bold)
-                        Text("${m.prenom} crée son compte avec ${email.trim()} sur le site ou dans l’application ; sa fonction s’applique dès la création.", fontSize = 14.sp)
-                        val texte = "Bonjour ${m.prenom}, votre accès à la trésorerie ${d.organisation.nom} est prêt. Créez votre compte avec l’adresse ${email.trim()}."
-                        numeroWa(m.whatsapp ?: "")?.let { wa -> FilledTonalButton(onClick = { uri.openUri("https://wa.me/$wa?text=" + encoderUrl(texte)) }) { Text("Prévenir par WhatsApp") } }
-                        TextButton(onClick = { onFini("Accès accordé") }) { Text("Terminer") }
+                        Text(buildAnnotatedString { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Accès accordé.") }; append(" ${m.prenom} crée son compte sur le site avec ${email.trim().lowercase()}.") }, fontSize = 14.sp)
+                        val texte = "Bonjour ${m.prenom}, votre accès à la trésorerie ${d.organisation.nom} est prêt. Créez votre compte sur ${Config.SITE_URL} avec l’adresse ${email.trim().lowercase()}."
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            numeroWa(m.whatsapp ?: "")?.let { wa -> FilledTonalButton(onClick = { uri.openUri("https://wa.me/$wa?text=" + encoderUrl(texte)) }) { Text("Prévenir par WhatsApp") } }
+                            TextButton(onClick = { runCatching { uri.openUri("mailto:${email.trim().lowercase()}?subject=" + encoderUrl("Accès à la trésorerie") + "&body=" + encoderUrl(texte)) } }) { Text("Prévenir par e-mail") }
+                        }
                     }
                 }
                 return@Column
             }
-            val statut = when { compte != null -> if (compte.actif) "Compte actif" else "Accès coupé"; invitation != null -> "Invitation en attente · ${invitation.email}"; else -> "Sans accès" }
-            Text(statut, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
-            if (compte == null && invitation == null && lier == null)
-                OutlinedTextField(email, { email = it.trim() }, label = { Text("E-mail de connexion") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
-            ChoixListe("Fonction", roles.firstOrNull { it.code == role }?.nom ?: role, roles.map { it.nom }) { role = roles[it].code }
-            if (compte != null && compte.id != d.profil.id) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { actif = !actif }) {
-                Checkbox(actif, { actif = it }); Text("Accès à la plateforme", fontSize = 14.sp)
-            }
-            if (compte == null && invitation == null && libres.isNotEmpty())
-                ChoixListe("Ou rattacher un compte déjà créé", lier?.nom ?: "Aucun", listOf("Aucun") + libres.map { it.nom }) { lier = if (it == 0) null else libres[it - 1] }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.align(Alignment.End)) {
                 if (invitation != null) TextButton(onClick = { scope.launch { try { Repo.retirerInvitation(invitation.email); onFini("Invitation annulée") } catch (e: Exception) { message(traduireErreur(e)) } } }) { Text("Annuler l’invitation") }
                 else TextButton(onClick = { onFini(null) }) { Text("Fermer") }
@@ -938,6 +1022,7 @@ private fun FeuilleFonction(d: Donnees, m: Membre, profils: List<Profil>, invita
                                 compte != null -> { Repo.majProfil(compte.id, role = role, actif = if (compte.id == d.profil.id) null else actif); onFini("Fonction enregistrée") }
                                 invitation != null -> { Repo.majInvitation(invitation.email, role); onFini("Fonction enregistrée") }
                                 lier != null -> { Repo.majProfil(lier!!.id, role = role); Repo.lierProfil(lier!!.id, m.id, m.nomComplet); onFini("Compte rattaché") }
+                                profils.any { it.nom.lowercase() == email.trim().lowercase() } -> { enCours = false; message("Un compte existe déjà avec cette adresse : rattachez-le") }
                                 else -> { Repo.inviter(Invitation(email.trim().lowercase(), m.nomComplet, role, m.id)); envoye = true; enCours = false }
                             }
                         } catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
@@ -972,12 +1057,13 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             val apercu = remember(photo) { photo?.let { imageDepuisOctets(it.octets) } }
             if (apercu != null) Image(apercu, null, contentScale = ContentScale.Crop, modifier = Modifier.size(56.dp).clip(CircleShape))
-            else Box(Modifier.size(56.dp).background(Couleurs.OrangeClair, CircleShape))
+            else Avatar(prenom, nom, 56)
             FilledTonalButton(onClick = choixPhoto) { Text(if (m?.photo != null || photo != null) "Changer la photo" else "Ajouter une photo") }
+            Text("Facultatif", fontSize = 13.sp, color = Couleurs.Texte2)
         }
-        OutlinedTextField(prenom, { prenom = it.take(60) }, label = { Text("Prénom") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(nom, { nom = it.take(60) }, label = { Text("Nom") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        Text("Anniversaire (jour et mois)", fontSize = 13.sp, color = Couleurs.Texte2)
+        OutlinedTextField(prenom, { prenom = it.take(60) }, label = { Text("Prénom *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(nom, { nom = it.take(60) }, label = { Text("Nom *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text("Anniversaire (jour et mois, sans l’année) *", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { ChoixListe("Jour", jour?.toString() ?: "–", (1..joursMax).map { it.toString() }) { jour = it + 1 } }
             Box(Modifier.weight(1f)) { ChoixListe("Mois", mois?.let { MOIS[it - 1] } ?: "–", MOIS) { mois = it + 1; if ((jour ?: 0) > JOURS_MOIS[it]) jour = null } }
@@ -990,7 +1076,7 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { accord = !accord }) {
             Checkbox(accord, { accord = it })
-            Text("Accepte que son anniversaire soit affiché aux autres membres", fontSize = 14.sp)
+            Text("Le membre accepte que son anniversaire soit affiché aux autres membres", fontSize = 14.sp)
         }
         if (m != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { actif = !actif }) {
             Checkbox(actif, { actif = it }); Text("Membre actif", fontSize = 14.sp)
@@ -1103,8 +1189,8 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
         add(Quadruple("rapport", "Rapport financier (assemblée générale ou période)", listOf("pdf"), "libre"))
         add(Quadruple("journal", "Journal des opérations", listOf("pdf", "excel"), "libre"))
         add(Quadruple("participations", "Participations aux activités", listOf("excel"), ""))
-        add(Quadruple("demandes", "Registre des demandes de dépense", listOf("pdf"), "annee"))
-        add(Quadruple("pieces", "Pièces justificatives (fichier ZIP)", listOf("zip"), "annee"))
+        add(Quadruple("demandes", "Registre des demandes de dépense", listOf("pdf", "excel"), "annee"))
+        add(Quadruple("pieces", "Pièces justificatives (fichier ZIP classé par mois)", listOf("zip"), "annee"))
     }
     var doc by remember { mutableStateOf(docs.first()) }
     var type by remember { mutableStateOf("annee") }
@@ -1139,12 +1225,13 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
                 ChoixListe("Document", doc.b, docs.map { it.b }) { doc = docs[it] }
                 if (libre) ChoixListe("Période", mapOf("annee" to "Exercice complet", "mois" to "Un mois", "trimestre" to "Un trimestre", "libre" to "Du… au…")[type]!!,
                     listOf("Exercice complet", "Un mois", "Un trimestre", "Du… au…")) { type = listOf("annee", "mois", "trimestre", "libre")[it] }
+                // Exercices déclarés : intitulé et dates exactes, affichés tels quels une fois choisis (comme le site)
+                val nomExercice = { a: Int -> d.exercices.firstOrNull { it.debut.take(4).toInt() == a }?.let { "${it.libelle} (${dateFr(it.debut)} – ${dateFr(it.fin)})" } ?: a.toString() }
                 if (doc.d.isNotEmpty() && !(libre && type == "libre"))
-                    ChoixListe("Exercice", d.exercices.firstOrNull { it.debut.take(4).toInt() == annee }?.libelle ?: annee.toString(),
-                        listOf(an, an - 1, an - 2).map { a -> d.exercices.firstOrNull { it.debut.take(4).toInt() == a }?.let { "${it.libelle} (${dateFr(it.debut)} – ${dateFr(it.fin)})" } ?: a.toString() }) { annee = an - it }
+                    ChoixListe("Exercice", nomExercice(annee), listOf(an, an - 1, an - 2).map(nomExercice)) { annee = an - it }
                 if (libre && type == "mois") ChoixListe("Mois", MOIS[mois - 1].replaceFirstChar { it.uppercase() }, MOIS.map { m -> m.replaceFirstChar { it.uppercase() } }) { mois = it + 1 }
-                if (libre && type == "trimestre") ChoixListe("Trimestre", listOf("1er trimestre", "2e trimestre", "3e trimestre", "4e trimestre")[trimestre],
-                    listOf("1er trimestre (janv. à mars)", "2e trimestre (avr. à juin)", "3e trimestre (juil. à sept.)", "4e trimestre (oct. à déc.)")) { trimestre = it }
+                val trimestres = listOf("1er trimestre (janv. à mars)", "2e trimestre (avr. à juin)", "3e trimestre (juil. à sept.)", "4e trimestre (oct. à déc.)")
+                if (libre && type == "trimestre") ChoixListe("Trimestre", trimestres[trimestre], trimestres) { trimestre = it }
                 if (libre && type == "libre") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(du, { du = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(du) == null, modifier = Modifier.weight(1f))
                     OutlinedTextField(au, { au = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = periode == null, modifier = Modifier.weight(1f))
@@ -1160,7 +1247,7 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
                         try {
                             when (doc.a) {
                                 "rapport" -> imprimer("Rapport", rapportHtml(d, deb, fi, if (type == "annee") "Rapport financier de l’exercice $annee" else "Rapport de trésorerie, $intitule"))
-                                "journal" -> if (format == "excel") enregistrer("ecritures-$deb-au-$fi.csv", "text/csv", exportCsv(d, "ecritures", annee, deb, fi).encodeToByteArray())
+                                "journal" -> if (format == "excel") enregistrer(if (deb == "$annee-01-01" && fi == "$annee-12-31") "ecritures-$annee.csv" else "ecritures-$deb-au-$fi.csv", "text/csv", exportCsv(d, "ecritures", annee, deb, fi).encodeToByteArray())
                                              else { val (t, html) = documentHtml(d, "journal", annee, deb, fi, intitule); imprimer(t, html) }
                                 "pieces" -> {
                                     val (zip, n) = archivePieces(d, annee) { etat = it }
@@ -1171,7 +1258,7 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
                                 "sauvegarde" -> enregistrer("sauvegarde-tresorerie-${aujourdhui()}.json", "application/json", Repo.sauvegardeJson().encodeToByteArray())
                                 "inventaire" -> if (format == "excel") enregistrer("inventaire-materiel-${aujourdhui()}.csv", "text/csv", csvInventaire(d, Repo.materiel()).encodeToByteArray())
                                                 else { val (t, html) = documentHtml(d, "inventaire", annee); imprimer(t, html) }
-                                else -> if (format == "excel") enregistrer("${doc.a}-$annee.csv", "text/csv", exportCsv(d, doc.a, annee).encodeToByteArray())
+                                else -> if (format == "excel") enregistrer(if (doc.a == "demandes") "demandes-de-depense.csv" else "${doc.a}-$annee.csv", "text/csv", exportCsv(d, doc.a, annee).encodeToByteArray())
                                         else { val (t, html) = documentHtml(d, doc.a, annee); imprimer(t, html) }
                             }
                         } catch (e: Exception) { message(traduireErreur(e)) }
@@ -1181,7 +1268,7 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
             }
         }
         item {
-            Text("PDF$NBSP: mis en page pour imprimer, signer ou transmettre. Excel$NBSP: tableau modifiable (CSV).", fontSize = 13.sp, color = Couleurs.Texte2)
+            Text("PDF$NBSP: mis en page pour imprimer, signer ou transmettre. Excel$NBSP: tableau modifiable (CSV). Cotisations, budget, membres et matériel s’exportent depuis leur page (bouton Exporter)$NBSP; la sauvegarde complète est dans Paramètres › Sauvegarde.", fontSize = 13.sp, color = Couleurs.Texte2)
         }
     }
 }
@@ -1200,13 +1287,36 @@ internal fun csv(entetes: List<String>, lignes: List<List<Any?>>): String {
 internal suspend fun exportCsv(d: Donnees, type: String, an: Int, du: String = "$an-01-01", au: String = "$an-12-31"): String {
     val cat = { id: String -> d.nomCategorie(id) }
     return when (type) {
-        "ecritures" -> csv(listOf("Date", "Sens", "Libellé", "Catégorie", "Compte", "Mode", "Montant", "Rapprochée"),
-            Repo.toutesEcritures().filter { it.date in du..au }.sortedBy { it.date }.map {
-                listOf(dateFr(it.date), if (it.virement != null) (if (it.sens == "recette") "Virement interne (entrée)" else "Virement interne (sortie)") else if (it.sens == "recette") "Recette" else "Dépense", it.libelle, cat(it.categorieId),
-                    d.comptes.firstOrNull { c -> c.id == it.compteId }?.nom, it.mode, it.signe, if (it.rapproche) "Oui" else "Non")
-            })
-        "membres" -> csv(listOf("Prénom", "Nom", "Jour", "Mois", "Profession", "WhatsApp", "E-mail", "Accord anniversaire", "Actif"),
-            Repo.membres().map { listOf(it.prenom, it.nom, it.jour, it.mois, it.profession, it.whatsapp, it.email, if (it.consentement) "Oui" else "Non", if (it.actif) "Oui" else "Non") })
+        // Mêmes colonnes que exporter('ecritures') du site
+        "ecritures" -> {
+            val ms = try { Repo.membres() } catch (_: Exception) { d.membres }; val ts = try { Repo.tiers() } catch (_: Exception) { emptyList() }
+            val cs = try { Repo.collectes() } catch (_: Exception) { emptyList() }; val ps = try { Repo.projets() } catch (_: Exception) { emptyList() }
+            csv(listOf("Date", "Sens", "Libellé", "Tiers", "Rubrique", "Catégorie", "Activité", "Compte", "Mode", "Montant", "Rapprochée"),
+                Repo.toutesEcritures().filter { it.date in du..au }.sortedBy { it.date }.map {
+                    listOf(dateFr(it.date), if (it.virement != null) (if (it.sens == "recette") "Virement interne (entrée)" else "Virement interne (sortie)") else if (it.sens == "recette") "Recette" else "Dépense", it.libelle,
+                        nomTiers(it, ms, ts), nomRubrique(it, cs), cat(it.categorieId), ps.firstOrNull { p -> p.id == it.projetId }?.nom ?: "",
+                        d.comptes.firstOrNull { c -> c.id == it.compteId }?.nom, MODES[it.mode] ?: it.mode, it.signe, if (it.rapproche) "Oui" else "Non")
+                })
+        }
+        // Mêmes colonnes que csvMembres du site (dont la fonction : rôle du compte ou de l'invitation)
+        "membres" -> {
+            val profils = try { Repo.profilsComplets() } catch (_: Exception) { emptyList() }
+            val invitations = try { Repo.invitations() } catch (_: Exception) { emptyList() }
+            fun fonction(m: Membre) = (profils.firstOrNull { it.memberId == m.id }?.role ?: invitations.firstOrNull { it.membreId == m.id }?.role)?.let { d.nomRole(it) } ?: ""
+            csv(listOf("Prénom", "Nom", "Jour", "Mois", "Profession", "WhatsApp", "E-mail", "Fonction", "Accord anniversaire", "Actif"),
+                Repo.membres().map { listOf(it.prenom, it.nom, it.jour, it.mois, it.profession, it.whatsapp, it.email, fonction(it), if (it.consentement) "Oui" else "Non", if (it.actif) "Oui" else "Non") })
+        }
+        // Registre des demandes (mêmes colonnes que exporter('demandes') du site)
+        "demandes" -> {
+            val ps = try { Repo.projets() } catch (_: Exception) { emptyList() }
+            val statuts = mapOf("soumise" to "À valider", "validee" to "À payer", "refusee" to "Refusée", "payee" to "Justificatif attendu",
+                "justifiee" to "Clôturée", "annulee" to "Annulée", "brouillon" to "Brouillon")
+            csv(listOf("Date", "Objet", "Justification", "Pour le", "Catégorie", "Activité", "Montant", "Statut", "Validée le", "Payée le", "Empreinte signature"),
+                Repo.demandes().sortedBy { it.creeLe }.map { r ->
+                    listOf(dateFr(r.creeLe.take(10)), r.objet, r.justification ?: "", r.dateSouhaitee?.let { dateFr(it) } ?: "", cat(r.categorieId), ps.firstOrNull { it.id == r.projetId }?.nom ?: "",
+                        r.montant, statuts[r.statut] ?: r.statut, r.valideeLe?.let { dateFr(it.take(10)) } ?: "", r.payeeLe?.let { dateFr(it.take(10)) } ?: "", r.empreinte ?: "")
+                })
+        }
         "cotisations" -> {
             val ms = Repo.membres()
             val pas = (Repo.reglages()["cotisation_periode_mois"] ?: 1.0).toInt()
@@ -1217,8 +1327,9 @@ internal suspend fun exportCsv(d: Donnees, type: String, an: Int, du: String = "
         }
         "participations" -> {
             val ms = Repo.membres(); val ts = Repo.tiers(); val cs = Repo.collectes()
-            csv(listOf("Collecte", "Date", "Tiers", "Montant"), Repo.toutesEcritures().filter { it.collecteId != null }.sortedBy { it.date }.map { e ->
-                listOf(cs.firstOrNull { it.id == e.collecteId }?.nom, dateFr(e.date), nomTiers(e, ms, ts), e.montant)
+            val ps = try { Repo.projets() } catch (_: Exception) { emptyList() }
+            csv(listOf("Collecte", "Activité", "Date", "Tiers", "Montant"), Repo.toutesEcritures().filter { it.collecteId != null }.sortedBy { it.date }.map { e ->
+                listOf(cs.firstOrNull { it.id == e.collecteId }?.nom, ps.firstOrNull { it.id == e.projetId }?.nom ?: "", dateFr(e.date), nomTiers(e, ms, ts), e.montant)
             })
         }
         else -> {
@@ -1377,7 +1488,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     @Composable fun Tete() = Banniere(d, onReglages, onCloche) {
         Spacer(Modifier.height(16.dp))
         BanniereAnnonces(annonces, rotation, onEvt = { detail = it }, onAgenda = agenda,
-            onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(if (communiquesActifs(communiques).isNotEmpty()) 5 else 4) } }, onCommunique = { communiqueLu = it })
+            onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(if (communiquesActifs(communiques).isNotEmpty()) 4 else 3) } }, onCommunique = { communiqueLu = it })
     }
     val etatCotis = if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour"
     val nomMois = MOIS[mois - 1]
@@ -1396,15 +1507,31 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
             ps.forEach { p -> LigneRendezVous(p) { detail = p } }
         }
     }
-    @Composable fun Cotisation() = Rubrique("m-cotisation", "Ma cotisation", etatCotis, alerte = retard > 0.005) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(if (retard > 0.005) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle, null, tint = if (retard > 0.005) Couleurs.Erreur else Color(0xFF2E8B4E), modifier = Modifier.size(20.dp))
-            Text(etatCotis, fontWeight = FontWeight.Bold, color = if (retard > 0.005) Couleurs.Erreur else Couleurs.Texte)
-            val regle = cotis.filter { it.statut == "regle" || it.statut == "dispense" }.maxOfOrNull { it.periode }
-            if (retard <= 0.005 && regle != null) Text("· réglée jusqu’à ${nomPeriode(regle, pas)}", fontSize = 14.sp, color = Couleurs.Texte2)
-        }
+    // Ma cotisation : l'état coloré dans le titre (icône verte ou rouge), la grille de l'année et sa légende (comme le site)
+    @Composable fun Cotisation() = Rubrique("m-cotisation", "Ma cotisation", etatCotis, alerte = retard > 0.005,
+        icone = if (retard > 0.005) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle,
+        teinteIcone = if (retard > 0.005) Couleurs.Erreur else if (cotis.isNotEmpty()) Color(0xFF2E8B4E) else Couleurs.Texte) {
+        val regle = cotis.filter { it.statut == "regle" || it.statut == "dispense" }.maxOfOrNull { it.periode }
+        Text(buildAnnotatedString {
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = if (retard > 0.005) Couleurs.Erreur else Couleurs.Texte)) { append(etatCotis) }
+            withStyle(SpanStyle(color = Couleurs.Texte)) {
+                if (retard > 0.005) append(" · périodes commencées et non réglées") else if (regle != null) append(" · réglée jusqu’à ${nomPeriode(regle, pas)}")
+            }
+        }, fontSize = 15.sp)
         val l = cotis.filter { it.annee == aujourdhui().year }.sortedBy { it.periode }
-        if (l.isNotEmpty()) GrillePeriodes(l.map { it.periode to it.statut }, pas)
+        if (l.isNotEmpty()) {
+            GrillePeriodes(l.map { it.periode to it.statut }, pas)
+            // Légende : seulement les états présents dans la grille
+            val libelles = listOf("regle" to "Réglé", "partiel" to "Partiel", "impaye" to "Impayé", "a_venir" to "À venir", "dispense" to "Dispensé")
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                libelles.filter { (k, _) -> l.any { it.statut == k } }.forEach { (k, lib) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(Modifier.width(14.dp)) { GrillePeriodes(listOf("2026-01-01" to k), 12) }
+                        Text(lib, fontSize = 12.sp, color = Couleurs.Texte2)
+                    }
+                }
+            }
+        }
     }
     @Composable fun Regler() { if (du) Rubrique("m-regler", "Comment régler", "À régler") { Text(infos ?: "Adressez-vous au trésorier.", fontSize = 14.sp) } }
     @Composable fun Participations() { if (parts.isNotEmpty()) Rubrique("m-participations", "Mes participations", if (resteParts > 0.005) "${euros(resteParts)} à régler" else "${parts.size}") { ListeParticipations(parts) } }
@@ -1428,7 +1555,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
             item { Anniversaires() }
         }
     }
-    communiqueLu?.let { c -> FeuilleCommunique(c, mesReponses[c.id], onRepondu = { mesReponses = mesReponses + (c.id to it) }) { communiqueLu = null } }
+    communiqueLu?.let { c -> FeuilleCommunique(c, mesReponses[c.id], onRepondu = { mesReponses = mesReponses + (c.id to it); message("Merci pour votre réponse") }, message = message) { communiqueLu = null } }
     detail?.let { e ->
         @OptIn(ExperimentalMaterial3Api::class)
         ModalBottomSheet(onDismissRequest = { detail = null }) {
@@ -1519,15 +1646,16 @@ fun Apparition(rang: Int, content: @Composable () -> Unit) {
 // =====================================================================
 @Composable
 fun EcranPlus(d: Donnees, onChoix: (String) -> Unit) {
+    // Même ordre et mêmes libellés que pagesAutorisees() du site (le menu « Plus » reprend les pages qui suivent les onglets)
     val entrees = buildList {
-        if (d.peut("voir_membres", "gerer_membres")) add(Triple("membres", "Membres", Icons.Outlined.Groups))
         if (d.peut("consulter_finances", "gerer_budget")) add(Triple("budget", "Budget", Icons.Outlined.PieChart))
         add(Triple("activites", "Planning", Icons.Outlined.Event))
         if (d.peut("gerer_activites", "administrer")) add(Triple("communiques", "Communiqués", Icons.Outlined.Campaign))
-        if (d.peut("consulter_finances", "saisir_ecritures", "gerer_cotisations")) add(Triple("tiers", "Tiers", Icons.Outlined.Contacts))
         if (d.peut("gerer_materiel", "consulter_finances", "voir_membres")) add(Triple("materiel", "Matériel", Icons.Outlined.Inventory2))
-        if (d.peut("rapprocher", "consulter_finances")) add(Triple("rapprochement", "Rapprochement", Icons.Outlined.AccountBalance))
-        if (d.peut("consulter_finances")) add(Triple("rapports", "Rapports et exports", Icons.Outlined.Description))
+        if (d.peut("consulter_finances", "saisir_ecritures", "gerer_cotisations")) add(Triple("tiers", "Tiers", Icons.Outlined.Contacts))
+        if (d.peut("voir_membres", "gerer_membres")) add(Triple("membres", "Membres", Icons.Outlined.Groups))
+        if (d.peut("consulter_finances", "rapprocher")) add(Triple("rapprochement", "Rapprochement", Icons.Outlined.AccountBalance))
+        if (d.peut("consulter_finances")) add(Triple("rapports", "Rapports", Icons.Outlined.Description))
         // Paramètres : roue dentée en haut de chaque écran (et sur la bannière de l'accueil), pas de doublon ici
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

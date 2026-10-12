@@ -154,7 +154,7 @@ fun Connexion() {
             modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username + ContentType.EmailAddress },
         )
         ChampMotDePasse(mdp, { mdp = it }, if (premiere) "Mot de passe (8 caractères minimum)" else "Mot de passe",
-            if (premiere) ContentType.NewPassword else ContentType.Password, if (premiere) ImeAction.Next else ImeAction.Done) { if (!premiere && email.isNotBlank() && mdp.length >= 8) seConnecter() }
+            if (premiere) ContentType.NewPassword else ContentType.Password, if (premiere) ImeAction.Next else ImeAction.Done) { if (!premiere && email.isNotBlank() && mdp.isNotEmpty()) seConnecter() }
         if (premiere) ChampMotDePasse(mdp2, { mdp2 = it }, "Confirmez le mot de passe", ContentType.NewPassword, ImeAction.Done,
             erreur = mdp2.isNotEmpty() && mdp2 != mdp)
         if (!premiere) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -182,7 +182,8 @@ fun Connexion() {
                     }
                 }
             },
-            enabled = !enCours && email.contains('@') && mdp.length >= 8 && (!premiere || mdp == mdp2),
+            // Connexion : mot de passe simplement requis (comme le site) ; 8 caractères seulement à la création
+            enabled = !enCours && email.contains('@') && (if (premiere) mdp.length >= 8 && mdp == mdp2 else mdp.isNotEmpty()),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         ) { Text(if (enCours) "Connexion…" else if (premiere) "Créer mon compte" else "Se connecter", fontWeight = FontWeight.Bold) }
         HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFFE8E3E1))

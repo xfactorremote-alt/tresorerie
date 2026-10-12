@@ -88,7 +88,7 @@ object Repo {
         else client.from("categories").select { order("nom", Order.ASCENDING) }.decodeList()
 
     suspend fun membres(): List<Membre> =
-        if (demo) Demo.membres.toList()
+        if (demo) Demo.membres.sortedBy { sansAccentsCode(it.nom) }   // comme la base : par nom
         else client.from("members").select { order("nom", Order.ASCENDING) }.decodeList()
 
     suspend fun ecritures(limite: Long = 100): List<Ecriture> =
@@ -608,6 +608,11 @@ object Repo {
     suspend fun materiel(): List<Materiel> =
         if (demo) Demo.materiel.toList().sortedBy { it.designation.lowercase() }
         else client.from("materiel").select { order("designation", Order.ASCENDING) }.decodeList()
+
+    // Opération d'achat liée à un article (fiche du matériel : « Achat enregistré le … »)
+    suspend fun ecritureParId(id: String): Ecriture? =
+        if (demo) Demo.ecritures().firstOrNull { it.id == id }
+        else client.from("transactions").select { filter { eq("id", id) } }.decodeList<Ecriture>().firstOrNull()
 
     suspend fun mouvementsMateriel(id: String): List<MouvementMateriel> =
         if (demo) Demo.mouvements.filter { it.materielId == id }.reversed()
