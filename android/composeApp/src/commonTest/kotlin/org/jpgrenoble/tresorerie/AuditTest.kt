@@ -263,4 +263,42 @@ class AuditTest {
             Communique("c", "Important", debut = "2026-08-01", priorite = "haute"))
         assertEquals(listOf("c", "b", "a"), ordreCommuniques(l).map { it.id })
     }
+
+    // Partages : un sondage se contrôle et se compte comme dans la base (repondre_sondage, calcul_resultats)
+    @Test fun sondageControleEtResultats() {
+        val c = Communique("s1", "Sortie", debut = "2026-10-01", genre = "sondage", questions = listOf(
+            QuestionSondage("q1", "Quel samedi ?", "unique", listOf("7", "14")),
+            QuestionSondage("q2", "Activités", "multiple", listOf("Bowling", "Musée")),
+            QuestionSondage("q3", "Remarque", "texte", obligatoire = false)))
+        fun j(vararg v: Pair<String, Any>) = kotlinx.serialization.json.JsonObject(v.associate { (k, x) -> k to (if (x is List<*>) kotlinx.serialization.json.JsonArray(x.map { kotlinx.serialization.json.JsonPrimitive(it as String) }) else kotlinx.serialization.json.JsonPrimitive(x as String)) })
+        assertEquals("Merci de répondre à : Activités", assertFailsWith<IllegalStateException> { controlerReponses(c, j("q1" to "7")) }.message)
+        assertEquals("Choix inconnu", assertFailsWith<IllegalStateException> { controlerReponses(c, j("q1" to "21", "q2" to listOf("Bowling"))) }.message)
+        val propre = controlerReponses(c, j("q1" to "14", "q2" to listOf("Bowling", "Musée"), "q3" to "  Bien  "))
+        assertEquals(listOf("Bien"), propre.reponseA("q3"))
+        val toutes = listOf(ReponseSondage("s1", "m1", propre), ReponseSondage("s1", "m2", controlerReponses(c, j("q1" to "7", "q2" to listOf("Musée")))))
+        val membres = listOf(Membre("m1", "Daniel", "Kouassi", 1, 1), Membre("m2", "Ruth", "Abena", 2, 2))
+        val r = calculResultats(c, toutes, false, membres)
+        assertEquals(2, r.nb); assertEquals(mapOf("7" to 1, "14" to 1), r.questions[0].comptes); assertEquals(mapOf("Bowling" to 1, "Musée" to 2), r.questions[1].comptes)
+        assertNull(r.questions[2].textes); assertNull(r.repondants)                       // un membre ne voit ni les textes ni les noms
+        val b = calculResultats(c, toutes, true, membres)
+        assertEquals(listOf("Bien"), b.questions[2].textes); assertEquals(listOf("Abena", "Kouassi"), b.repondants!!.map { it.nom })
+        assertNull(calculResultats(c.copy(anonyme = true), toutes, true, membres).repondants)  // sondage anonyme : pas de noms, même pour le bureau
+    }
+
+    @Test fun libellesDesLiens() {
+        assertEquals("Ouvrir le Drive", libelleLien("https://drive.google.com/drive/folders/abc"))
+        assertEquals("Répondre au formulaire", libelleLien("https://forms.gle/xyz"))
+        assertEquals("Répondre au formulaire", libelleLien("https://docs.google.com/forms/d/e/1/viewform"))
+        assertEquals("Voir la vidéo", libelleLien("https://youtu.be/abc"))
+        assertEquals("Ouvrir le lien", libelleLien("https://www.exemple.fr/page"))
+        assertEquals("exemple.fr", hoteDe("https://www.exemple.fr/page"))
+    }
+
+    @Test fun publicationEnvoieSonGenre() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val t = json.encodeToString(NouveauCommunique.serializer(), NouveauCommunique("Annonce", debut = "2026-10-12"))
+        assertTrue("\"genre\":\"annonce\"" in t && "\"photos\":[]" in t && "\"questions\":[]" in t && "\"resultats_visibles\":true" in t, t)
+        val q = json.encodeToString(QuestionSondage.serializer(), QuestionSondage("q1", "Oui ?", "unique", listOf("Oui", "Non")))
+        assertTrue("\"obligatoire\":true" in q, q)
+    }
 }

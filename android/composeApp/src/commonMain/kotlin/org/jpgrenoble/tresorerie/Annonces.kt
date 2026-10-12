@@ -197,7 +197,7 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
                                 Text("${j.dayOfMonth}", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, lineHeight = 21.sp) } }
                         is Annonce.Cotisation -> Icon(Icons.Outlined.Payments, null, tint = Color.White)
                         is Annonce.Participations -> Icon(Icons.Outlined.Event, null, tint = Color.White)
-                        is Annonce.Info -> Icon(Icons.Outlined.Campaign, null, tint = Color.White)
+                        is Annonce.Info -> Icon(genreDe(a.c).icone, null, tint = Color.White)
                     }
                 }
                 Column(Modifier.weight(1f)) {
@@ -206,7 +206,8 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
                             listOfNotNull(if (a.e.heureDebut != null) heureFr(a.e.heureDebut) + (a.e.heureFin?.let { " – " + heureFr(it) } ?: "") else "Toute la journée", a.e.lieu).joinToString(" · "))
                         is Annonce.Cotisation -> Triple("Rappel · cotisation", "${euros(a.montant)} en retard", "Touchez pour voir comment régler")
                         is Annonce.Participations -> Triple("Rappel · participation", "${euros(a.dues.sumOf { it.montantAttendu!! - it.donne })} à régler", a.dues.joinToString(", ") { it.nom })
-                        is Annonce.Info -> Triple((if (a.c.priorite == "haute") "Important · " else "") + "Communiqué", a.c.titre, a.c.texte?.lineSequence()?.firstOrNull() ?: "")
+                        is Annonce.Info -> Triple((if (a.c.priorite == "haute") "Important · " else "") + genreDe(a.c).sur, a.c.titre,
+                            a.c.texte?.lineSequence()?.firstOrNull()?.takeIf { it.isNotBlank() } ?: genreDe(a.c).action)
                     }
                     Text(sur, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.92f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(titre, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -241,15 +242,16 @@ fun ordreCommuniques(l: List<Communique>) = l.sortedWith(compareBy<Communique> {
 
 /** Rubrique « Communiqués » de la page des membres : au-dessus du programme, accent bleu, absente sans communiqué (comme rubriqueCommuniques du site). */
 @Composable
-fun RubriqueCommuniques(liste: List<Communique>, onOuvrir: (Communique) -> Unit) {
+fun RubriqueCommuniques(liste: List<Communique>, mesReponses: Map<String, JsonObject> = emptyMap(), onOuvrir: (Communique) -> Unit) {
     val l = ordreCommuniques(communiquesActifs(liste))
     if (l.isEmpty()) return
-    val nouveaux = l.count { !CommuniquesVus.vu(it.id) }
+    val nouveaux = l.count { !CommuniquesVus.vu(it.id) && !aRepondre(it, mesReponses) }
+    val aRep = l.count { aRepondre(it, mesReponses) }
     val bleu = Color(0xFF1B77B0)
-    Rubrique("m-communiques", "Communiqués", if (nouveaux > 0) "$nouveaux nouveau" + (if (nouveaux > 1) "x" else "") else "${l.size}",
-        accent = bleu, icone = Icons.Outlined.Campaign, forcee = nouveaux > 0, halo = nouveaux > 0) {
+    Rubrique("m-communiques", "Communiqués", when { aRep > 0 -> "$aRep sondage" + (if (aRep > 1) "s" else "") + " à répondre"; nouveaux > 0 -> "$nouveaux nouveau" + (if (nouveaux > 1) "x" else ""); else -> "${l.size}" },
+        accent = bleu, icone = Icons.Outlined.Campaign, forcee = nouveaux + aRep > 0, halo = nouveaux + aRep > 0) {
         l.forEach { c ->
-            val nouveau = !CommuniquesVus.vu(c.id)
+            val nouveau = !CommuniquesVus.vu(c.id) && !aRepondre(c, mesReponses)
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOuvrir(c) }.padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                 // Date de publication (le mégaphone n'est que dans le titre de la rubrique), comme le site
@@ -259,13 +261,18 @@ fun RubriqueCommuniques(liste: List<Communique>, onOuvrir: (Communique) -> Unit)
                     Text("${c.debut.substring(8, 10).toInt()}", fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = encre)
                     Text(MOIS_COURTS[c.debut.substring(5, 7).toInt() - 1].uppercase(), fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = encre)
                 }
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(c.titre, fontWeight = FontWeight.SemiBold, color = if (nouveau) Color(0xFF00344F) else Couleurs.Texte, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     c.texte?.lineSequence()?.firstOrNull()?.let { Text(it, fontSize = 14.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                    c.fin?.let { Text("Jusqu’au ${dateFr(it)}", fontSize = 12.sp, color = Couleurs.Texte2) }
+                    if (c.genre == "photos") Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        c.photos.take(4).forEach { PhotoPartage(it, Modifier.size(44.dp).clip(RoundedCornerShape(4.dp))) }
+                    }
+                    if (c.genre == "lien") Text(hoteDe(c.lien), fontSize = 12.sp, color = Couleurs.Texte2)
+                    c.fin?.let { Text((if (c.genre == "sondage") "Répondre avant le " else "Jusqu’au ") + dateFr(it), fontSize = 12.sp, color = Couleurs.Texte2) }
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Color(0xFF410002))
+                    EtiquetteCommunique(c, mesReponses)
                     if (nouveau) Puce("Nouveau", Color(0xFFCDE8F8), Color(0xFF00344F))
                 }
             }
@@ -275,17 +282,24 @@ fun RubriqueCommuniques(liste: List<Communique>, onOuvrir: (Communique) -> Unit)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FeuilleCommunique(c: Communique, onFermer: () -> Unit) {
+fun FeuilleCommunique(c: Communique, maReponse: JsonObject? = null, onRepondu: (JsonObject) -> Unit = {}, onFermer: () -> Unit) {
     LaunchedEffect(c.id) { CommuniquesVus.marquer(c.id) }
+    val g = genreDe(c)
     ModalBottomSheet(onDismissRequest = onFermer) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(c.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Surface(shape = RoundedCornerShape(50), color = Color(0xFFEFEDEC)) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(g.icone, null, Modifier.size(14.dp), tint = Couleurs.Texte2); Text(g.libelle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+                    }
+                }
                 if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Color(0xFF410002))
             }
-            Text("Publié le ${dateFr(c.debut)}" + (c.fin?.let { " · jusqu’au ${dateFr(it)}" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
+            Text(c.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Publié le ${dateFr(c.debut)}" + (c.fin?.let { (if (c.genre == "sondage") " · répondre avant le " else " · jusqu’au ") + dateFr(it) } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
             c.texte?.let { Text(it, fontSize = 15.sp) }
-            Button(onClick = onFermer, modifier = Modifier.align(Alignment.End)) { Text("Fermer") }
+            ContenuCommunique(c, maReponse, onRepondu, onFermer)
+            if (c.genre != "sondage") Button(onClick = onFermer, modifier = Modifier.align(Alignment.End)) { Text("Fermer") }
         }
     }
 }
@@ -302,10 +316,13 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit) {
     var edition by remember { mutableStateOf<Communique?>(null) }
     var nouveau by remember { mutableStateOf(false) }
     var lu by remember { mutableStateOf<Communique?>(null) }
+    var resultats by remember { mutableStateOf<Communique?>(null) }
+    var nbRep by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val scope = rememberCoroutineScope()
     val supprimer = rememberSuppression(message) { version++ }
     LaunchedEffect(version, Synchro.version) {
         try { liste = Repo.communiques(); regles = reglesBanniere(Repo.texteReglage("banniere")) } catch (e: Exception) { message(traduireErreur(e)) }
+        if (gere) nbRep = try { Repo.nbReponses() } catch (_: Exception) { emptyMap() }
         EtatNouveautes.vu("communiques")
     }
     val auj = aujourdhui().toString()
@@ -313,18 +330,19 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit) {
         item {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Communiqués", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    if (gere) Button(onClick = { nouveau = true }) { Text("Nouveau") }
+                    Text("Communiqués et partages", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    if (gere) Button(onClick = { nouveau = true }) { Text("Publier") }
                 }
-                Text("Un communiqué s’affiche sur la bannière des membres pendant sa période, et chacun reçoit une notification.", fontSize = 13.sp, color = Couleurs.Texte2)
+                Text("Annonce, sondage ou questionnaire, photos, lien (Drive, formulaire, vidéo) : chaque publication s’affiche sur la page des membres et sur leur bannière pendant sa période, et chacun reçoit une notification.", fontSize = 13.sp, color = Couleurs.Texte2)
                 if (liste.isEmpty()) Text("Aucun communiqué pour l’instant.", color = Couleurs.Texte2)
                 liste.forEach { c ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { if (gere) edition = c else lu = c }.padding(vertical = 8.dp),
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { if (gere && c.genre == "sondage") resultats = c else if (gere) edition = c else lu = c }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.size(40.dp).background(Color(0xFFE3F1FB), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Campaign, null, tint = Color(0xFF1B77B0)) }
+                        Box(Modifier.size(40.dp).background(Color(0xFFE3F1FB), CircleShape), contentAlignment = Alignment.Center) { Icon(genreDe(c).icone, null, tint = Color(0xFF1B77B0)) }
                         Column(Modifier.weight(1f)) {
                             Text(c.titre, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text((when { c.debut > auj -> "À partir du ${dateFr(c.debut)}"; c.fin != null && c.fin < auj -> "Terminé"; c.fin != null -> "Jusqu’au ${dateFr(c.fin)}"; else -> "En cours" }) +
+                            Text(genreDe(c).libelle + " · " + (when { c.debut > auj -> "À partir du ${dateFr(c.debut)}"; c.fin != null && c.fin < auj -> "Terminé"; c.fin != null -> "Jusqu’au ${dateFr(c.fin)}"; else -> "En cours" }) +
+                                (if (c.genre == "sondage") " · ${nbRep[c.id] ?: 0} réponse" + (if ((nbRep[c.id] ?: 0) > 1) "s" else "") else "") +
                                 (if (c.visible) "" else " · bureau seulement"), fontSize = 13.sp, color = Couleurs.Texte2)
                         }
                         when (c.priorite) { "haute" -> Puce("Important", Couleurs.ErreurClair, Color(0xFF410002)); "basse" -> Puce("Discret", Color(0xFFEFEDEC), Couleurs.Texte2); else -> Puce("Normal", Color(0xFFEFEDEC), Couleurs.Texte2) }
@@ -357,35 +375,122 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit) {
     if (nouveau || edition != null) EditionCommunique(edition, onSupprimer = edition?.let { c -> { edition = null; supprimer("communiques", c.id, c.titre) } }, message = message,
         onFini = { nouveau = false; edition = null; version++ }) { nouveau = false; edition = null }
     lu?.let { FeuilleCommunique(it) { lu = null } }
+    resultats?.let { c -> FeuilleResultatsSondage(c, message, onModifier = { resultats = null; edition = c }) { resultats = null } }
 }
 
 @Composable
 private fun EditionCommunique(c: Communique?, onSupprimer: (() -> Unit)?, message: (String) -> Unit, onFini: () -> Unit, onAnnuler: () -> Unit) {
+    var genre by remember { mutableStateOf(c?.genre ?: "annonce") }
     var titre by remember { mutableStateOf(c?.titre ?: "") }
     var texte by remember { mutableStateOf(c?.texte ?: "") }
     var debut by remember { mutableStateOf(dateFr(c?.debut ?: aujourdhui().toString())) }
     var fin by remember { mutableStateOf(c?.fin?.let { dateFr(it) } ?: "") }
     var priorite by remember { mutableStateOf(c?.priorite ?: "normale") }
     var visible by remember { mutableStateOf(c?.visible ?: true) }
+    // Sondage : questions (intitulé, type, choix un par ligne, obligatoire)
+    data class QEd(val id: String, val intitule: String, val type: String, val choix: String, val obligatoire: Boolean)
+    val questions = remember { mutableStateListOf<QEd>().apply {
+        addAll((c?.questions ?: emptyList()).map { QEd(it.id, it.intitule, it.type, it.choix.joinToString("\n"), it.obligatoire) })
+        if (isEmpty()) add(QEd("q1", "", "unique", "", true)) } }
+    var anonyme by remember { mutableStateOf(c?.anonyme ?: false) }
+    var resultatsVisibles by remember { mutableStateOf(c?.resultatsVisibles ?: true) }
+    // Photos : déjà enregistrées (chemins) et nouvelles (à envoyer)
+    val photos = remember { mutableStateListOf<String>().apply { addAll(c?.photos ?: emptyList()) } }
+    val nouvelles = remember { mutableStateListOf<Fichier>() }
+    var lien by remember { mutableStateOf(c?.lien ?: "") }
+    var envoi by remember { mutableStateOf<String?>(null) }
+    val choixPhotos = rememberChoixPhotos { l, err -> err?.let(message); nouvelles.addAll(l.take(30 - photos.size - nouvelles.size)) }
     val scope = rememberCoroutineScope()
     val dDebut = dateDepuisFr(debut); val dFin = if (fin.isBlank()) null else dateDepuisFr(fin)
-    val valide = titre.trim().length >= 2 && dDebut != null && (fin.isBlank() || (dFin != null && dFin >= dDebut))
-    DialogueSimple(if (c == null) "Nouveau communiqué" else "Modifier le communiqué", if (c == null) "Publier" else "Enregistrer", valide, onAnnuler, {
+    val qsPropres = questions.map { q -> QuestionSondage(q.id, q.intitule.trim(), q.type, if (q.type == "texte") emptyList() else q.choix.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct(), q.obligatoire) }
+    val contenuValide = when (genre) {
+        "sondage" -> qsPropres.isNotEmpty() && qsPropres.all { it.intitule.isNotEmpty() && (it.type == "texte" || it.choix.size >= 2) }
+        "photos" -> photos.size + nouvelles.size >= 1
+        "lien" -> Regex("^https?://\\S+\\.\\S+", RegexOption.IGNORE_CASE).containsMatchIn(lien.trim())
+        else -> true
+    }
+    val valide = envoi == null && titre.trim().length >= 2 && dDebut != null && (fin.isBlank() || (dFin != null && dFin >= dDebut)) && contenuValide
+    val titres = mapOf("annonce" to "une annonce", "sondage" to "un sondage", "photos" to "des photos", "lien" to "un lien")
+    DialogueSimple((if (c == null) "Publier " else "Modifier ") + titres[genre], if (c == null) "Publier" else "Enregistrer", valide, onAnnuler, {
         scope.launch {
-            try { Repo.enregistrerCommunique(c?.id, NouveauCommunique(titre.trim(), texte.trim().ifBlank { null }, dDebut!!.toString(), dFin?.toString(), priorite, visible)); message(if (c == null) "Communiqué publié" else "Communiqué modifié"); onFini() }
-            catch (e: Exception) { message(traduireErreur(e)) }
+            try {
+                val chemins = photos.toMutableList()
+                if (genre == "photos") nouvelles.forEachIndexed { k, f -> envoi = "Envoi des photos ${k + 1} / ${nouvelles.size}…"; chemins += Repo.envoyerPhotoPartage(f) }
+                Repo.enregistrerCommunique(c?.id, NouveauCommunique(titre.trim(), texte.trim().ifBlank { null }, dDebut!!.toString(), dFin?.toString(), priorite, visible,
+                    genre = genre, lien = if (genre == "lien") lien.trim() else null, photos = if (genre == "photos") chemins else emptyList(),
+                    questions = if (genre == "sondage") qsPropres else emptyList(), anonyme = genre == "sondage" && anonyme, resultatsVisibles = resultatsVisibles))
+                message(if (c == null) "Publié : les membres sont prévenus" else "Publication modifiée"); onFini()
+            } catch (e: Exception) { envoi = null; message(traduireErreur(e)) }
         }
     }) {
+        if (c == null) {
+            @OptIn(ExperimentalMaterial3Api::class)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                GENRES_COMMUNIQUE.entries.forEachIndexed { k, (cle, g) ->
+                    SegmentedButton(selected = genre == cle, onClick = { genre = cle }, shape = SegmentedButtonDefaults.itemShape(k, GENRES_COMMUNIQUE.size),
+                        icon = {}) { Text(g.libelle, fontSize = 12.sp, maxLines = 1) }
+                }
+            }
+        }
         OutlinedTextField(titre, { titre = it.take(120) }, label = { Text("Titre *") }, placeholder = { Text("Assemblée générale le 15 novembre") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(texte, { texte = it.take(1500) }, label = { Text("Texte") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(texte, { texte = it.take(1500) }, label = { Text("Texte") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+        when (genre) {
+            "sondage" -> {
+                questions.forEachIndexed { k, q ->
+                    Surface(shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE8E3E1)), color = Color.Transparent) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Question ${k + 1}", fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(q.intitule, { questions[k] = q.copy(intitule = it.take(200)) }, placeholder = { Text("Quel samedi vous convient ?") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            val T = listOf("unique" to "Un seul choix", "multiple" to "Plusieurs choix", "texte" to "Réponse libre")
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                PuceMenu(T.first { it.first == q.type }.second, false, T.map { it.second }) { n -> questions[k] = q.copy(type = T[n].first) }
+                                Checkbox(q.obligatoire, { questions[k] = q.copy(obligatoire = it) }); Text("Obligatoire", fontSize = 14.sp)
+                            }
+                            if (q.type != "texte") OutlinedTextField(q.choix, { questions[k] = q.copy(choix = it) }, label = { Text("Choix, un par ligne") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                            if (questions.size > 1) TextButton(onClick = { questions.removeAt(k) }) { Text("Retirer la question") }
+                        }
+                    }
+                }
+                if (questions.size < 20) OutlinedButton(onClick = { questions += QEd("q" + ((questions.maxOfOrNull { it.id.drop(1).toIntOrNull() ?: 0 } ?: 0) + 1), "", "unique", "", true) }) { Text("Ajouter une question") }
+                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(anonyme, { anonyme = it }); Text("Réponses anonymes (le bureau voit les totaux, pas les noms)", fontSize = 14.sp) }
+                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(resultatsVisibles, { resultatsVisibles = it }); Text("Montrer les résultats aux membres après leur réponse", fontSize = 14.sp) }
+            }
+            "photos" -> {
+                val toutes = photos.map { it to null as Fichier? } + nouvelles.map { "" to it }
+                toutes.chunked(3).forEachIndexed { ligne, l ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        l.forEachIndexed { k, (ch, f) ->
+                            val index = ligne * 3 + k
+                            Box(Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(6.dp))) {
+                                if (f == null) PhotoPartage(ch, Modifier.fillMaxSize())
+                                else imageDepuisOctets(f.octets)?.let { androidx.compose.foundation.Image(it, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+                                IconButton(onClick = { if (index < photos.size) photos.removeAt(index) else nouvelles.removeAt(index - photos.size) },
+                                    modifier = Modifier.align(Alignment.TopEnd).size(32.dp).padding(4.dp).background(Color.Black.copy(alpha = 0.55f), CircleShape)) {
+                                    Icon(Icons.Outlined.Close, "Retirer la photo", tint = Color.White, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                        repeat(3 - l.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                if (photos.size + nouvelles.size < 30) OutlinedButton(onClick = choixPhotos) { Icon(Icons.Outlined.AddAPhoto, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Ajouter des photos") }
+                Text("${photos.size + nouvelles.size} / 30 photos · réduites automatiquement pour les téléphones. Pour un grand album, publiez plutôt un lien vers le Drive.", fontSize = 13.sp, color = Couleurs.Texte2)
+            }
+            "lien" -> {
+                OutlinedTextField(lien, { lien = it.take(1000) }, label = { Text("Adresse du lien *") }, placeholder = { Text("https://drive.google.com/…") }, singleLine = true,
+                    isError = lien.isNotBlank() && !contenuValide, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
+                Text("Dossier Drive, album photo, formulaire, vidéo… Vérifiez que le partage est ouvert « à toute personne disposant du lien ».", fontSize = 13.sp, color = Couleurs.Texte2)
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(debut, { debut = it }, label = { Text("À partir du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDebut == null, modifier = Modifier.weight(1f))
-            OutlinedTextField(fin, { fin = it }, label = { Text("Jusqu’au") }, placeholder = { Text("facultatif") }, singleLine = true, isError = fin.isNotBlank() && (dFin == null || (dDebut != null && dFin < dDebut)), modifier = Modifier.weight(1f))
+            OutlinedTextField(fin, { fin = it }, label = { Text(if (genre == "sondage") "Réponses jusqu’au" else "Jusqu’au") }, placeholder = { Text("facultatif") }, singleLine = true, isError = fin.isNotBlank() && (dFin == null || (dDebut != null && dFin < dDebut)), modifier = Modifier.weight(1f))
         }
         val P = listOf("haute" to "Important (en premier)", "normale" to "Normal", "basse" to "Discret")
         Text("Priorité", fontWeight = FontWeight.SemiBold)
         PuceMenu(P.first { it.first == priorite }.second, false, P.map { it.second }) { priorite = P[it].first }
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(visible, { visible = it }); Text("Visible par tous les membres (sinon bureau seulement)", fontSize = 14.sp) }
+        envoi?.let { Text(it, fontSize = 13.sp, color = Couleurs.Texte2) }
         onSupprimer?.let { BoutonSupprimer(it) }
     }
 }

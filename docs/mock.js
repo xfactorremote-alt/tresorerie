@@ -192,6 +192,19 @@ function seed() {
       communiques: [
         { id: 'cq1', titre: 'Assemblée générale le 15 novembre', texte: 'Tous les membres sont attendus à 15 h, salle paroissiale. Ordre du jour : bilan de l’année, budget, élection du bureau.', debut: iso(ilYa(1)), fin: null, priorite: 'haute', visible_adherents: true, created_by: ids.t, created_at: ilYa(1).toISOString() },
         { id: 'cq2', titre: 'Réunion du bureau jeudi', texte: 'Préparation de l’assemblée générale.', debut: iso(ilYa(2)), fin: null, priorite: 'normale', visible_adherents: false, created_by: ids.p, created_at: ilYa(2).toISOString() },
+        { id: 'cq3', genre: 'sondage', titre: 'Sortie de novembre : votre avis', texte: 'Aidez-nous à choisir la date et l’activité.', debut: iso(ilYa(0)), fin: dansJours(6), priorite: 'normale', visible_adherents: true, anonyme: false, resultats_visibles: true,
+          questions: [{ id: 'q1', intitule: 'Quel samedi vous convient ?', type: 'unique', choix: ['7 novembre', '14 novembre', '21 novembre'], obligatoire: true },
+            { id: 'q2', intitule: 'Quelles activités ?', type: 'multiple', choix: ['Bowling', 'Pique-nique', 'Musée', 'Randonnée'], obligatoire: true },
+            { id: 'q3', intitule: 'Une idée, une remarque ?', type: 'texte', obligatoire: false }], created_by: ids.p, created_at: new Date().toISOString() },
+        { id: 'cq4', genre: 'photos', titre: 'Photos du concert de rentrée', texte: 'Merci à tous pour ce beau moment !', debut: iso(ilYa(3)), fin: null, priorite: 'normale', visible_adherents: true,
+          photos: ['demo/photo1.jpg', 'demo/photo2.jpg', 'demo/photo3.jpg', 'demo/photo4.jpg'], created_by: ids.b, created_at: ilYa(3).toISOString() },
+        { id: 'cq5', genre: 'lien', titre: 'Partitions de la chorale', texte: 'Toutes les partitions du trimestre sont dans le Drive.', debut: iso(ilYa(5)), fin: null, priorite: 'basse', visible_adherents: true,
+          lien: 'https://drive.google.com/drive/folders/demonstration', created_by: ids.b, created_at: ilYa(5).toISOString() },
+      ],
+      reponses_sondage: [
+        { id: 'rs1', communique_id: 'cq3', member_id: 'm1', reponses: { q1: '14 novembre', q2: ['Bowling', 'Pique-nique'] }, cree_le: new Date().toISOString(), modifie_le: new Date().toISOString() },
+        { id: 'rs2', communique_id: 'cq3', member_id: 'm2', reponses: { q1: '14 novembre', q2: ['Musée'], q3: 'Pourquoi pas le musée dauphinois ?' }, cree_le: new Date().toISOString(), modifie_le: new Date().toISOString() },
+        { id: 'rs3', communique_id: 'cq3', member_id: 'm3', reponses: { q1: '7 novembre', q2: ['Pique-nique', 'Randonnée'] }, cree_le: new Date().toISOString(), modifie_le: new Date().toISOString() },
       ],
       settings: [
         { cle: 'banniere', valeur: null, texte: JSON.stringify({ rotation: 8, rdv: { priorite: 1, frequence: 'toujours' }, cotisation: { priorite: 2, frequence: 'toujours' }, participation: { priorite: 2, frequence: 'toujours' }, communique: { priorite: 1, frequence: 'toujours' } }) },
@@ -203,6 +216,19 @@ function seed() {
       projects, budgets, attachments, reconciliations: [rec0], tiers, collectes, collecte_membres: [],
       liens_membres: [{ member_id: 'm0', jeton: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', code: 'k7qp2xyz9abc', cree_par: ids.t, cree_le: ilYa(2).toISOString(), nb_consultations: 3, derniere_consultation: ilYa(1).toISOString() }], materiel, materiel_mouvements,
     },
+  };
+}
+
+// Résultats d'un sondage (comme calcul_resultats de la base) : comptes par choix ; pour le bureau, réponses écrites et répondants
+function calculResultats(t, c, bureau) {
+  const rep = t.reponses_sondage.filter((r) => r.communique_id === c.id);
+  return {
+    nb: rep.length,
+    questions: (c.questions || []).map((q) => ({ id: q.id,
+      comptes: Object.fromEntries((q.choix || []).map((ch) => [ch, rep.filter((r) => r.reponses[q.id] === ch || (Array.isArray(r.reponses[q.id]) && r.reponses[q.id].includes(ch))).length])),
+      textes: bureau && q.type === 'texte' ? rep.filter((r) => r.reponses[q.id]).map((r) => r.reponses[q.id]) : null })),
+    repondants: bureau && !c.anonyme ? rep.map((r) => { const m = t.members.find((x) => x.id === r.member_id) || {}; return { prenom: m.prenom, nom: m.nom, reponses: r.reponses, le: r.modifie_le }; })
+      .sort((a, b) => `${a.nom}${a.prenom}`.localeCompare(`${b.nom}${b.prenom}`)) : null,
   };
 }
 
@@ -419,6 +445,7 @@ export function createMockClient() {
         collecte_membres: finances || d.has('gerer_cotisations') || d.has('gerer_activites') || d.has('saisir_ecritures'),
         materiel: finances || d.has('gerer_materiel') || d.has('voir_membres'), materiel_mouvements: finances || d.has('gerer_materiel') || d.has('voir_membres'),
         liens_membres: d.has('gerer_membres') || d.has('gerer_cotisations'),
+        reponses_sondage: d.has('gerer_activites') || d.has('administrer'),
       };
       if (nom === 'corbeille') return t.corbeille.filter((c) => c.supprime_par === db.moi() || d.has('administrer') || finances);
       if (nom in regles && !regles[nom]) return [];
@@ -451,6 +478,38 @@ export function createMockClient() {
     from: (table) => new Requete(db, table),
     async rpc(nom, args = {}) {
       const t = tables;
+      // Sondages : mêmes règles que repondre_sondage / resultats_sondage / mes_reponses de la base
+      const membreAppelant = (jeton) => {
+        if (jeton) { const v = String(jeton); return t.liens_membres.find((x) => (v.length === 32 && x.jeton === v) || (v.length === 12 && x.code === v.toLowerCase()))?.member_id || null; }
+        return t.profiles.find((x) => x.id === db.moi())?.member_id || null;
+      };
+      if (nom === 'mes_reponses') { const mid = membreAppelant(args.p_jeton); return ok(Object.fromEntries(t.reponses_sondage.filter((r) => r.member_id === mid).map((r) => [r.communique_id, r.reponses]))); }
+      if (nom === 'resultats_sondage') {
+        const c = t.communiques.find((x) => x.id === args.p_communique && x.genre === 'sondage'); if (!c) return ok(null);
+        const d = db.droits(); if (d.has('gerer_activites') || d.has('administrer')) return ok(calculResultats(t, c, true));
+        const mid = membreAppelant(args.p_jeton);
+        if (!mid || !c.visible_adherents || c.resultats_visibles === false || !t.reponses_sondage.some((r) => r.communique_id === c.id && r.member_id === mid)) return ok(null);
+        return ok(calculResultats(t, c, false));
+      }
+      if (nom === 'repondre_sondage') {
+        const mid = membreAppelant(args.p_jeton); if (!mid) return ko('Lien ou compte non reconnu');
+        const c = t.communiques.find((x) => x.id === args.p_communique && x.genre === 'sondage' && x.visible_adherents); if (!c) return ko('Sondage introuvable');
+        if (c.debut > iso(new Date()) || (c.fin && c.fin < iso(new Date()))) return ko('Ce sondage est clos');
+        const propre = {};
+        for (const q of c.questions || []) {
+          let v = (args.p_reponses || {})[q.id];
+          if (q.type === 'texte') v = typeof v === 'string' && v.trim() ? v.trim().slice(0, 1000) : undefined;
+          else if (q.type === 'multiple') { v = Array.isArray(v) && v.length ? v : undefined; if (v && v.some((x) => !q.choix.includes(x))) return ko('Choix inconnu'); }
+          else { v = typeof v === 'string' ? v : undefined; if (v !== undefined && !q.choix.includes(v)) return ko('Choix inconnu'); }
+          if (v === undefined && q.obligatoire !== false) return ko('Merci de répondre à : ' + q.intitule);
+          if (v !== undefined) propre[q.id] = v;
+        }
+        const ex = t.reponses_sondage.find((r) => r.communique_id === c.id && r.member_id === mid);
+        if (ex) Object.assign(ex, { reponses: propre, modifie_le: new Date().toISOString() });
+        else t.reponses_sondage.push({ id: 'rs' + Date.now(), communique_id: c.id, member_id: mid, reponses: propre, cree_le: new Date().toISOString(), modifie_le: new Date().toISOString() });
+        db.emettre('reponses_sondage');
+        return ok(c.resultats_visibles === false ? null : calculResultats(t, c, false));
+      }
       if (nom === 'situation_par_lien') {
         // Même règle que la base : jeton de 32 caractères (anciens liens) ou code de 12 caractères
         const v = String(args.p_jeton || '');
@@ -472,7 +531,12 @@ export function createMockClient() {
           participations: t.collectes.filter((c) => c.tous_membres || t.collecte_membres.some((x) => x.collecte_id === c.id && x.member_id === m.id)).map((c) => ({
             nom: c.nom, montant_attendu: c.montant_attendu, date_limite: c.date_limite, cloturee: c.cloturee,
             donne: t.transactions.filter((x) => x.collecte_id === c.id && x.member_id === m.id).reduce((s, x) => s + Number(x.montant), 0) })).filter((c) => !c.cloturee || c.donne !== 0),
-          communiques: t.communiques.filter((c) => c.visible_adherents && c.debut <= iso(new Date()) && (!c.fin || c.fin >= iso(new Date()))).map(({ id, titre, texte, priorite, debut, fin }) => ({ id, titre, texte, priorite, debut, fin })),
+          communiques: t.communiques.filter((c) => c.visible_adherents && c.debut <= iso(new Date()) && (!c.fin || c.fin >= iso(new Date()))).map((c) => {
+            const mienne = t.reponses_sondage.find((r) => r.communique_id === c.id && r.member_id === m.id);
+            return { id: c.id, titre: c.titre, texte: c.texte, priorite: c.priorite, debut: c.debut, fin: c.fin, genre: c.genre || 'annonce', lien: c.lien || null, photos: c.photos || [],
+              questions: c.questions || [], anonyme: !!c.anonyme, resultats_visibles: c.resultats_visibles !== false, ma_reponse: mienne?.reponses || null,
+              resultats: c.genre === 'sondage' && c.resultats_visibles !== false && mienne ? calculResultats(t, c, false) : null };
+          }),
           banniere: reg('banniere')?.texte || null,
           a_venir: t.projects.filter((p) => p.visible_adherents && p.date_debut && (p.date_fin || p.date_debut) >= iso(new Date()) && p.date_debut <= dansJours(366))
             .sort((a, b) => (a.date_debut > b.date_debut ? 1 : -1)).slice(0, 60),
@@ -767,7 +831,7 @@ export function createMockClient() {
         async upload(chemin, blob) { fichiers[bucket + '/' + chemin] = URL.createObjectURL(blob); return ok({ path: chemin }); },
         async createSignedUrls(chemins) { return ok(chemins.map((p) => ({ path: p, signedUrl: fichiers[bucket + '/' + p] || null }))); },
         async createSignedUrl(chemin) { return ok({ signedUrl: fichiers[bucket + '/' + chemin] || DOC_DEMO }); },
-        getPublicUrl(chemin) { return { data: { publicUrl: fichiers[bucket + '/' + chemin] || 'logo.jpg' } }; },
+        getPublicUrl(chemin) { return { data: { publicUrl: fichiers[bucket + '/' + chemin] || (String(chemin).startsWith('demo/') ? chemin : 'logo.jpg') } }; },
         async download(chemin) { const r = await fetch(fichiers[bucket + '/' + chemin] || DOC_DEMO); return ok(await r.blob()); },
       }),
     },

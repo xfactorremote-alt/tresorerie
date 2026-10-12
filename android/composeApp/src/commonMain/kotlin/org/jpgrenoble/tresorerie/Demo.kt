@@ -279,7 +279,47 @@ object Demo {
         Communique("cq1", "Assemblée générale le 15 novembre", "Tous les membres sont attendus à 15 h, salle paroissiale. Ordre du jour : bilan de l’année, budget, élection du bureau.",
             ilYa(1), null, "haute", true, "u-t", ilYa(1) + "T10:00:00Z"),
         Communique("cq2", "Réunion du bureau jeudi", "Préparation de l’assemblée générale.", ilYa(2), null, "normale", false, "u-p", ilYa(2) + "T10:00:00Z"),
+        Communique("cq3", "Sortie de novembre : votre avis", "Aidez-nous à choisir la date et l’activité.", ilYa(0), ilYa(-6), "normale", true, "u-p", maintenant(),
+            genre = "sondage", questions = listOf(
+                QuestionSondage("q1", "Quel samedi vous convient ?", "unique", listOf("7 novembre", "14 novembre", "21 novembre")),
+                QuestionSondage("q2", "Quelles activités ?", "multiple", listOf("Bowling", "Pique-nique", "Musée", "Randonnée")),
+                QuestionSondage("q3", "Une idée, une remarque ?", "texte", obligatoire = false))),
+        Communique("cq4", "Photos du concert de rentrée", "Merci à tous pour ce beau moment !", ilYa(3), null, "normale", true, "u-b", ilYa(3) + "T10:00:00Z",
+            genre = "photos", photos = listOf("demo/photo1.jpg", "demo/photo2.jpg", "demo/photo3.jpg", "demo/photo4.jpg")),
+        Communique("cq5", "Partitions de la chorale", "Toutes les partitions du trimestre sont dans le Drive.", ilYa(5), null, "basse", true, "u-b", ilYa(5) + "T10:00:00Z",
+            genre = "lien", lien = "https://drive.google.com/drive/folders/demonstration"),
     )
+    // Réponses aux sondages (mêmes règles que repondre_sondage de la base)
+    val reponsesSondage = mutableListOf(
+        ReponseSondage("cq3", "m1", rep("q1" to "14 novembre", "q2" to listOf("Bowling", "Pique-nique")), maintenant()),
+        ReponseSondage("cq3", "m2", rep("q1" to "14 novembre", "q2" to listOf("Musée"), "q3" to "Pourquoi pas le musée dauphinois ?"), maintenant()),
+        ReponseSondage("cq3", "m3", rep("q1" to "7 novembre", "q2" to listOf("Pique-nique", "Randonnée")), maintenant()),
+    )
+    private fun rep(vararg v: Pair<String, Any>) = kotlinx.serialization.json.JsonObject(v.associate { (k, x) ->
+        k to (if (x is List<*>) kotlinx.serialization.json.JsonArray(x.map { kotlinx.serialization.json.JsonPrimitive(it as String) }) else kotlinx.serialization.json.JsonPrimitive(x as String)) })
+    fun mesReponses(profil: Profil?): Map<String, kotlinx.serialization.json.JsonObject> {
+        val mid = actuel(profil)?.memberId ?: return emptyMap()
+        return reponsesSondage.filter { it.memberId == mid }.associate { it.communiqueId to it.reponses }
+    }
+    fun resultatsSondage(id: String, profil: Profil?): ResultatsSondage? {
+        val c = communiques.firstOrNull { it.id == id && it.genre == "sondage" } ?: return null
+        val d = droitsDe(profil)
+        if ("gerer_activites" in d || "administrer" in d) return calculResultats(c, reponsesSondage, true, membres)
+        val mid = actuel(profil)?.memberId ?: return null
+        if (!c.visible || !c.resultatsVisibles || reponsesSondage.none { it.communiqueId == id && it.memberId == mid }) return null
+        return calculResultats(c, reponsesSondage, false, membres)
+    }
+    fun repondreSondage(id: String, reponses: kotlinx.serialization.json.JsonObject, profil: Profil?): ResultatsSondage? {
+        val mid = actuel(profil)?.memberId ?: throw IllegalStateException("Lien ou compte non reconnu")
+        val c = communiques.firstOrNull { it.id == id && it.genre == "sondage" && it.visible } ?: throw IllegalStateException("Sondage introuvable")
+        val auj = aujourdhui().toString()
+        if (c.debut > auj || (c.fin != null && c.fin < auj)) throw IllegalStateException("Ce sondage est clos")
+        val propre = controlerReponses(c, reponses)
+        reponsesSondage.removeAll { it.communiqueId == id && it.memberId == mid }
+        reponsesSondage += ReponseSondage(id, mid, propre, maintenant())
+        return if (c.resultatsVisibles) calculResultats(c, reponsesSondage, false, membres) else null
+    }
+    fun nbReponses(): Map<String, Int> = reponsesSondage.groupingBy { it.communiqueId }.eachCount()
     fun communiquesVisibles(profil: Profil?): List<Communique> {
         val d = droitsDe(profil)
         if (actuel(profil) == null) return emptyList()
@@ -289,8 +329,14 @@ object Demo {
         exiger(profil, "gerer_activites", "administrer")
         if (c.titre.trim().length < 2) throw IllegalStateException("Titre trop court")
         if (c.fin != null && c.fin < c.debut) throw IllegalStateException("violates check constraint : fin avant début")
-        if (id == null) communiques += Communique("cq${compteur++}", c.titre.trim(), c.texte, c.debut, c.fin, c.priorite, c.visible, profil?.id, maintenant())
-        else { val i = communiques.indexOfFirst { it.id == id }; if (i >= 0) communiques[i] = communiques[i].copy(titre = c.titre.trim(), texte = c.texte, debut = c.debut, fin = c.fin, priorite = c.priorite, visible = c.visible) }
+        // Mêmes contraintes que la base (communiques_contenu_check, communiques_lien_check)
+        if (c.genre == "sondage" && c.questions.isEmpty()) throw IllegalStateException("violates check constraint : sondage sans question")
+        if (c.genre == "photos" && c.photos.isEmpty()) throw IllegalStateException("violates check constraint : aucune photo")
+        if (c.genre == "lien" && (c.lien == null || !Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(c.lien))) throw IllegalStateException("violates check constraint : lien invalide")
+        if (id == null) communiques += Communique("cq${compteur++}", c.titre.trim(), c.texte, c.debut, c.fin, c.priorite, c.visible, profil?.id, maintenant(),
+            c.genre, c.lien, c.photos, c.questions, c.anonyme, c.resultatsVisibles)
+        else { val i = communiques.indexOfFirst { it.id == id }; if (i >= 0) communiques[i] = communiques[i].copy(titre = c.titre.trim(), texte = c.texte, debut = c.debut, fin = c.fin, priorite = c.priorite, visible = c.visible,
+            genre = c.genre, lien = c.lien, photos = c.photos, questions = c.questions, anonyme = c.anonyme, resultatsVisibles = c.resultatsVisibles) }
     }
     fun majTexte(cle: String, texte: String?, profil: Profil?) { exiger(profil, "administrer"); textes[cle] = texte }
 

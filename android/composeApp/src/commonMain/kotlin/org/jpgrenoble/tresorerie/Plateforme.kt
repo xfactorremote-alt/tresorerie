@@ -19,6 +19,10 @@ expect fun signatureEnPng(traits: List<List<Offset>>, largeur: Int, hauteur: Int
 expect fun rememberChoixFichier(pdfAccepte: Boolean = true, quandChoisi: (Fichier?, String?) -> Unit): () -> Unit
 
 /** Image affichable à partir d'octets (logo, photo, justificatif), ou null si illisible. */
+/** Choix de plusieurs photos d'un coup (publications « Photos ») : chacune réduite à 1600 px en JPEG. */
+@androidx.compose.runtime.Composable
+expect fun rememberChoixPhotos(quandChoisi: (List<Fichier>, String?) -> Unit): () -> Unit
+
 expect fun imageDepuisOctets(octets: ByteArray): androidx.compose.ui.graphics.ImageBitmap?
 
 /** Choix d'un fichier texte (CSV) ; renvoie son contenu. */

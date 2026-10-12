@@ -1067,10 +1067,11 @@ function htmlAnnonce(a) {
       <span class="ann-puce">${icone('activites', 20)}</span>
       <span class="ann-corps"><small>Rappel · participation</small><b>${eur(reste)} à régler</b><span>${esc(a.dues.map((p) => p.nom).join(', '))}</span></span>${icone('suivant', 18)}</div>`;
   }
-  const c = a.c;
+  const c = a.c, g = genreDe(c);
+  const sous = c.genre === 'sondage' && c.ma_reponse ? 'Merci, vous avez répondu' : (c.texte ? c.texte.split('\n')[0] : g.action);
   return `<div class="annonce ann-info ${c.priorite === 'haute' ? 'ann-important' : ''}" data-type="communique" data-communique="${c.id}" tabindex="0" role="button">
-      <span class="ann-puce">${icone('communiques', 20)}</span>
-      <span class="ann-corps"><small>${c.priorite === 'haute' ? 'Important · ' : ''}Communiqué</small><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}</span>${icone('suivant', 18)}</div>`;
+      <span class="ann-puce">${icone(g.icone, 20)}</span>
+      <span class="ann-corps"><small>${c.priorite === 'haute' ? 'Important · ' : ''}${g.sur}</small><b>${esc(c.titre)}</b>${sous ? `<span>${esc(sous)}</span>` : ''}</span>${icone('suivant', 18)}</div>`;
 }
 // Une annonce à la fois, en fondu ; défile seule (sauf « réduire les animations »), se met en pause au survol ou au toucher
 function banniereAnnonces(donnees) {
@@ -1133,6 +1134,112 @@ function brancherAnnonces(ouvrirEvt) {
     ev.stopPropagation(); const e = A.donnees.planning.find((p) => String(p.id) === b.dataset.ics); if (e) telechargerIcs(e);
   }));
 }
+// ---------- Partages avec les membres : annonce, sondage (questionnaire), photos, lien (même liste que la base et Android) ----------
+const GENRES_COMMUNIQUE = {
+  annonce: { libelle: 'Annonce', icone: 'communiques', sur: 'Communiqué', action: '' },
+  sondage: { libelle: 'Sondage', icone: 'sondage', sur: 'Votre avis', action: 'Touchez pour répondre' },
+  photos: { libelle: 'Photos', icone: 'image', sur: 'Photos', action: 'Touchez pour voir' },
+  lien: { libelle: 'Lien', icone: 'lien', sur: 'À voir', action: 'Touchez pour ouvrir' },
+};
+const genreDe = (c) => GENRES_COMMUNIQUE[c?.genre] || GENRES_COMMUNIQUE.annonce;
+const urlPhotoPartage = (chemin) => sb.storage.from('partages').getPublicUrl(chemin).data.publicUrl;
+const hoteDe = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
+// Bouton d'un lien selon le site visé (Drive, formulaire, vidéo…)
+function libelleLien(u) {
+  const h = hoteDe(u), chemin = (() => { try { return new URL(u).pathname; } catch { return ''; } })();
+  if (h === 'forms.gle' || (h === 'docs.google.com' && chemin.startsWith('/forms')) || h.endsWith('forms.office.com')) return 'Répondre au formulaire';
+  if (h === 'drive.google.com' || (h === 'docs.google.com')) return 'Ouvrir le Drive';
+  if (h.includes('photos.google') || h === 'photos.app.goo.gl') return 'Voir l’album';
+  if (h.includes('youtube.com') || h === 'youtu.be') return 'Voir la vidéo';
+  return 'Ouvrir le lien';
+}
+const aRepondre = (c) => c.genre === 'sondage' && !c.ma_reponse;
+// Étiquette d'un communiqué dans la rubrique : ce qu'il demande ou contient
+function etiquetteCommunique(c) {
+  if (c.genre === 'sondage') return c.ma_reponse ? '<span class="puce puce-ok">Répondu</span>' : '<span class="puce puce-a-repondre">À répondre</span>';
+  if (c.genre === 'photos') return `<span class="puce puce-neutre">${(c.photos || []).length} photo${(c.photos || []).length > 1 ? 's' : ''}</span>`;
+  if (c.genre === 'lien') return `<span class="puce puce-neutre">${icone('lien', 14)} Lien</span>`;
+  return '';
+}
+// Résultats d'un sondage : barres par choix (même calcul que calcul_resultats de la base)
+function blocResultats(c, r) {
+  if (!r) return '';
+  const mien = c.ma_reponse || {};
+  return `<div class="resultats"><h3>Résultats <small>${r.nb} réponse${r.nb > 1 ? 's' : ''}</small></h3>${(c.questions || []).map((q, i) => {
+    const rq = (r.questions || []).find((x) => x.id === q.id) || {};
+    if (q.type === 'texte') return `<div class="res-q"><b>${i + 1}. ${esc(q.intitule)}</b>${rq.textes ? (rq.textes.length ? `<ul class="res-textes">${rq.textes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '<p class="muted">Aucune réponse écrite.</p>') : '<p class="muted">Les réponses écrites sont lues par le bureau.</p>'}</div>`;
+    const comptes = rq.comptes || {};
+    const base = q.type === 'multiple' ? r.nb : Object.values(comptes).reduce((t, n) => t + n, 0);
+    return `<div class="res-q"><b>${i + 1}. ${esc(q.intitule)}</b>${(q.choix || []).map((ch) => {
+      const n = comptes[ch] || 0, pct = base ? Math.round((n * 100) / base) : 0;
+      const moi = Array.isArray(mien[q.id]) ? mien[q.id].includes(ch) : mien[q.id] === ch;
+      return `<div class="barre-res ${moi ? 'moi' : ''}"><span class="lib">${esc(ch)}${moi ? ' <small>· votre choix</small>' : ''}</span><span class="val">${pct} % <small>(${n})</small></span><i style="--p:${pct}%"></i></div>`;
+    }).join('')}</div>`;
+  }).join('')}</div>`;
+}
+// Questionnaire : une ou plusieurs questions (un seul choix, plusieurs choix, réponse libre)
+function rendreSondage(c, zone, modifier = false) {
+  const ouvert = !c.fin || c.fin >= aujourdhui();
+  if (c.ma_reponse && !modifier) {
+    zone.innerHTML = `<div class="etat-alertes ok">${icone('valide', 18)}<div><b>Votre réponse est enregistrée</b><span>${c.anonyme ? 'Sondage anonyme : le bureau voit les totaux, pas qui a répondu quoi.' : 'Le bureau voit votre réponse.'}${ouvert && c.fin ? ` Modifiable jusqu’au ${dateFr(c.fin)}.` : ''}</span></div></div>
+      ${c.resultats ? blocResultats(c, c.resultats) : c.resultats_visibles ? '<p class="muted">Chargement des résultats…</p>' : '<p class="muted">Les résultats sont réservés au bureau.</p>'}
+      <div class="actions">${ouvert ? '<button type="button" class="btn-texte" id="b-modif-rep">Modifier ma réponse</button>' : ''}<button type="button" class="btn-primaire" id="b-fermer-s">Fermer</button></div>`;
+    $('#b-fermer-s', zone).addEventListener('click', fermerFeuille);
+    $('#b-modif-rep', zone)?.addEventListener('click', () => rendreSondage(c, zone, true));
+    if (!c.resultats && c.resultats_visibles) q(sb.rpc('resultats_sondage', { p_communique: c.id, p_jeton: S.jetonLien || null })).then((r) => { if (r) { c.resultats = r; rendreSondage(c, zone); } }).catch(() => {});
+    return;
+  }
+  const mien = c.ma_reponse || {};
+  zone.innerHTML = `<form id="f-sondage" class="champs sondage">${(c.questions || []).map((q, i) => `<fieldset class="question"><legend>${i + 1}. ${esc(q.intitule)}${q.obligatoire === false ? ' <small>(facultatif)</small>' : ''}</legend>
+      ${q.type === 'texte' ? `<textarea name="${esc(q.id)}" rows="3" maxlength="1000" aria-label="${esc(q.intitule)}">${esc(mien[q.id] || '')}</textarea>`
+        : (q.choix || []).map((ch) => `<label class="choix"><input type="${q.type === 'multiple' ? 'checkbox' : 'radio'}" name="${esc(q.id)}" value="${esc(ch)}" ${(Array.isArray(mien[q.id]) ? mien[q.id].includes(ch) : mien[q.id] === ch) ? 'checked' : ''}><span>${esc(ch)}</span></label>`).join('')}
+      ${q.type === 'multiple' ? '<small class="muted">Plusieurs réponses possibles</small>' : ''}</fieldset>`).join('')}
+    <p class="muted" style="margin:0">${c.anonyme ? 'Sondage anonyme : le bureau voit les totaux, pas qui a répondu quoi.' : 'Le bureau verra votre réponse.'}</p>
+    <div class="actions"><button type="button" class="btn-texte" id="b-plus-tard">Plus tard</button><button class="btn-primaire">Envoyer ma réponse</button></div></form>`;
+  $('#b-plus-tard', zone).addEventListener('click', fermerFeuille);
+  $('#f-sondage', zone).addEventListener('submit', async (e) => {
+    e.preventDefault(); const f = e.target, b = f.querySelector('.btn-primaire');
+    const rep = {};
+    for (const qu of c.questions || []) {
+      if (qu.type === 'texte') { const v = f.querySelector(`[name="${CSS.escape(qu.id)}"]`).value.trim(); if (v) rep[qu.id] = v; }
+      else if (qu.type === 'multiple') { const v = [...f.querySelectorAll(`[name="${CSS.escape(qu.id)}"]:checked`)].map((x) => x.value); if (v.length) rep[qu.id] = v; }
+      else { const v = f.querySelector(`[name="${CSS.escape(qu.id)}"]:checked`)?.value; if (v) rep[qu.id] = v; }
+      if (rep[qu.id] === undefined && qu.obligatoire !== false) return toast(`Merci de répondre à : ${qu.intitule}`);
+    }
+    if (S.apercuLien) return toast('Aperçu : seul le membre peut répondre avec son lien');
+    b.disabled = true;
+    try {
+      const r = await q(sb.rpc('repondre_sondage', { p_communique: c.id, p_reponses: rep, p_jeton: S.jetonLien || null }));
+      c.ma_reponse = rep; c.resultats = r || null;
+      toast('Merci pour votre réponse');
+      rendreSondage(c, zone);
+      const li = document.querySelector(`.liste-communiques [data-communique="${CSS.escape(String(c.id))}"] .puce-a-repondre`);
+      if (li) li.outerHTML = '<span class="puce puce-ok">Répondu</span>';
+      const res = $('[data-rub=m-communiques] .rub-resume'); if (res) res.textContent = resumeCommuniques(S.communiquesMembre || []);
+    } catch (err) { b.disabled = false; erreur(err); }
+  });
+}
+// Visionneuse de photos : plein écran au-dessus de la fiche, flèches, glisser, Échap, télécharger
+function visionneuse(photos, depart) {
+  let i = depart;
+  const d = document.createElement('dialog'); d.className = 'visionneuse'; d.setAttribute('aria-label', 'Photos');
+  const dessiner = () => {
+    d.innerHTML = `<img src="${esc(urlPhotoPartage(photos[i]))}" alt="Photo ${i + 1} sur ${photos.length}">
+      <div class="vis-barre"><span>${i + 1} / ${photos.length}</span><a class="btn-icone" href="${esc(urlPhotoPartage(photos[i]))}" download target="_blank" rel="noopener" aria-label="Télécharger">${icone('telecharger', 20)}</a>
+        <button type="button" class="btn-icone" data-fermer aria-label="Fermer">${icone('fermer', 20)}</button></div>
+      ${photos.length > 1 ? `<button type="button" class="vis-nav vis-prec" aria-label="Photo précédente">${icone('precedent', 24)}</button><button type="button" class="vis-nav vis-suiv" aria-label="Photo suivante">${icone('suivant', 24)}</button>` : ''}`;
+    d.querySelector('[data-fermer]').addEventListener('click', () => d.close());
+    d.querySelector('.vis-prec')?.addEventListener('click', () => { i = (i - 1 + photos.length) % photos.length; dessiner(); });
+    d.querySelector('.vis-suiv')?.addEventListener('click', () => { i = (i + 1) % photos.length; dessiner(); });
+  };
+  dessiner();
+  d.addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft') d.querySelector('.vis-prec')?.click(); if (e.key === 'ArrowRight') d.querySelector('.vis-suiv')?.click(); });
+  let x0 = null;
+  d.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  d.addEventListener('touchend', (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) d.querySelector(dx < 0 ? '.vis-suiv' : '.vis-prec')?.click(); });
+  d.addEventListener('close', () => d.remove());
+  document.body.appendChild(d); d.showModal();
+}
 // Communiqués lus sur cet appareil : ceux qui n'y sont pas portent « Nouveau » (rubrique, cloche du lien)
 const communiquesVus = () => { try { return JSON.parse(localStorage.getItem('communiquesVus') || '[]'); } catch { return []; } };
 const communiqueVu = (id) => communiquesVus().includes(String(id));
@@ -1145,26 +1252,41 @@ function marquerCommuniqueVu(id) {
   S.majCloche?.();
 }
 const ordreCommuniques = (l) => [...l].sort((a, b) => ((a.priorite === 'haute') !== (b.priorite === 'haute') ? (a.priorite === 'haute' ? -1 : 1) : (a.debut < b.debut ? 1 : -1)));
-function resumeCommuniques(l) { const n = l.filter((c) => !communiqueVu(c.id)).length; return n ? `${n} nouveau${n > 1 ? 'x' : ''}` : `${l.length}`; }
+function resumeCommuniques(l) {
+  const r = l.filter(aRepondre).length; if (r) return `${r} sondage${r > 1 ? 's' : ''} à répondre`;
+  const n = l.filter((c) => !communiqueVu(c.id)).length; return n ? `${n} nouveau${n > 1 ? 'x' : ''}` : `${l.length}`;
+}
 // Rubrique « Communiqués » de la page des membres : au-dessus du programme, avec un accent ; absente sans communiqué
 function rubriqueCommuniques(liste) {
   const l = ordreCommuniques(communiquesActifs(liste));
   S.communiquesMembre = l;
   if (!l.length) return '';
-  const nouveaux = l.some((c) => !communiqueVu(c.id));
+  const nouveaux = l.some((c) => !communiqueVu(c.id) || aRepondre(c));
   return rubrique('m-communiques', `<span class="statut-titre titre-communiques">${icone('communiques', 18)} Communiqués</span>`, resumeCommuniques(l),
     `<ul class="liste liste-communiques">${l.map((c) => `<li class="cliquable${c.priorite === 'haute' ? ' cq-important' : ''}${communiqueVu(c.id) ? '' : ' cq-nouveau'}" data-communique="${esc(c.id)}" tabindex="0" role="button">
       <span class="cq-date" aria-hidden="true"><b>${Number(c.debut.slice(8, 10))}</b>${MOIS_COURTS[Number(c.debut.slice(5, 7)) - 1]}</span>
-      <div class="corps"><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}${c.fin ? `<small>Jusqu’au ${dateFr(c.fin)}</small>` : ''}</div>
-      <span class="cq-etiquettes">${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}${communiqueVu(c.id) ? '' : '<span class="puce puce-nouveau">Nouveau</span>'}</span></li>`).join('')}</ul>`,
+      <div class="corps"><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}
+        ${c.genre === 'photos' ? `<span class="cq-vignettes">${(c.photos || []).slice(0, 4).map((p) => `<img src="${esc(urlPhotoPartage(p))}" alt="" loading="lazy">`).join('')}</span>` : ''}
+        ${c.genre === 'lien' ? `<small>${esc(hoteDe(c.lien))}</small>` : ''}${c.fin ? `<small>${c.genre === 'sondage' ? 'Répondre avant le' : 'Jusqu’au'} ${dateFr(c.fin)}</small>` : ''}</div>
+      <span class="cq-etiquettes">${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}${etiquetteCommunique(c)}${communiqueVu(c.id) || aRepondre(c) ? '' : '<span class="puce puce-nouveau">Nouveau</span>'}</span></li>`).join('')}</ul>`,
     { classe: 'rub-communiques' + (nouveaux ? ' a-du-nouveau' : ''), forcee: nouveaux });
 }
 function feuilleCommunique(c) {
   marquerCommuniqueVu(c.id);
-  ouvrirFeuille(`<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(c.titre)}</h2>${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}</div>
-    <p class="muted" style="margin:0">Publié le ${dateFr(c.debut)}${c.fin ? ` · jusqu’au ${dateFr(c.fin)}` : ''}</p>
+  const g = genreDe(c);
+  ouvrirFeuille(`<div class="cq-tete"><span class="puce puce-neutre">${icone(g.icone, 14)} ${g.libelle}</span>${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}</div>
+    <h2 style="margin:0">${esc(c.titre)}</h2>
+    <p class="muted" style="margin:0">Publié le ${dateFr(c.debut)}${c.fin ? ` · ${c.genre === 'sondage' ? 'répondre avant le' : 'jusqu’au'} ${dateFr(c.fin)}` : ''}</p>
     ${c.texte ? `<p class="texte-libre">${esc(c.texte)}</p>` : ''}
-    <div class="actions"><button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => $('#b-fermer', root).addEventListener('click', fermerFeuille));
+    ${c.genre === 'photos' ? `<div class="galerie">${(c.photos || []).map((p, k) => `<button type="button" class="vignette" data-i="${k}" aria-label="Agrandir la photo ${k + 1}"><img src="${esc(urlPhotoPartage(p))}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}
+    ${c.genre === 'sondage' ? '<div id="z-sondage"></div>' : `<div class="actions">
+      ${c.genre === 'lien' ? `<button type="button" class="btn-texte" id="b-copier-lien">Copier le lien</button><a class="btn btn-primaire" href="${esc(c.lien)}" target="_blank" rel="noopener">${icone('ouvrir', 16)} ${libelleLien(c.lien)}</a>` : ''}
+      <button class="btn-${c.genre === 'lien' ? 'tonal' : 'primaire'}" id="b-fermer">Fermer</button></div>`}`, (root) => {
+    $('#b-fermer', root)?.addEventListener('click', fermerFeuille);
+    $('#b-copier-lien', root)?.addEventListener('click', async () => { try { await navigator.clipboard.writeText(c.lien); toast('Lien copié'); } catch { toast(c.lien); } });
+    root.querySelectorAll('.vignette').forEach((b) => b.addEventListener('click', () => visionneuse(c.photos, Number(b.dataset.i))));
+    if (c.genre === 'sondage') rendreSondage(c, $('#z-sondage', root));
+  });
 }
 const communiquesActifs = (l) => (l || []).filter((c) => c.debut <= aujourdhui() && (!c.fin || c.fin >= aujourdhui()));
 
@@ -1217,6 +1339,9 @@ function brancherVueMembre(planning, ouvrir) {
 async function pageTableauAdherent(anniv, mois) {
   const [cot, planning, parts, communiques] = await Promise.all([q(sb.rpc('ma_cotisation')), q(sb.rpc('planning_activites', { p_debut: isoLocal(new Date()) })),
     q(sb.rpc('mes_participations')), q(sb.from('communiques').select('*').order('debut', { ascending: false })).catch(() => [])]);
+  S.jetonLien = null; S.apercuLien = false;
+  const mesRep = await q(sb.rpc('mes_reponses', { p_jeton: null })).catch(() => ({}));
+  communiques.forEach((c) => { c.ma_reponse = (mesRep || {})[c.id] || null; });
   rendre(`<div class="page accueil accueil-membre">${banniere(banniereAnnonces({ planning, cot, parts, communiques: communiquesActifs(communiques), regles: S.textes?.banniere }))}
     ${vueMembre({ planning, cot, parts, communiques, infos: S.textes?.infos_paiement, anniv, mois, connecte: true })}</div>`);
   brancherVueMembre(planning, (e) => detailEvenement(e, () => router()));
@@ -2479,7 +2604,7 @@ function sectionsParametres() {
       ['association', 'Identité et coordonnées', 'association', 'Nom, sigle, objet, adresse, RNA, SIRET', paramAssociation, admin],
       ['apparence', 'Logo et bannière', 'image', 'Logo, photo de l’accueil', paramApparence, admin],
       ['exercices', 'Exercices', 'exercice', 'Créer, clôturer ou rouvrir un exercice', paramExercices, admin],
-      ['banniere', 'Bannière et communiqués', 'communiques', 'Communiqués, ordre et fréquence des annonces', paramBanniere, admin || peut('gerer_activites')]]],
+      ['banniere', 'Bannière et communiqués', 'communiques', 'Communiqués, sondages, photos, liens', paramBanniere, admin || peut('gerer_activites')]]],
     ['Finances', [
       ['comptes', 'Comptes et soldes de départ', 'compte', 'Banque, caisse, livret', paramComptes, admin],
       ['categories', 'Catégories', 'categorie', 'Recettes et dépenses', paramCategories, admin],
@@ -2612,6 +2737,7 @@ async function paramNotifications(zone) {
 async function paramBanniere(zone) {
   const gere = peut('gerer_activites', 'administrer');
   const liste = await q(sb.from('communiques').select('*').order('debut', { ascending: false }));
+  const nbRep = {}; (await q(sb.from('reponses_sondage').select('communique_id')).catch(() => [])).forEach((x) => { nbRep[x.communique_id] = (nbRep[x.communique_id] || 0) + 1; });
   const R = reglesBanniere(S.textes?.banniere);
   const auj = aujourdhui();
   const etat = (c) => (c.debut > auj ? `À partir du ${dateFr(c.debut)}` : c.fin && c.fin < auj ? 'Terminé' : c.fin ? `Jusqu’au ${dateFr(c.fin)}` : 'En cours');
@@ -2620,10 +2746,10 @@ async function paramBanniere(zone) {
   const optFreq = (v) => [['toujours', 'À chaque visite'], ['jour', 'Une fois par jour'], ['jamais', 'Jamais']].map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${l}</option>`).join('');
   const TYPES = [['rdv', 'Prochain rendez-vous'], ['communique', 'Communiqués'], ['cotisation', 'Rappel de cotisation en retard'], ['participation', 'Rappel de participation à régler']];
   zone.innerHTML = `<div class="grille grille-2">
-    <section class="carte"><div class="page-titre"><h3 style="flex:1">Communiqués</h3>${gere ? '<button class="btn-primaire btn-petit" id="b-communique">Nouveau communiqué</button>' : ''}</div>
-      <p class="muted" style="margin:0">Un communiqué s’affiche sur la bannière des membres pendant sa période, et chacun reçoit une notification.</p>
-      ${liste.length ? `<ul class="liste">${liste.map((c) => `<li class="cliquable" data-communique="${c.id}" tabindex="0" role="button"><span class="avatar">${icone('communiques', 18)}</span>
-        <div class="corps"><b>${esc(c.titre)}</b><span>${etat(c)}${c.visible_adherents ? '' : ' · bureau seulement'}</span></div><span class="puce ${PRIO[c.priorite][1]}">${PRIO[c.priorite][0]}</span></li>`).join('')}</ul>`
+    <section class="carte"><div class="page-titre"><h3 style="flex:1">Communiqués et partages</h3>${gere ? '<button class="btn-primaire btn-petit" id="b-communique">Publier</button>' : ''}</div>
+      <p class="muted" style="margin:0">Annonce, sondage ou questionnaire, photos, lien (Drive, formulaire, vidéo) : chaque publication s’affiche sur la page des membres et sur leur bannière pendant sa période, et chacun reçoit une notification.</p>
+      ${liste.length ? `<ul class="liste">${liste.map((c) => `<li class="cliquable" data-communique="${c.id}" tabindex="0" role="button"><span class="avatar">${icone(genreDe(c).icone, 18)}</span>
+        <div class="corps"><b>${esc(c.titre)}</b><span>${genreDe(c).libelle} · ${etat(c)}${c.genre === 'sondage' ? ` · ${nbRep[c.id] || 0} réponse${(nbRep[c.id] || 0) > 1 ? 's' : ''}` : ''}${c.visible_adherents ? '' : ' · bureau seulement'}</span></div><span class="puce ${PRIO[c.priorite][1]}">${PRIO[c.priorite][0]}</span></li>`).join('')}</ul>`
         : '<p class="muted">Aucun communiqué pour l’instant.</p>'}</section>
     ${peut('administrer') ? `<section class="carte"><h3>Ordre et fréquence des annonces</h3>
       <p class="muted" style="margin:0">La bannière des membres montre une annonce à la fois. Choisissez l’ordre et la fréquence de chaque type ; un communiqué « Important » passe toujours en premier.</p>
@@ -2636,7 +2762,7 @@ async function paramBanniere(zone) {
   marquerVu('communiques');
   $('#b-communique', zone)?.addEventListener('click', () => feuilleEditionCommunique(null, () => paramBanniere(zone)));
   zone.querySelectorAll('[data-communique]').forEach((li) => {
-    const ouvrir = () => { const c = liste.find((x) => x.id === li.dataset.communique); if (gere) feuilleEditionCommunique(c, () => paramBanniere(zone)); else feuilleCommunique(c); };
+    const ouvrir = () => { const c = liste.find((x) => x.id === li.dataset.communique); if (gere && c.genre === 'sondage') feuilleResultatsSondage(c, () => paramBanniere(zone)).catch(erreur); else if (gere) feuilleEditionCommunique(c, () => paramBanniere(zone)); else feuilleCommunique(c); };
     li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
   });
   $('#f-banniere', zone)?.addEventListener('submit', async (e) => {
@@ -2646,28 +2772,126 @@ async function paramBanniere(zone) {
     try { await enregistrerTexteReglage('banniere', JSON.stringify(regles), 'Bannière des membres : ordre et fréquence des annonces'); toast('Réglages de la bannière enregistrés'); } catch (err) { erreur(err); }
   });
 }
+// Nouvelle publication : annonce, sondage (questions), photos ou lien ; le genre se choisit à la création
 function feuilleEditionCommunique(c, apres) {
-  ouvrirFeuille(`<form id="f-communique" class="champs"><h2>${c ? 'Modifier le communiqué' : 'Nouveau communiqué'}</h2>
+  let genre = c?.genre || 'annonce';
+  let questions = (c?.questions || []).map((x) => ({ ...x, choix: [...(x.choix || [])] }));
+  if (!questions.length) questions = [{ id: 'q1', intitule: '', type: 'unique', choix: ['', ''], obligatoire: true }];
+  let photos = [...(c?.photos || [])];          // chemins déjà enregistrés
+  const nouvelles = [];                          // { blob, url } à envoyer
+  const titres = { annonce: 'une annonce', sondage: 'un sondage', photos: 'des photos', lien: 'un lien' };
+  ouvrirFeuille(`<form id="f-communique" class="champs" novalidate><h2>${c ? 'Modifier' : 'Publier'} ${titres[genre]}</h2>
+    ${c ? '' : `<div class="segmente segmente-large" role="tablist" aria-label="Type de publication">${Object.entries(GENRES_COMMUNIQUE).map(([k, g]) => `<button type="button" role="tab" data-genre="${k}" aria-selected="${k === genre}">${icone(g.icone, 16)} ${g.libelle}</button>`).join('')}</div>`}
     <label class="champ"><span class="obligatoire">Titre</span><input name="titre" required minlength="2" maxlength="120" value="${esc(c?.titre || '')}" placeholder="Assemblée générale le 15 novembre"></label>
-    <label class="champ">Texte<textarea name="texte" rows="4" maxlength="1500" placeholder="Ce que les membres doivent savoir">${esc(c?.texte || '')}</textarea></label>
+    <label class="champ">Texte<textarea name="texte" rows="3" maxlength="1500" placeholder="Ce que les membres doivent savoir">${esc(c?.texte || '')}</textarea></label>
+    <div id="z-genre"></div>
     <div class="champs champs-2">
       <label class="champ">Afficher à partir du<input type="date" name="debut" required value="${c?.debut || aujourdhui()}"></label>
-      <label class="champ">Jusqu’au (facultatif)<input type="date" name="fin" value="${c?.fin || ''}"></label>
+      <label class="champ"><span id="l-fin">Jusqu’au (facultatif)</span><input type="date" name="fin" value="${c?.fin || ''}"></label>
     </div>
     <label class="champ">Priorité<select name="priorite">${[['haute', 'Important (en premier sur la bannière)'], ['normale', 'Normal'], ['basse', 'Discret']].map(([k, l]) => `<option value="${k}" ${(c?.priorite || 'normale') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="case"><input type="checkbox" name="visible" ${c ? (c.visible_adherents ? 'checked' : '') : 'checked'}> Visible par tous les membres (sinon bureau seulement)</label>
+    <p class="muted" id="p-envoi" style="margin:0" hidden></p>
     <div class="actions">${c ? `<button type="button" class="btn-texte btn-texte-danger" id="b-suppr-cq">${icone('corbeille', 16)} Supprimer</button>` : ''}<button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">${c ? 'Enregistrer' : 'Publier'}</button></div>
   </form>`, (root) => {
+    const f = $('#f-communique', root), z = $('#z-genre', root);
+    const lireQuestions = () => z.querySelectorAll('.q-edition').forEach((d, k) => {
+      const qu = questions[k]; qu.intitule = d.querySelector('[data-champ=intitule]').value; qu.type = d.querySelector('[data-champ=type]').value;
+      qu.choix = d.querySelector('[data-champ=choix]').value.split('\n').map((x) => x.trim()); qu.obligatoire = d.querySelector('[data-champ=obligatoire]').checked;
+    });
+    const dessiner = () => {
+      $('#l-fin', root).textContent = genre === 'sondage' ? 'Réponses jusqu’au (facultatif)' : 'Jusqu’au (facultatif)';
+      if (genre === 'sondage') {
+        z.innerHTML = `<div class="champs q-liste">${questions.map((qu, k) => `<fieldset class="q-edition"><legend>Question ${k + 1}</legend>
+            <input data-champ="intitule" maxlength="200" value="${esc(qu.intitule)}" placeholder="Quel samedi vous convient ?" aria-label="Intitulé de la question ${k + 1}">
+            <div class="champs champs-2"><select data-champ="type" aria-label="Type de réponse">${[['unique', 'Un seul choix'], ['multiple', 'Plusieurs choix'], ['texte', 'Réponse libre']].map(([t, l]) => `<option value="${t}" ${qu.type === t ? 'selected' : ''}>${l}</option>`).join('')}</select>
+              <label class="case"><input type="checkbox" data-champ="obligatoire" ${qu.obligatoire !== false ? 'checked' : ''}> Réponse obligatoire</label></div>
+            <textarea data-champ="choix" rows="3" ${qu.type === 'texte' ? 'hidden' : ''} placeholder="Un choix par ligne" aria-label="Choix proposés, un par ligne">${esc((qu.choix || []).join('\n'))}</textarea>
+            ${questions.length > 1 ? `<button type="button" class="btn-texte btn-petit" data-retirer-q="${k}">Retirer la question</button>` : ''}</fieldset>`).join('')}
+          ${questions.length < 20 ? '<button type="button" class="btn-tonal btn-petit" id="b-ajout-q" style="align-self:flex-start">Ajouter une question</button>' : ''}
+          <label class="case"><input type="checkbox" name="anonyme" ${c?.anonyme ? 'checked' : ''}> Réponses anonymes (le bureau voit les totaux, pas les noms)</label>
+          <label class="case"><input type="checkbox" name="resultats" ${c ? (c.resultats_visibles ? 'checked' : '') : 'checked'}> Montrer les résultats aux membres après leur réponse</label></div>`;
+        z.querySelectorAll('[data-champ=type]').forEach((sel) => sel.addEventListener('change', () => { sel.closest('.q-edition').querySelector('[data-champ=choix]').hidden = sel.value === 'texte'; }));
+        $('#b-ajout-q', z)?.addEventListener('click', () => { lireQuestions(); questions.push({ id: 'q' + (Math.max(0, ...questions.map((x) => Number(String(x.id).slice(1)) || 0)) + 1), intitule: '', type: 'unique', choix: ['', ''], obligatoire: true }); dessiner(); });
+        z.querySelectorAll('[data-retirer-q]').forEach((b) => b.addEventListener('click', () => { lireQuestions(); questions.splice(Number(b.dataset.retirerQ), 1); dessiner(); }));
+      } else if (genre === 'photos') {
+        z.innerHTML = `<div class="champs"><div class="galerie galerie-edition">${photos.map((p, k) => `<span class="vignette"><img src="${esc(urlPhotoPartage(p))}" alt=""><button type="button" class="btn-icone" data-retirer-p="${k}" aria-label="Retirer la photo">${icone('fermer', 16)}</button></span>`).join('')}
+            ${nouvelles.map((n, k) => `<span class="vignette"><img src="${n.url}" alt=""><button type="button" class="btn-icone" data-retirer-n="${k}" aria-label="Retirer la photo">${icone('fermer', 16)}</button></span>`).join('')}</div>
+          ${photos.length + nouvelles.length < 30 ? `<label class="btn btn-tonal btn-petit" style="align-self:flex-start">${icone('camera', 16)} Ajouter des photos<input type="file" accept="image/*" multiple hidden id="i-photos"></label>` : ''}
+          <p class="muted" style="margin:0">${photos.length + nouvelles.length} / 30 photos · réduites automatiquement pour les téléphones. Pour un grand album, publiez plutôt un lien vers le Drive.</p></div>`;
+        z.querySelectorAll('[data-retirer-p]').forEach((b) => b.addEventListener('click', () => { photos.splice(Number(b.dataset.retirerP), 1); dessiner(); }));
+        z.querySelectorAll('[data-retirer-n]').forEach((b) => b.addEventListener('click', () => { URL.revokeObjectURL(nouvelles[Number(b.dataset.retirerN)].url); nouvelles.splice(Number(b.dataset.retirerN), 1); dessiner(); }));
+        $('#i-photos', z)?.addEventListener('change', async (e) => {
+          for (const fi of [...e.target.files].slice(0, 30 - photos.length - nouvelles.length)) {
+            const blob = await compresserImage(fi, 1600, 0.82); if (blob) nouvelles.push({ blob, url: URL.createObjectURL(blob) });
+          }
+          dessiner();
+        });
+      } else if (genre === 'lien') {
+        z.innerHTML = `<label class="champ"><span class="obligatoire">Adresse du lien</span><input name="lien" type="url" inputmode="url" maxlength="1000" value="${esc(c?.lien || '')}" placeholder="https://drive.google.com/…"></label>
+          <p class="muted" style="margin:0">Dossier Drive, album photo, formulaire, vidéo… Vérifiez que le partage est ouvert « à toute personne disposant du lien ».</p>`;
+      } else z.innerHTML = '';
+    };
+    dessiner();
+    root.querySelectorAll('[data-genre]').forEach((b) => b.addEventListener('click', () => {
+      if (genre === 'sondage') lireQuestions();
+      genre = b.dataset.genre; root.querySelectorAll('[data-genre]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+      root.querySelector('h2').textContent = `Publier ${titres[genre]}`; dessiner();
+    }));
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
     $('#b-suppr-cq', root)?.addEventListener('click', () => supprimerAvecConfirmation('communiques', c.id, c.titre, apres));
-    $('#f-communique', root).addEventListener('submit', async (e) => {
-      e.preventDefault(); const f = e.target; const b = f.querySelector('.btn-primaire'); b.disabled = true;
-      const v = { titre: f.titre.value.trim(), texte: f.texte.value.trim() || null, debut: f.debut.value, fin: f.fin.value || null, priorite: f.priorite.value, visible_adherents: f.visible.checked };
-      if (v.fin && v.fin < v.debut) { b.disabled = false; return toast('La date de fin est avant la date de début'); }
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault(); const b = f.querySelector('.btn-primaire');
+      const v = { titre: f.titre.value.trim(), texte: f.texte.value.trim() || null, debut: f.debut.value, fin: f.fin.value || null, priorite: f.priorite.value, visible_adherents: f.visible.checked, genre };
+      if (v.titre.length < 2) return toast('Donnez un titre');
+      if (v.fin && v.fin < v.debut) return toast('La date de fin est avant la date de début');
+      if (genre === 'sondage') {
+        lireQuestions();
+        const qs = questions.map((qu) => ({ id: qu.id, intitule: qu.intitule.trim(), type: qu.type, obligatoire: qu.obligatoire, ...(qu.type === 'texte' ? {} : { choix: [...new Set(qu.choix.filter(Boolean))] }) }));
+        const mauvaise = qs.findIndex((qu) => !qu.intitule || (qu.type !== 'texte' && qu.choix.length < 2));
+        if (mauvaise >= 0) return toast(`Question ${mauvaise + 1} : écrivez l’intitulé et au moins deux choix`);
+        Object.assign(v, { questions: qs, anonyme: f.anonyme.checked, resultats_visibles: f.resultats.checked });
+      }
+      if (genre === 'lien') { v.lien = f.lien.value.trim(); if (!/^https?:\/\/\S+\.\S+/i.test(v.lien)) return toast('Adresse du lien invalide (elle commence par https://)'); }
+      if (genre === 'photos' && !photos.length && !nouvelles.length) return toast('Ajoutez au moins une photo');
+      b.disabled = true;
       try {
+        if (genre === 'photos') {
+          const envoi = $('#p-envoi', root); envoi.hidden = false;
+          for (let k = 0; k < nouvelles.length; k++) {
+            envoi.textContent = `Envoi des photos ${k + 1} / ${nouvelles.length}…`;
+            const chemin = `${aujourdhui()}/${crypto.randomUUID()}.jpg`;
+            await q(sb.storage.from('partages').upload(chemin, nouvelles[k].blob, { contentType: 'image/jpeg' }));
+            photos.push(chemin);
+          }
+          nouvelles.length = 0; v.photos = photos;
+        }
         if (c) await q(sb.from('communiques').update(v).eq('id', c.id)); else await q(sb.from('communiques').insert(v));
-        fermerFeuille(); toast(c ? 'Communiqué modifié' : 'Communiqué publié'); apres();
+        fermerFeuille(); toast(c ? 'Publication modifiée' : 'Publié : les membres sont prévenus'); apres();
       } catch (err) { b.disabled = false; erreur(err); }
+    });
+  });
+}
+// Résultats d'un sondage pour le bureau : totaux, réponses écrites, qui a répondu (sauf anonyme), export
+async function feuilleResultatsSondage(c, apres) {
+  const r = await q(sb.rpc('resultats_sondage', { p_communique: c.id }));
+  const lisible = (qu, v) => (v == null ? '' : Array.isArray(v) ? v.join(' ; ') : String(v));
+  ouvrirFeuille(`<div class="cq-tete"><span class="puce puce-neutre">${icone('sondage', 14)} Sondage</span>${c.anonyme ? '<span class="puce puce-neutre">Anonyme</span>' : ''}</div>
+    <h2 style="margin:0">${esc(c.titre)}</h2>
+    <p class="muted" style="margin:0">${c.fin ? `Réponses jusqu’au ${dateFr(c.fin)}` : 'Sans date de fin'} · ${c.resultats_visibles ? 'résultats montrés aux membres après leur réponse' : 'résultats réservés au bureau'}</p>
+    ${blocResultats({ ...c, ma_reponse: null }, r)}
+    ${r?.repondants?.length ? `<h3>Qui a répondu</h3><ul class="liste">${r.repondants.map((x) => `<li><div class="corps"><b>${esc(x.prenom)} ${esc(x.nom)}</b><span>${(c.questions || []).map((qu) => esc(lisible(qu, x.reponses[qu.id]))).filter(Boolean).join(' · ')}</span></div><span class="muted">${dateFr(String(x.le).slice(0, 10))}</span></li>`).join('')}</ul>` : ''}
+    <div class="actions"><button type="button" class="btn-texte" id="b-modifier-s">Modifier</button><button type="button" class="btn-tonal" id="b-export-s">${icone('telecharger', 16)} Exporter</button><button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#b-modifier-s', root).addEventListener('click', () => feuilleEditionCommunique(c, apres));
+    $('#b-export-s', root).addEventListener('click', () => {
+      const nom = `sondage-${c.titre.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}.csv`;
+      if (r?.repondants) telechargerCsv(nom, ['Prénom', 'Nom', 'Date', ...(c.questions || []).map((qu) => qu.intitule)],
+        r.repondants.map((x) => [x.prenom, x.nom, String(x.le).slice(0, 10), ...(c.questions || []).map((qu) => lisible(qu, x.reponses[qu.id]))]));
+      else telechargerCsv(nom, ['Question', 'Choix', 'Réponses'], (c.questions || []).flatMap((qu) => {
+        const rq = (r?.questions || []).find((x) => x.id === qu.id) || {};
+        return qu.type === 'texte' ? (rq.textes || []).map((t) => [qu.intitule, t, '']) : (qu.choix || []).map((ch) => [qu.intitule, ch, (rq.comptes || {})[ch] || 0]);
+      }));
     });
   });
 }
@@ -4256,7 +4480,8 @@ function nouveautesLien(jeton, d) {
   let vu = null; try { vu = JSON.parse(localStorage.getItem(cleVuLien(jeton)) || 'null'); } catch { /* stockage indisponible */ }
   if (!vu) { vu = empreinteLien(d); try { localStorage.setItem(cleVuLien(jeton), JSON.stringify(vu)); } catch { /* stockage indisponible */ } }
   const l = [];
-  (d.communiques || []).filter((c) => !communiqueVu(c.id)).forEach((c) => l.push({ cle: 'cq:' + c.id, type: 'communique', c, titre: c.priorite === 'haute' ? 'Communiqué important' : 'Communiqué', detail: c.titre }));
+  (d.communiques || []).filter((c) => !communiqueVu(c.id) || aRepondre(c)).forEach((c) => l.push({ cle: 'cq:' + c.id, type: 'communique', c,
+    titre: (c.priorite === 'haute' ? 'Important · ' : '') + (aRepondre(c) ? 'Sondage à répondre' : genreDe(c).sur), detail: c.titre }));
   (d.a_venir || []).filter((p) => !vu.rdv.includes(`${p.id}:${p.date_debut}`)).forEach((p) => l.push({ cle: `rdv:${p.id}:${p.date_debut}`, type: 'rdv', p,
     titre: vu.rdv.some((x) => x.startsWith(p.id + ':')) ? 'Rendez-vous déplacé' : 'Nouveau rendez-vous', detail: `${p.nom} · ${jourLong(p.date_debut)}` }));
   (d.participations || []).filter((p) => !p.cloturee && !vu.part.includes(`${p.nom}|${p.cree || ''}`)).forEach((p) => l.push({ cle: 'part:' + p.nom + (p.cree || ''), type: 'participation',
@@ -4346,6 +4571,7 @@ async function pageLien(jeton, retour = null, silencieux = false) {
     return;
   }
   if (!retour) garderJeton(jeton);
+  S.jetonLien = retour ? null : jeton; S.apercuLien = !!retour;
   S.settings = { ...S.settings, cotisation_periode_mois: Number(d.reglages?.periode_mois || 1) };
   const logo = urlPublique(d.association?.logo_path) || S.logoUrl;
   const photo = urlPublique(d.association?.banniere_path);

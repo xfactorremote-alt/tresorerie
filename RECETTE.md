@@ -5,7 +5,7 @@ Grille de la page 17 de l'audit du 7 octobre 2026. Un contrôle non effectué re
 Moyens utilisés :
 - **Base** : PostgreSQL 16 local avec le `schema.sql` complet (sections 1 à 12), et les rôles réels (trésorier, président, bureau, adhérent) testés avec les règles d'accès actives.
 - **Site** : mode démonstration piloté par navigateur automatique (Chromium), sans erreur JavaScript sur tous les parcours.
-- **Application Android** : 20 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.23.2.
+- **Application Android** : 24 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.24.0.
 
 | Scénario | Résultat attendu | Résultat | Preuve |
 |---|---|---|---|
@@ -31,13 +31,14 @@ Moyens utilisés :
 | Filtre de période du planning (page des membres) | Le mois montre ses rendez-vous, même le prochain ; semaine, mois, 3 mois, année au choix | **Corrigé et validé** | Cause : le prochain rendez-vous, déjà sur la bannière, était retiré de la liste ; en production, « Répétitions » du 16 octobre était le seul d’octobre, donc « Octobre » paraissait vide. Démonstration : 3 en octobre, 1 cette semaine, 4 sur 3 mois, 6 sur l’année ; menu fermé par Échap et clic à côté ; choix gardé ; test Android `planningDuMembreParPeriode` |
 | Rubrique Communiqués (page des membres) | Au-dessus du programme, mise en avant, absente sans communiqué | **Validé en démonstration (site) et compilé (Android)** | Lien et adhérent connecté : « Communiqués » puis « Au programme » ; « Nouveau » jusqu’à la lecture ; test Android `ordreDesCommuniques` |
 | Notifications des membres (lien personnel) | Cloche, alerte sonore et vibrante, notification même page fermée | **Validé en démonstration ; envoi validé sur la base de production avec des abonnements fictifs ; à vérifier sur un vrai téléphone** | Démonstration : rendez-vous ajouté par le trésorier → alerte « Nouveau rendez-vous : Pique-nique » avec « Voir » et pastille 1 sur la cloche. Production : clés créées, tâches 7 h et relance en place ; deux abonnements fictifs (Google, Mozilla) désactivés comme inconnus, sans erreur de format. Chiffrement vérifié contre la bibliothèque de référence `http_ece` |
+| Sondages, photos et liens (page des membres) | Répondre à un sondage, voir des photos, ouvrir un lien Drive ; le bureau publie et lit les résultats | **Validé sur la base de test, en démonstration (site) et par les tests Android ; à vérifier sur un vrai téléphone** | Base : réponse obligatoire manquante, choix inconnu, lien non reconnu refusés ; réponse modifiée remplacée ; anonyme sans noms ; lien `javascript:` et album sans photo refusés. Démonstration : sondage à répondre → « Merci » → résultats (75 % pour le 14 novembre) → étiquette « Répondu » ; 4 photos, visionneuse 2/4 → 3/4, Échap ; « Ouvrir le Drive » ; bureau : 3 réponses, 1 réponse écrite, export CSV, publication d’un sondage à 2 questions, de 2 photos et d’un formulaire (« Répondre au formulaire »). Android : tests `sondageControleEtResultats`, `libellesDesLiens`, `publicationEnvoieSonGenre` |
 | Visibilité des rendez-vous | Coché « visible » = visible par les membres | **Corrigé et validé** | Cause : l’application Android n’envoyait pas la case cochée (valeur par défaut omise), la base mettait « non visible » ; 3 rendez-vous du 11 octobre réparés en production ; défaut de la base passé à « visible » ; mêmes contrôles pour le statut des demandes et la nature des devis (aucune donnée touchée) ; interrupteur dans le détail testé |
 | Parcours complet du site | Aucune erreur, aucun débordement | **Validé** | 12 pages × 4 rôles × 3 tailles = 144 vues sans erreur JavaScript ni défilement horizontal |
 | Nouveautés | Pastilles exactes selon le rôle | **Validé** | Président : demande à valider comptée ; bureau : ses propres saisies non comptées ; adhérent : rendez-vous et participations seulement ; vu → 0 |
 
 ## Points restant à valider par une personne
 
-1. **Application Android sur un vrai téléphone** : installer l’APK 0.23.2 et refaire les parcours (virement, régularisation, filtres, export).
+1. **Application Android sur un vrai téléphone** : installer l’APK 0.24.0 et refaire les parcours (virement, régularisation, filtres, export).
 2. **Export réel** depuis le site en ligne : ouvrir un PDF et un Excel du journal d'octobre et comparer les totaux à l'écran Opérations.
 3. **Restauration sur Supabase** : la commande `set local session_replication_role = replica` du script de restauration doit être acceptée par l'éditeur SQL de Supabase (à confirmer lors d'un premier essai, sur un projet de test).
 

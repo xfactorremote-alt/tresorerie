@@ -76,6 +76,22 @@ actual fun rememberChoixFichier(pdfAccepte: Boolean, quandChoisi: (Fichier?, Str
     return { lanceur.launch(if (pdfAccepte) arrayOf("image/*", "application/pdf") else arrayOf("image/*")) }
 }
 
+@Composable
+actual fun rememberChoixPhotos(quandChoisi: (List<Fichier>, String?) -> Unit): () -> Unit {
+    val contexte = LocalContext.current
+    val lanceur = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val ok = mutableListOf<Fichier>(); var erreur: String? = null
+        uris.take(30).forEach { uri ->
+            try {
+                val octets = contexte.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalStateException("Photo illisible")
+                ok += Fichier(reduirePhoto(octets), "image/jpeg", "jpg")
+            } catch (e: Exception) { erreur = e.message ?: "Photo illisible" }
+        }
+        quandChoisi(ok, erreur)
+    }
+    return { lanceur.launch(arrayOf("image/*")) }
+}
+
 actual fun imageDepuisOctets(octets: ByteArray): ImageBitmap? =
     try { BitmapFactory.decodeByteArray(octets, 0, octets.size)?.asImageBitmap() } catch (_: Exception) { null }
 

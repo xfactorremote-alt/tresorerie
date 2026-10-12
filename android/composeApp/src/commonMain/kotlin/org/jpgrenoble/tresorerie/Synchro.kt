@@ -42,7 +42,7 @@ object Synchro {
     }
 
     // Tables suivies (mêmes que la publication « supabase_realtime » de la base)
-    private val TABLES = listOf("transactions", "expense_requests", "projects", "collectes", "collecte_membres", "members", "communiques",
+    private val TABLES = listOf("transactions", "expense_requests", "projects", "collectes", "collecte_membres", "members", "communiques", "reponses_sondage",
         "cotisations", "budgets", "materiel", "settings", "organisation", "accounts", "categories", "tiers", "exercices", "liens_membres")
 
     fun demarrer(scope: CoroutineScope) {

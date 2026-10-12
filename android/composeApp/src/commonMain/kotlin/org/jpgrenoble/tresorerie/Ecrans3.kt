@@ -1257,8 +1257,10 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     var communiques by remember { mutableStateOf<List<Communique>>(emptyList()) }
     var regles by remember { mutableStateOf<String?>(null) }
     var communiqueLu by remember { mutableStateOf<Communique?>(null) }
+    var mesReponses by remember { mutableStateOf<Map<String, kotlinx.serialization.json.JsonObject>>(emptyMap()) }
     LaunchedEffect(version, Synchro.version) {
         try { communiques = communiquesActifs(Repo.communiques()); regles = Repo.texteReglage("banniere") } catch (_: Exception) { }
+        try { mesReponses = Repo.mesReponses() } catch (_: Exception) { }
         try { cotis = Repo.maCotisation() } catch (_: Exception) { }
         try { parts = Repo.mesParticipations() } catch (_: Exception) { }
         try { anniv = Repo.anniversaires(); planning = Repo.planning(aujourdhui().toString()) } catch (_: Exception) { }
@@ -1320,12 +1322,12 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
         if (large) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Tete()
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { RubriqueCommuniques(communiques) { communiqueLu = it }; Apparition(1) { Suite() } }
+                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it }; Apparition(1) { Suite() } }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(2) { Cotisation() }; Regler(); Participations(); Anniversaires() }
             }
         } else LazyColumn(Modifier.fillMaxSize(), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Tete() }
-            if (communiquesActifs(communiques).isNotEmpty()) item { RubriqueCommuniques(communiques) { communiqueLu = it } }
+            if (communiquesActifs(communiques).isNotEmpty()) item { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } }
             item { Apparition(1) { Suite() } }
             item { Apparition(2) { Cotisation() } }
             item { Regler() }
@@ -1333,7 +1335,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
             item { Anniversaires() }
         }
     }
-    communiqueLu?.let { FeuilleCommunique(it) { communiqueLu = null } }
+    communiqueLu?.let { c -> FeuilleCommunique(c, mesReponses[c.id], onRepondu = { mesReponses = mesReponses + (c.id to it) }) { communiqueLu = null } }
     detail?.let { e ->
         @OptIn(ExperimentalMaterial3Api::class)
         ModalBottomSheet(onDismissRequest = { detail = null }) {

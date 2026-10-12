@@ -474,7 +474,34 @@ data class Communique(
     @SerialName("visible_adherents") val visible: Boolean = true,
     @SerialName("created_by") val creePar: String? = null,
     @SerialName("created_at") val creeLe: String? = null,
+    // Partages avec les membres : annonce, sondage (questionnaire), photos, lien (même liste que la base et le site)
+    val genre: String = "annonce",
+    val lien: String? = null,
+    val photos: List<String> = emptyList(),
+    val questions: List<QuestionSondage> = emptyList(),
+    val anonyme: Boolean = false,
+    @SerialName("resultats_visibles") val resultatsVisibles: Boolean = true,
 )
+
+@Serializable
+data class QuestionSondage(
+    val id: String,
+    val intitule: String,
+    val type: String = "unique",                 // unique, multiple, texte
+    val choix: List<String> = emptyList(),
+    @EncodeDefault val obligatoire: Boolean = true,
+)
+
+// Résultats d'un sondage (comme calcul_resultats de la base) : comptes par choix ; pour le bureau, réponses écrites et répondants
+@Serializable
+data class ResultatsSondage(val nb: Int = 0, val questions: List<ResultatQuestion> = emptyList(), val repondants: List<Repondant>? = null)
+@Serializable
+data class ResultatQuestion(val id: String, val comptes: Map<String, Int> = emptyMap(), val textes: List<String>? = null)
+@Serializable
+data class Repondant(val prenom: String? = null, val nom: String? = null, val reponses: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()), val le: String? = null)
+@Serializable
+data class ReponseSondage(@SerialName("communique_id") val communiqueId: String, @SerialName("member_id") val memberId: String,
+    val reponses: kotlinx.serialization.json.JsonObject, @SerialName("modifie_le") val modifieLe: String? = null)
 
 @Serializable
 data class NouveauCommunique(
@@ -484,4 +511,10 @@ data class NouveauCommunique(
     val fin: String? = null,
     @EncodeDefault val priorite: String = "normale",
     @EncodeDefault @SerialName("visible_adherents") val visible: Boolean = true,
+    @EncodeDefault val genre: String = "annonce",
+    @EncodeDefault val lien: String? = null,
+    @EncodeDefault val photos: List<String> = emptyList(),
+    @EncodeDefault val questions: List<QuestionSondage> = emptyList(),
+    @EncodeDefault val anonyme: Boolean = false,
+    @EncodeDefault @SerialName("resultats_visibles") val resultatsVisibles: Boolean = true,
 )

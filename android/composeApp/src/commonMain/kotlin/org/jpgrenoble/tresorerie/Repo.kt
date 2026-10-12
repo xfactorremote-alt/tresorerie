@@ -706,6 +706,39 @@ object Repo {
         else client.from("communiques").update(c) { filter { eq("id", id) } }
     }
 
+    // ---------- Partages : sondages (réponses, résultats) et photos (même règles que repondre_sondage / resultats_sondage) ----------
+    private val jsonSouple = Json { ignoreUnknownKeys = true }
+    suspend fun mesReponses(): Map<String, kotlinx.serialization.json.JsonObject> =
+        if (demo) Demo.mesReponses(profilDemo.value)
+        else jsonSouple.parseToJsonElement(client.postgrest.rpc("mes_reponses", buildJsonObject { put("p_jeton", kotlinx.serialization.json.JsonNull) }).data)
+            .let { it as? kotlinx.serialization.json.JsonObject ?: kotlinx.serialization.json.JsonObject(emptyMap()) }
+            .mapValues { it.value as? kotlinx.serialization.json.JsonObject ?: kotlinx.serialization.json.JsonObject(emptyMap()) }
+
+    private fun resultatsDe(texte: String): ResultatsSondage? =
+        if (texte.isBlank() || texte.trim() == "null") null else jsonSouple.decodeFromString(ResultatsSondage.serializer(), texte)
+
+    suspend fun repondreSondage(id: String, reponses: kotlinx.serialization.json.JsonObject): ResultatsSondage? =
+        if (demo) Demo.repondreSondage(id, reponses, profilDemo.value)
+        else resultatsDe(client.postgrest.rpc("repondre_sondage", buildJsonObject {
+            put("p_communique", id); put("p_reponses", reponses); put("p_jeton", kotlinx.serialization.json.JsonNull) }).data)
+
+    suspend fun resultatsSondage(id: String): ResultatsSondage? =
+        if (demo) Demo.resultatsSondage(id, profilDemo.value)
+        else resultatsDe(client.postgrest.rpc("resultats_sondage", buildJsonObject { put("p_communique", id); put("p_jeton", kotlinx.serialization.json.JsonNull) }).data)
+
+    suspend fun nbReponses(): Map<String, Int> =
+        if (demo) Demo.nbReponses()
+        else client.from("reponses_sondage").select(io.github.jan.supabase.postgrest.query.Columns.list("communique_id"))
+            .decodeList<kotlinx.serialization.json.JsonObject>().groupingBy { it["communique_id"].toString().trim('"') }.eachCount()
+
+    /** Envoie une photo d'une publication (déjà réduite par le sélecteur) ; renvoie son chemin dans le dossier « partages ». */
+    suspend fun envoyerPhotoPartage(f: Fichier): String {
+        val chemin = "${aujourdhui()}/${Clock.System.now().toEpochMilliseconds()}-${(100000..999999).random()}.jpg"
+        if (demo) Demo.fichiers["partages/$chemin"] = f.octets
+        else client.storage.from("partages").upload(chemin, f.octets) { contentType = ContentType.Image.JPEG }
+        return chemin
+    }
+
     suspend fun exercices(): List<Exercice> =
         if (demo) Demo.exercices.sortedByDescending { it.debut }
         else client.from("exercices").select { order("debut", Order.DESCENDING) }.decodeList()
