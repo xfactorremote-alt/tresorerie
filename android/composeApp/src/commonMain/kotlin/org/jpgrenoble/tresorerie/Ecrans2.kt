@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,29 +73,23 @@ private fun couleursStatut(s: String): Pair<Color, Color> = when (s) {
     else -> Couleurs.JauneClair to Couleurs.SurJaune
 }
 
-// Barre d'avancement : demande, validation, paiement, justificatif
+// Chronologie datée d'une demande (même lecture que .chronologie du site) :
+// "fait" = étape franchie, "encours" = étape attendue, "ko" = refus, "" = à venir
 @Composable
-private fun Etapes(d: Demande) {
-    // Dépense saisie directement : déjà payée, validée ensuite par le président
-    val regul = d.regularisation
-    val ordre = listOf("soumise", "validee", "payee", "justifiee")
-    val noms = if (regul) listOf("Paiement", "Validation", "Justificatif") else listOf("Demande", "Validation", "Paiement", "Justificatif")
-    val idx = when (d.statut) { "refusee" -> 1; "annulee" -> 0; else -> ordre.indexOf(d.statut) }
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        noms.forEachIndexed { i, n ->
-            val couleur = if (regul) when {
-                i == 0 -> Couleurs.Bleu
-                i == 1 -> when (d.statut) { "refusee" -> Couleurs.Erreur; "payee", "justifiee" -> Couleurs.Bleu; "soumise" -> Couleurs.Jaune; else -> Color(0xFFEFEDEC) }
-                else -> when (d.statut) { "justifiee" -> Couleurs.Bleu; "payee" -> Couleurs.Jaune; else -> Color(0xFFEFEDEC) }
-            } else when {
-                d.statut == "refusee" && i == 1 -> Couleurs.Erreur
-                i <= idx && !(d.statut == "annulee" && i > 0) -> Couleurs.Bleu
-                i == idx + 1 && d.statut !in listOf("refusee", "annulee") -> Couleurs.Jaune
-                else -> Color(0xFFEFEDEC)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(Modifier.fillMaxWidth().height(6.dp).background(couleur, RoundedCornerShape(3.dp)))
-                Text(n, fontSize = 11.sp, color = Couleurs.Texte2, maxLines = 1)
+private fun Chronologie(etapes: List<Triple<String, String, String>>) {
+    Column {
+        etapes.forEachIndexed { i, (titre, etat, detail) ->
+            val couleur = when (etat) { "fait" -> Color(0xFF1B77B0); "encours" -> Couleurs.Jaune; "ko" -> Couleurs.Erreur; else -> Color.Transparent }
+            Row(Modifier.height(IntrinsicSize.Min)) {
+                Column(Modifier.width(20.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.padding(top = 3.dp).size(12.dp).clip(RoundedCornerShape(6.dp)).background(couleur)
+                        .border(2.dp, if (etat.isEmpty()) Color(0xFFC8C6C4) else couleur, RoundedCornerShape(6.dp)))
+                    if (i < etapes.lastIndex) Box(Modifier.width(2.dp).weight(1f).background(if (etat == "fait") Color(0xFF1B77B0).copy(alpha = .35f) else Color(0xFFE1DFDD)))
+                }
+                Column(Modifier.padding(start = 10.dp, bottom = if (i < etapes.lastIndex) 12.dp else 0.dp)) {
+                    Text(titre, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = if (etat.isEmpty()) Couleurs.Texte2 else Color.Unspecified)
+                    if (detail.isNotBlank()) Text(detail, fontSize = 12.sp, color = Couleurs.Texte2)
+                }
             }
         }
     }
@@ -179,13 +174,22 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Titre("Demandes de dépense") }
+            // En-tête : titre et ce qui attend (comme le site)
+            item {
+                val l0 = liste.orEmpty()
+                val resume = listOf("a_valider", "a_payer", "a_justifier", "a_regulariser").mapNotNull { k ->
+                    val n = l0.count { garde(it, k) }; if (n > 0) "$n " + (filtres.firstOrNull { it.first == k }?.second ?: "").lowercase() else null }
+                Column {
+                    Text("Demandes", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(resume.joinToString(" · ").ifEmpty { "Rien en attente" }, color = Couleurs.Texte2)
+                }
+            }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     filtres.forEach { (k, l) ->
                         val n = liste?.count { x -> garde(x, k) } ?: 0
-                        FilterChip(selected = filtre == k, onClick = { filtre = k },
-                            label = { Text(if (k in listOf("toutes", "terminees") || n == 0) l else "$l ($n)") })
+                        FilterChip(selected = filtre == k, onClick = { filtre = k }, label = { Text(l) },
+                            trailingIcon = if (k !in listOf("toutes", "terminees") && n > 0) ({ Badge { Text("$n") } }) else null)
                     }
                 }
             }
@@ -194,57 +198,38 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
             else {
                 val vus = l.filter { garde(it) }
                 if (vus.isEmpty()) item {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Aucune demande" + (if (filtre == "toutes") "" else " " + (filtres.firstOrNull { it.first == filtre }?.second ?: "").lowercase()) + ".", color = Couleurs.Texte2)
-                    }
-                }
-                items(vus, key = { it.id }) { x ->
-                    val annul = etats.annulation(x); val op = etats.operation(x); val regul = etats.aRegulariser(x)
-                    val (fond, couleur) = when { annul != null -> couleursStatut("annulee"); regul -> couleursStatut("refusee"); else -> couleursStatut(x.statut) }
-                    val retard = x.statut == "payee" && annul == null && x.payeeLe != null &&
-                        aujourdhui().toEpochDays() - LocalDate.parse(x.payeeLe.take(10)).toEpochDays() > delai
-                    CarteBlanche(onClick = { detail = x }) {
-                        Row(verticalAlignment = Alignment.Top) {
-                            Column(Modifier.weight(1f)) {
-                                Text(x.objet, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                                if (x.regularisation) Puce("Déjà payée", Color(0xFFEFEDEC), Couleurs.Texte2)
-                                Text(listOfNotNull(
-                                    if (x.demandeur == d.profil.id) "Vous" else noms[x.demandeur] ?: "Membre du bureau",
-                                    dateFr(x.creeLe), d.nomCategorie(x.categorieId).ifEmpty { null },
-                                    x.projetId?.let { pid -> projetsTous.firstOrNull { it.id == pid }?.nom },
-                                ).joinToString(" · "), fontSize = 13.sp, color = Couleurs.Texte2)
+                    Text("Aucune demande" + (if (filtre == "toutes") "" else " " + (filtres.firstOrNull { it.first == filtre }?.second ?: "").lowercase()) + ".", color = Couleurs.Texte2)
+                } else item {
+                    // Liste sobre dans une carte : nombre et total, puis une ligne par demande qui ouvre sa fiche
+                    CarteBlanche {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                            Text("${vus.size} demande" + if (vus.size > 1) "s" else "", color = Couleurs.Texte2, modifier = Modifier.weight(1f))
+                            Text(euros(vus.sumOf { it.montant }), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        vus.forEach { x ->
+                            val annul = etats.annulation(x); val regul = etats.aRegulariser(x)
+                            val (fond, couleur) = when { annul != null -> couleursStatut("annulee"); regul -> couleursStatut("refusee"); else -> couleursStatut(x.statut) }
+                            val joursRetard = if (x.statut == "payee" && annul == null && x.payeeLe != null)
+                                (aujourdhui().toEpochDays() - LocalDate.parse(x.payeeLe.take(10)).toEpochDays() - delai).toInt() else 0
+                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { detail = x }.padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(x.objet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(listOfNotNull(if (x.demandeur == d.profil.id) "Vous" else noms[x.demandeur] ?: "Membre du bureau", dateFr(x.creeLe),
+                                        d.nomCategorie(x.categorieId).ifEmpty { null }, x.projetId?.let { pid -> projetsTous.firstOrNull { it.id == pid }?.nom }).joinToString(" · "),
+                                        fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (joursRetard > 0) Text("Justificatif en retard de $joursRetard jour" + if (joursRetard > 1) "s" else "", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Erreur)
+                                    else if (regul) Text("Déjà payée puis refusée : à régulariser", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Erreur)
+                                }
+                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(euros(x.montant), fontWeight = FontWeight.ExtraBold)
+                                    Puce(when { annul != null -> "Opération annulée"; regul -> "À régulariser"; else -> STATUTS[x.statut] ?: x.statut }, fond, couleur)
+                                }
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
                             }
-                            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(euros(x.montant), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                                Puce(when { annul != null -> "Opération annulée"; regul -> "Refusée · à régulariser"; else -> STATUTS[x.statut] ?: x.statut }, fond, couleur)
-                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                         }
-                        if (!x.justification.isNullOrBlank() || x.dateSouhaitee != null) Surface(color = Color(0xFFEFEDEC), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(12.dp)) {
-                                x.justification?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 14.sp) }
-                                x.dateSouhaitee?.let { Text("Souhaitée pour le ${dateFr(it)}", fontSize = 13.sp, color = Couleurs.Texte2) }
-                            }
-                        }
-                        Etapes(x)
-                        if (annul != null && op != null) Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(14.dp)) {
-                            Text("Paiement du ${dateFr(op.date)} neutralisé par contre-passation le ${dateFr(annul.date)}" + motifDe(annul.libelle).let { m -> if (m.isNotEmpty()) " ($m)" else "" } +
-                                ". Le montant n’entre plus dans les comptes" + (if (x.statut == "payee") "$NBSP; aucun justificatif n’est plus demandé." else "."), Modifier.padding(12.dp), fontSize = 14.sp)
-                        }
-                        if (regul && op != null) Surface(color = Couleurs.ErreurClair, shape = RoundedCornerShape(14.dp)) {
-                            Text("Dépense déjà payée, puis refusée par le président$NBSP: l’argent est sorti " +
-                                (if (d.comptes.firstOrNull { it.id == op.compteId }?.type == "caisse") "de la caisse. " else "du compte bancaire. ") +
-                                (if (d.peut("saisir_ecritures")) "Régularisez-la$NBSP: erreur de saisie, ou remboursement reçu." else "Le trésorier doit la régulariser."),
-                                Modifier.padding(12.dp), fontSize = 14.sp)
-                        }
-                        if (retard) Surface(color = Couleurs.ErreurClair, shape = RoundedCornerShape(14.dp)) {
-                            Text("Justificatif en retard$NBSP: payé il y a ${aujourdhui().toEpochDays() - LocalDate.parse(x.payeeLe!!.take(10)).toEpochDays()}$NBSP" + "jours, délai de $delai$NBSP" + "jours.", Modifier.padding(12.dp), fontSize = 14.sp)
-                        }
-                        if (x.statut == "refusee") x.motifRefus?.let { Text("Motif du refus$NBSP: $it", fontSize = 14.sp, color = Couleurs.Texte2) }
-                        val dates = listOfNotNull(x.valideeLe?.let { "Validée le " + dateFr(it.take(10)) }, x.payeeLe?.let { "Payée le " + dateFr(it.take(10)) })
-                        val nbPieces = pieces.count { it.demandeId == x.id } + (if (x.signature != null) 1 else 0)
-                        if (dates.isNotEmpty() || nbPieces > 0) Text((dates + listOfNotNull(if (nbPieces > 0) "$nbPieces document${if (nbPieces > 1) "s" else ""} (signature, justificatif, devis) : touchez pour voir" else null)).joinToString(" · "),
-                            fontSize = 13.sp, color = Couleurs.Texte2)
-                        ActionsDemande(x)
                     }
                 }
             }
@@ -265,25 +250,46 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
         ModalBottomSheet(onDismissRequest = { detail = null }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(x.objet, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(euros(x.montant), fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Couleurs.Orange)
-                Etapes(x)
+                // Fiche d'une demande (comme ficheDemande du site) : en-tête, informations, chronologie datée, pièces, actions
+                val annulF = etats.annulation(x); val regulF = etats.aRegulariser(x); val opF = etats.operation(x)
+                val (fondF, couleurF) = when { annulF != null -> couleursStatut("annulee"); regulF -> couleursStatut("refusee"); else -> couleursStatut(x.statut) }
+                Row(verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(x.objet, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Puce(when { annulF != null -> "Opération annulée"; regulF -> "À régulariser"; else -> STATUTS[x.statut] ?: x.statut }, fondF, couleurF)
+                            if (x.regularisation) Puce("Déjà payée", Color(0xFFEFEDEC), Couleurs.Texte2)
+                        }
+                    }
+                    Text(euros(x.montant), fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                }
                 Spacer(Modifier.height(4.dp))
-                LigneInfo("Statut", STATUTS[x.statut])
-                LigneInfo("Demandeur", if (x.demandeur == d.profil.id) "Vous" else noms[x.demandeur])
-                LigneInfo("Demandée le", dateFr(x.creeLe))
+                LigneInfo("Demandée par", if (x.demandeur == d.profil.id) "Vous" else noms[x.demandeur])
                 LigneInfo("Catégorie", d.nomCategorie(x.categorieId))
                 LigneInfo("Activité", x.projetId?.let { pid -> projetsTous.firstOrNull { it.id == pid }?.nom })
-                LigneInfo("Validée par", x.valideePar?.let { if (it == d.profil.id) "Vous" else noms[it] })
-                LigneInfo("Validée le", x.valideeLe?.let(::dateFr))
-                LigneInfo("Payée le", x.payeeLe?.let(::dateFr))
-                if (x.statut == "refusee") LigneInfo("Motif du refus", x.motifRefus)
-                LigneInfo("Justification", x.justification)
-                LigneInfo("Pour le", x.dateSouhaitee?.let(::dateFr))
+                LigneInfo("Souhaitée pour le", x.dateSouhaitee?.let(::dateFr))
+                x.justification?.takeIf { it.isNotBlank() }?.let { Surface(color = Color(0xFFEFEDEC), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
+                val nomDe = { id: String? -> id?.let { if (it == d.profil.id) "Vous" else noms[it] } ?: "" }
+                val retardF = x.statut == "payee" && annulF == null && x.payeeLe != null && aujourdhui().toEpochDays() - LocalDate.parse(x.payeeLe.take(10)).toEpochDays() > delai
+                val aPiece = pieces.any { it.demandeId == x.id && it.nature != "devis" } || x.statut == "justifiee"
+                Chronologie(buildList {
+                    add(Triple("Demande", "fait", dateFr(x.creeLe)))
+                    add(when {
+                        x.statut == "refusee" -> Triple("Refusée", "ko", listOfNotNull(x.valideeLe?.let { dateFr(it.take(10)) }, nomDe(x.valideePar).ifEmpty { null }, x.motifRefus?.let { "« $it »" }).joinToString(" · "))
+                        x.valideeLe != null -> Triple("Validée et signée", "fait", dateFr(x.valideeLe.take(10)) + " · " + nomDe(x.valideePar))
+                        else -> Triple("Validation", if (x.statut == "soumise") "encours" else "", if (x.statut == "annulee") "Demande annulée" else "En attente du président")
+                    })
+                    if (!(x.statut == "refusee" && opF == null)) {
+                        add(if (x.payeeLe != null || opF != null) Triple("Payée", "fait", x.payeeLe?.let { dateFr(it.take(10)) } ?: dateFr(opF!!.date))
+                            else Triple("Paiement", if (x.statut == "validee") "encours" else "", "À faire par le trésorier"))
+                        add(Triple("Justificatif", if (aPiece) "fait" else if (x.statut == "payee") (if (retardF) "ko" else "encours") else "",
+                            if (aPiece) "Fourni" else if (retardF) "En retard (délai de $delai jours)" else "Attendu dans les $delai jours après paiement"))
+                    }
+                })
                 Spacer(Modifier.height(8.dp))
                 PiecesVue(pieces.filter { it.demandeId == x.id && it.nature != "devis" }, x.signature)
                 devisDe(x)?.let { dv -> Text("Devis", fontWeight = FontWeight.Bold); PiecesVue(listOf(dv), null) }
-                etats.annulation(x)?.let { annul -> Text("Opération annulée le ${dateFr(annul.date)}" + motifDe(annul.libelle).let { m -> if (m.isNotEmpty()) " ($m)" else "" } + ".", fontSize = 14.sp, color = Couleurs.SurBleuClair) }
+                etats.annulation(x)?.let { annul -> Text("Paiement neutralisé : opération annulée le ${dateFr(annul.date)}" + motifDe(annul.libelle).let { m -> if (m.isNotEmpty()) " ($m)" else "" } + ".", fontSize = 14.sp, color = Couleurs.SurBleuClair) }
                 if (etats.aRegulariser(x)) Text("Refusée après paiement$NBSP: à régulariser.", fontSize = 14.sp, color = Couleurs.Erreur)
                 ActionsDemande(x) { detail = null }
             }

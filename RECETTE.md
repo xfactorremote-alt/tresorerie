@@ -5,7 +5,7 @@ Grille de la page 17 de l'audit du 7 octobre 2026. Un contrôle non effectué re
 Moyens utilisés :
 - **Base** : PostgreSQL 16 local avec le `schema.sql` complet (sections 1 à 12), et les rôles réels (trésorier, président, bureau, adhérent) testés avec les règles d'accès actives.
 - **Site** : mode démonstration piloté par navigateur automatique (Chromium), sans erreur JavaScript sur tous les parcours.
-- **Application Android** : 24 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.26.0.
+- **Application Android** : 24 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.27.0.
 
 | Scénario | Résultat attendu | Résultat | Preuve |
 |---|---|---|---|
@@ -28,6 +28,7 @@ Moyens utilisés :
 | Communiqués et bannière | Annonces dans le bon ordre, droits respectés, corbeille | **Validé sur la base de test, en démonstration et en production** | Adhérent : publication refusée ; note « bureau seulement » invisible ; nouveauté comptée puis vue ; suppression et restauration ; bureau sans droit refusé ; ordre « Important » puis réglages ; « Jamais » retire le type |
 | Temps réel et notifications | Écrans à jour sans recharger, alerte sonore et vibrante, compteur sur l’icône | **Validé en démonstration ; à vérifier sur deux appareils réels** | Publication de 17 tables en production ; écran redessiné sans chargement ni animation ; carillon, vibration et notification du système (site) ; notification Android avec son, vibration et nombre, vérification toutes les 15 minutes application fermée |
 | Planning de l’année (page des membres) | Activités lointaines visibles | **Validé sur la base de test, en démonstration et en production** | Lien personnel : rendez-vous à 250 jours renvoyé (avant : 120 jours au plus) ; « Toute l’année » groupe par mois (avril et juillet de l’an prochain en démonstration), choix gardé ; « Dans 6 mois » au-delà de 45 jours |
+| Demandes de dépense (liste et fiche) | Liste lisible au téléphone, toutes les actions dans la fiche, rien d’oublié | **Validé en démonstration (site) et à la compilation (Android)** | 390 px : titre et résumé « à valider · à payer », filtres sur une ligne avec leur nombre, une carte avec nombre et total, lignes sobres ; la fiche porte la chronologie datée (demande, validation, paiement, justificatif) et les actions selon le rôle (Payer, Joindre le justificatif, Voir l’opération…) ; bouton + en bas ; aucune erreur JavaScript |
 | Filtre de période du planning (page des membres) | Le mois montre ses rendez-vous, même le prochain ; semaine, mois, 3 mois, année au choix | **Corrigé et validé** | Cause : le prochain rendez-vous, déjà sur la bannière, était retiré de la liste ; en production, « Répétitions » du 16 octobre était le seul d’octobre, donc « Octobre » paraissait vide. Démonstration : 3 en octobre, 1 cette semaine, 4 sur 3 mois, 6 sur l’année ; menu fermé par Échap et clic à côté ; choix gardé ; test Android `planningDuMembreParPeriode` |
 | Rubrique Communiqués (page des membres) | Au-dessus du programme, mise en avant, absente sans communiqué | **Validé en démonstration (site) et compilé (Android)** | Lien et adhérent connecté : « Communiqués » puis « Au programme » ; « Nouveau » jusqu’à la lecture ; test Android `ordreDesCommuniques` |
 | Notifications des membres (lien personnel) | Cloche, alerte sonore et vibrante, notification même page fermée | **Validé en démonstration ; envoi validé sur la base de production avec des abonnements fictifs ; à vérifier sur un vrai téléphone** | Démonstration : rendez-vous ajouté par le trésorier → alerte « Nouveau rendez-vous : Pique-nique » avec « Voir » et pastille 1 sur la cloche. Production : clés créées, tâches 7 h et relance en place ; deux abonnements fictifs (Google, Mozilla) désactivés comme inconnus, sans erreur de format. Chiffrement vérifié contre la bibliothèque de référence `http_ece` |
@@ -42,7 +43,7 @@ Moyens utilisés :
 
 ## Points restant à valider par une personne
 
-1. **Application Android sur un vrai téléphone** : installer l’APK 0.26.0 et refaire les parcours (virement, régularisation, filtres, export).
+1. **Application Android sur un vrai téléphone** : installer l’APK 0.27.0 et refaire les parcours (virement, régularisation, filtres, export).
 2. **Export réel** depuis le site en ligne : ouvrir un PDF et un Excel du journal d'octobre et comparer les totaux à l'écran Opérations.
 3. **Restauration sur Supabase** : la commande `set local session_replication_role = replica` du script de restauration doit être acceptée par l'éditeur SQL de Supabase (à confirmer lors d'un premier essai, sur un projet de test).
 

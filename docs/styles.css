@@ -1269,3 +1269,36 @@ dialog.visionneuse img{max-width:100%;max-height:calc(100dvh - 64px);object-fit:
 .action-fiche .corps{flex:1;display:flex;flex-direction:column}
 .action-fiche .corps span{color:var(--texte-3);font-size:13px}
 @media (hover:hover){.action-fiche:hover{background:var(--survol)}}
+
+/* ---------- Demandes : filtres sur une ligne, liste sobre, fiche avec chronologie ---------- */
+.onglets-filtre{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:2px 16px}
+.onglets-filtre::-webkit-scrollbar{display:none}
+.onglets-filtre button{flex:none;min-height:36px;padding:0 14px;border:1px solid var(--bord);border-radius:var(--r-rond);background:var(--surface);color:var(--texte-2);font-weight:600;font-size:14px;white-space:nowrap}
+.onglets-filtre button small{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:4px;border-radius:var(--r-rond);background:var(--surface-2);color:var(--texte);font-size:12px}
+.onglets-filtre button[aria-selected=true]{background:var(--primaire-clair);border-color:var(--primaire-trait);color:var(--sur-primaire-clair)}
+.onglets-filtre button[aria-selected=true] small{background:var(--primaire);color:var(--sur-primaire)}
+.total-liste{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:6px;border-bottom:1px solid var(--bord-doux)}
+.total-liste b{font-size:18px}
+.ligne-demande{display:flex;align-items:center;gap:12px}
+.ligne-demande .corps{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ligne-demande .corps b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ligne-demande .corps > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ligne-demande small.negatif{font-size:12px;font-weight:600}
+.montant-etat{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none}
+.montant-etat b{font-size:16px}
+.ligne-demande > svg:last-child{flex:none;color:var(--texte-3)}
+.etapes.etapes-mini{margin:6px 0 0;gap:3px;max-width:220px;font-size:0}
+.etapes.etapes-mini li{font-size:0;line-height:0;gap:0}
+.etapes.etapes-mini li span{height:4px}
+.fiche-demande-tete{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.fiche-demande-tete h2{margin:0 0 6px}
+.fiche-demande-tete > b{font-size:24px;white-space:nowrap}
+.chronologie{list-style:none;margin:4px 0;padding:0 0 0 22px;position:relative;display:flex;flex-direction:column;gap:12px}
+.chronologie::before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--bord-doux)}
+.chronologie li{position:relative;display:flex;flex-direction:column}
+.chronologie li::before{content:"";position:absolute;left:-22px;top:3px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--bord)}
+.chronologie li.fait::before{background:var(--bleu);border-color:var(--bleu)}
+.chronologie li.encours::before{background:var(--jaune);border-color:var(--jaune)}
+.chronologie li.ko::before{background:var(--erreur);border-color:var(--erreur)}
+.chronologie li span{color:var(--texte-2);font-size:14px}
+.pieces-demande{display:flex;flex-wrap:wrap;gap:8px}

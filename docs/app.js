@@ -3669,73 +3669,106 @@ async function pageDepenses() {
   const liste = demandes.filter(FILTRES[S.filtreDepenses][1]);
   const peutDemander = peut('demander_depenses');
 
-  const carte = (d) => {
-    const piece = pieceDe(d);
-    const annul = annulation(d), op = opDe[d.id];
-    const retard = d.statut === 'payee' && !annul && d.payee_le && joursDepuis(d.payee_le) > delai;
-    const puce = annul ? ['puce-neutre', 'Opération annulée'] : aRegulariser(d) ? ['puce-ko', 'Refusée · à régulariser'] : STATUTS[d.statut];
-    const actions = [];
-    if (peut('valider_depenses') && d.statut === 'soumise') actions.push(`<button class="btn-texte" data-refuser="${d.id}">Refuser</button>`, `<button class="btn-primaire" data-valider="${d.id}">Valider et signer</button>`);
-    if (peut('payer_depenses') && d.statut === 'validee' && d.validee_par !== S.profil.id) actions.push(`<button class="btn-primaire" data-payer="${d.id}">Payer</button>`);
-    if (aRegulariser(d) && peut('saisir_ecritures') && !op.rapproche) actions.push(`<button class="btn-primaire" data-regulariser="${d.id}">Régulariser</button>`);
-    if (d.statut === 'payee' && !annul && (peut('payer_depenses', 'saisir_ecritures') || d.demandeur === S.profil.id)) actions.push(`<button class="btn-tonal" data-justifier="${d.id}">Joindre le justificatif</button>`);
-    if (d.statut === 'soumise' && d.demandeur === S.profil.id) actions.push(`<button class="btn-texte" data-annuler="${d.id}">Annuler la demande</button>`);
-    if (['annulee', 'refusee', 'brouillon'].includes(d.statut) && !op && (d.demandeur === S.profil.id || peut('administrer'))) actions.push(`<button class="btn-texte btn-texte-danger" data-suppr-dem="${d.id}">${icone('corbeille', 16)} Supprimer</button>`);
-    return `<article class="carte">
-      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-        <div style="flex:1;min-width:180px"><h3 style="font-size:18px">${esc(d.objet)}</h3>
-          ${d.regularisation ? '<span class="puce puce-neutre" title="Saisie directement dans les opérations, validation après paiement">Déjà payée</span> ' : ''}<span class="muted">${esc(nomDe(d.demandeur))} · ${dateFr(String(d.created_at).slice(0, 10))} · ${esc(nomCategorie(d.category_id))}${d.project_id ? ' · ' + esc(nomProjet(d.project_id)) : ''}</span></div>
-        <div style="text-align:right"><b class="num" style="font-size:22px">${eur(d.montant)}</b><br><span class="puce ${puce[0]}">${puce[1]}</span></div>
-      </div>
-      ${d.justification || d.date_souhaitee ? `<p class="justification">${d.justification ? esc(d.justification) : ''}${d.date_souhaitee ? `${d.justification ? '<br>' : ''}<span class="muted">Souhaitée pour le ${dateFr(d.date_souhaitee)}</span>` : ''}</p>` : ''}
-      ${etapes(d)}
-      ${retard ? `<div class="alerte">Justificatif en retard&nbsp;: payé il y a ${joursDepuis(d.payee_le)}&nbsp;jours, délai de ${delai}&nbsp;jours.</div>` : ''}
-      ${d.statut === 'refusee' && d.motif_refus ? `<p class="muted">Motif du refus&nbsp;: ${esc(d.motif_refus)}</p>` : ''}
-      ${annul ? `<p class="info">Paiement du ${dateFr(op.date_op)} neutralisé par contre-passation le ${dateFr(annul.date_op)}${motifDe(annul) ? ` (${esc(motifDe(annul))})` : ''}. Le montant n’entre plus dans les comptes${d.statut === 'payee' ? '&nbsp;; aucun justificatif n’est plus demandé' : ''}.</p>` : ''}
-      ${aRegulariser(d) ? `<div class="alerte">Dépense déjà payée, puis refusée par le président&nbsp;: l’argent est sorti ${S.comptes.find((c) => c.id === op.account_id)?.type === 'caisse' ? 'de la caisse' : 'du compte bancaire'}. ${peut('saisir_ecritures') ? 'Régularisez-la&nbsp;: erreur de saisie, ou remboursement reçu de la personne concernée.' : 'Le trésorier doit la régulariser (erreur de saisie ou remboursement).'}</div>` : ''}
-      <div class="filtres">
-        ${d.signature_path ? `<button class="btn-texte btn-petit" data-voir="${esc(d.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
-        ${piece ? `<button class="btn-texte btn-petit" data-voir="${esc(piece.storage_path)}">Justificatif</button>` : ''}
-        ${devisDe(d) ? `<button class="btn-texte btn-petit" data-voir="${esc(devisDe(d).storage_path)}">Devis</button>` : ''}
-        ${d.validee_le ? `<span class="muted">Validée le ${dateFr(String(d.validee_le).slice(0, 10))}</span>` : ''}
-        ${d.payee_le ? `<span class="muted">Payée le ${dateFr(String(d.payee_le).slice(0, 10))}</span>` : ''}
-        ${op && peut('consulter_finances', 'saisir_ecritures') ? `<button class="btn-texte btn-petit" data-voir-op="${op.id}">Voir l’opération</button>` : ''}
-      </div>
-      ${actions.length ? `<div class="actions">${actions.join('')}</div>` : ''}
-    </article>`;
+  // Ligne sobre : objet, demandeur · date · catégorie, montant et état, avancement fin ; un appui ouvre la fiche
+  const etatDe = (d) => (annulation(d) ? ['puce-neutre', 'Opération annulée'] : aRegulariser(d) ? ['puce-ko', 'À régulariser'] : STATUTS[d.statut]);
+  const retardDe = (d) => (d.statut === 'payee' && !annulation(d) && d.payee_le && joursDepuis(d.payee_le) > delai ? joursDepuis(d.payee_le) : 0);
+  const ligneDemande = (d) => {
+    const e = etatDe(d), r = retardDe(d);
+    return `<li class="cliquable ligne-demande" data-demande="${d.id}" tabindex="0" role="button">
+      <div class="corps"><b>${esc(d.objet)}</b>
+        <span>${esc(nomDe(d.demandeur))} · ${dateFr(String(d.created_at).slice(0, 10))} · ${esc(nomCategorie(d.category_id))}${d.project_id ? ' · ' + esc(nomProjet(d.project_id)) : ''}</span>
+        ${r ? `<small class="negatif">Justificatif en retard de ${r - delai} jour${r - delai > 1 ? 's' : ''}</small>` : aRegulariser(d) ? '<small class="negatif">Déjà payée puis refusée : à régulariser</small>' : ''}
+</div>
+      <div class="montant-etat"><b class="num">${eur(d.montant)}</b><span class="puce ${e[0]}">${e[1]}</span></div>
+      ${icone('suivant', 18)}</li>`;
   };
+  const total = liste.reduce((t, d) => t + Number(d.montant), 0);
+  const compte = (k) => demandes.filter(FILTRES[k][1]).length;
+  const resume = ['a_valider', 'a_payer', 'a_justifier', 'a_regulariser'].map((k) => [k, compte(k)]).filter(([, n]) => n)
+    .map(([k, n]) => `${n} ${FILTRES[k][0].toLowerCase()}`).join(' · ');
 
   rendre(`<div class="page">
-    <div class="page-titre"><h1>Demandes de dépense</h1>${peutDemander ? '<button class="btn-primaire" id="b-demande">Nouvelle demande</button>' : ''}</div>
-    <div class="filtres" role="tablist">${Object.entries(FILTRES).filter(([k, [, f]]) => k !== 'a_regulariser' || demandes.some(f)).map(([k, [l, f]]) => {
+    <div class="page-titre"><h1>Demandes</h1><span class="muted">${resume || 'Rien en attente'}</span>
+      ${peutDemander ? '<button class="fab" id="b-demande" aria-label="Nouvelle demande" title="Nouvelle demande"></button>' : ''}</div>
+    <div class="onglets-filtre" role="tablist" aria-label="Filtrer les demandes">${Object.entries(FILTRES).filter(([k, [, f]]) => k !== 'a_regulariser' || demandes.some(f)).map(([k, [l, f]]) => {
       const n = demandes.filter(f).length;
-      return `<button class="btn-petit ${S.filtreDepenses === k ? 'btn-primaire' : ''}" data-filtre="${k}" role="tab" aria-selected="${S.filtreDepenses === k}">${l}${k !== 'toutes' && k !== 'terminees' && n ? ` (${n})` : ''}</button>`;
+      return `<button type="button" data-filtre="${k}" role="tab" aria-selected="${S.filtreDepenses === k}">${l}${k !== 'toutes' && k !== 'terminees' && n ? ` <small>${n}</small>` : ''}</button>`;
     }).join('')}</div>
-    ${liste.length ? liste.map(carte).join('') : `<div class="carte vide">Aucune demande ${S.filtreDepenses === 'toutes' ? '' : FILTRES[S.filtreDepenses][0].toLowerCase()}.</div>`}
+    ${liste.length ? `<section class="carte"><div class="total-liste"><span class="muted">${liste.length} demande${liste.length > 1 ? 's' : ''}</span><b class="num">${eur(total)}</b></div>
+      <ul class="liste liste-demandes">${liste.map(ligneDemande).join('')}</ul></section>`
+      : `<div class="carte vide">${icone('valide', 32)}<p>Aucune demande ${S.filtreDepenses === 'toutes' ? '' : FILTRES[S.filtreDepenses][0].toLowerCase()}.</p></div>`}
   </div>`);
 
   const recharger = () => pageDepenses().catch(erreur);
   const trouver = (id) => demandes.find((d) => d.id === id);
   document.querySelectorAll('[data-filtre]').forEach((b) => b.addEventListener('click', () => { S.filtreDepenses = b.dataset.filtre; recharger(); }));
   $('#b-demande')?.addEventListener('click', () => feuilleDemande(recharger));
-  document.querySelectorAll('[data-valider]').forEach((b) => b.addEventListener('click', () => { const d = trouver(b.dataset.valider); feuilleValider(d, nomDe, recharger, devisDe(d)); }));
-  document.querySelectorAll('[data-refuser]').forEach((b) => b.addEventListener('click', () => feuilleRefuser(trouver(b.dataset.refuser), recharger)));
-  document.querySelectorAll('[data-payer]').forEach((b) => b.addEventListener('click', () => feuillePayer(trouver(b.dataset.payer), recharger)));
-  document.querySelectorAll('[data-justifier]').forEach((b) => b.addEventListener('click', () => feuilleJustifier(trouver(b.dataset.justifier), recharger)));
-  document.querySelectorAll('[data-regulariser]').forEach((b) => b.addEventListener('click', () => { const d = trouver(b.dataset.regulariser); feuilleRegulariser(d, opDe[d.id], recharger); }));
-  document.querySelectorAll('[data-voir-op]').forEach((b) => b.addEventListener('click', () => { S.ouvrirOperation = b.dataset.voirOp; location.hash = '#ecritures'; }));
-  document.querySelectorAll('[data-suppr-dem]').forEach((b) => b.addEventListener('click', () => { const d = trouver(b.dataset.supprDem); supprimerAvecConfirmation('expense_requests', d.id, d.objet, recharger); }));
-  document.querySelectorAll('[data-annuler]').forEach((b) => b.addEventListener('click', () => {
-    const d = trouver(b.dataset.annuler);
-    ouvrirFeuille(`<h2>Annuler cette demande&#8239;?</h2><p>«&nbsp;${esc(d.objet)}&nbsp;», ${eur(d.montant)}</p>
-      <div class="actions"><button class="btn-texte" id="b-non">Garder</button><button class="btn-danger" id="b-oui">Annuler la demande</button></div>`, (root) => {
-      $('#b-non', root).addEventListener('click', fermerFeuille);
-      $('#b-oui', root).addEventListener('click', async () => {
-        try { await q(sb.from('expense_requests').update({ statut: 'annulee' }).eq('id', d.id)); fermerFeuille(); toast('Demande annulée'); recharger(); } catch (e) { erreur(e); }
-      });
+  document.querySelectorAll('[data-demande]').forEach((li) => {
+    const ouvrir = () => ficheDemande(trouver(li.dataset.demande));
+    li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+  });
+  if (S.ouvrirDemande) { const d = trouver(S.ouvrirDemande); S.ouvrirDemande = null; if (d) ficheDemande(d); }
+
+  // Fiche d'une demande : informations, étapes datées, pièces, et les actions possibles selon l'état et les droits
+  function ficheDemande(d) {
+    if (!d) return;
+    const piece = pieceDe(d), devis = devisDe(d), annul = annulation(d), op = opDe[d.id], e = etatDe(d), r = retardDe(d);
+    const actions = [];
+    if (peut('valider_depenses') && d.statut === 'soumise') actions.push(['refuser', 'btn-texte', 'Refuser'], ['valider', 'btn-primaire', 'Valider et signer']);
+    if (peut('payer_depenses') && d.statut === 'validee' && d.validee_par !== S.profil.id) actions.push(['payer', 'btn-primaire', 'Payer']);
+    if (aRegulariser(d) && peut('saisir_ecritures') && !op.rapproche) actions.push(['regulariser', 'btn-primaire', 'Régulariser']);
+    if (d.statut === 'payee' && !annul && (peut('payer_depenses', 'saisir_ecritures') || d.demandeur === S.profil.id)) actions.push(['justifier', 'btn-primaire', 'Joindre le justificatif']);
+    const secondaires = [];
+    if (op && peut('consulter_finances', 'saisir_ecritures')) secondaires.push(['voir-op', 'Voir l’opération']);
+    if (d.statut === 'soumise' && d.demandeur === S.profil.id) secondaires.push(['annuler', 'Annuler la demande']);
+    const supprimable = ['annulee', 'refusee', 'brouillon'].includes(d.statut) && !op && (d.demandeur === S.profil.id || peut('administrer'));
+    const etape = (titre, fait, detail) => `<li class="${fait}"><b>${titre}</b><span>${detail}</span></li>`;
+    const validation = d.statut === 'refusee' ? etape('Refusée', 'ko', `${d.validee_le ? dateFr(String(d.validee_le).slice(0, 10)) + ' · ' : ''}${esc(nomDe(d.validee_par))}${d.motif_refus ? ` · « ${esc(d.motif_refus)} »` : ''}`)
+      : d.validee_le ? etape('Validée et signée', 'fait', `${dateFr(String(d.validee_le).slice(0, 10))} · ${esc(nomDe(d.validee_par))}`)
+      : etape('Validation', d.statut === 'soumise' ? 'encours' : '', d.statut === 'annulee' ? 'Demande annulée' : 'En attente du président');
+    ouvrirFeuille(`<div class="fiche-demande-tete"><div><h2>${esc(d.objet)}</h2><span class="puce ${e[0]}">${e[1]}</span>${d.regularisation ? ' <span class="puce puce-neutre">Déjà payée</span>' : ''}</div><b class="num">${eur(d.montant)}</b></div>
+      <div class="details">
+        <div class="ligne-detail"><span class="muted">Demandée par</span><span>${esc(nomDe(d.demandeur))}</span></div>
+        <div class="ligne-detail"><span class="muted">Catégorie</span><span>${esc(nomCategorie(d.category_id))}</span></div>
+        ${d.project_id ? `<div class="ligne-detail"><span class="muted">Activité</span><span>${esc(nomProjet(d.project_id))}</span></div>` : ''}
+        ${d.date_souhaitee ? `<div class="ligne-detail"><span class="muted">Souhaitée pour le</span><span>${dateFr(d.date_souhaitee)}</span></div>` : ''}
+      </div>
+      ${d.justification ? `<p class="justification">${esc(d.justification)}</p>` : ''}
+      <ol class="chronologie">
+        ${etape('Demande', 'fait', dateFr(String(d.created_at).slice(0, 10)))}
+        ${validation}
+        ${d.statut === 'refusee' && !op ? '' : etape(d.payee_le || op ? 'Payée' : 'Paiement', d.payee_le || op ? 'fait' : d.statut === 'validee' ? 'encours' : '', d.payee_le ? dateFr(String(d.payee_le).slice(0, 10)) : op ? dateFr(op.date_op) : 'À faire par le trésorier')}
+        ${d.statut === 'refusee' && !op ? '' : etape('Justificatif', piece || d.statut === 'justifiee' ? 'fait' : d.statut === 'payee' ? (r ? 'ko' : 'encours') : '', piece || d.statut === 'justifiee' ? 'Fourni' : r ? `En retard (délai de ${delai} jours)` : `Attendu dans les ${delai} jours après paiement`)}
+      </ol>
+      ${annul ? `<p class="info">Paiement du ${dateFr(op.date_op)} neutralisé par contre-passation le ${dateFr(annul.date_op)}${motifDe(annul) ? ` (${esc(motifDe(annul))})` : ''}. Le montant n’entre plus dans les comptes.</p>` : ''}
+      ${aRegulariser(d) ? `<div class="alerte">Dépense déjà payée, puis refusée par le président : l’argent est sorti ${S.comptes.find((c) => c.id === op.account_id)?.type === 'caisse' ? 'de la caisse' : 'du compte bancaire'}. ${peut('saisir_ecritures') ? 'Régularisez-la : erreur de saisie, ou remboursement reçu.' : 'Le trésorier doit la régulariser.'}</div>` : ''}
+      ${devis || d.signature_path || piece ? `<div class="pieces-demande">${devis ? `<button class="btn-tonal btn-petit" data-voir="${esc(devis.storage_path)}">${icone('trombone', 16)} Devis</button>` : ''}${d.signature_path ? `<button class="btn-tonal btn-petit" data-voir="${esc(d.signature_path)}" data-bucket="signatures">${icone('valide', 16)} Signature</button>` : ''}${piece ? `<button class="btn-tonal btn-petit" data-voir="${esc(piece.storage_path)}">${icone('trombone', 16)} Justificatif</button>` : ''}</div>` : ''}
+      ${secondaires.length ? `<div class="actions-gauche">${secondaires.map(([k, l]) => `<button type="button" class="btn-texte btn-petit" data-act="${k}">${l}</button>`).join('')}</div>` : ''}
+      <div class="actions" style="justify-content:space-between">${supprimable ? `<button type="button" class="btn-texte btn-texte-danger" data-act="supprimer">${icone('corbeille', 16)} Supprimer</button>` : '<span></span>'}
+        <span class="actions" style="margin:0">${actions.length ? actions.map(([k, c, l]) => `<button type="button" class="${c}" data-act="${k}">${l}</button>`).join('') : '<button type="button" class="btn-primaire" data-act="fermer">Fermer</button>'}</span></div>`, (root) => {
+      root.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier(b.dataset.bucket || 'justificatifs', b.dataset.voir)));
+      root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
+        const a = b.dataset.act;
+        if (a === 'fermer') return fermerFeuille();
+        if (a === 'valider') return feuilleValider(d, nomDe, recharger, devis);
+        if (a === 'refuser') return feuilleRefuser(d, recharger);
+        if (a === 'payer') return feuillePayer(d, recharger);
+        if (a === 'justifier') return feuilleJustifier(d, recharger);
+        if (a === 'regulariser') return feuilleRegulariser(d, op, recharger);
+        if (a === 'voir-op') { fermerFeuille(); S.ouvrirOperation = op.id; location.hash = '#ecritures'; return; }
+        if (a === 'supprimer') return supprimerAvecConfirmation('expense_requests', d.id, d.objet, recharger);
+        if (a === 'annuler') {
+          ouvrirFeuille(`<h2>Annuler cette demande&#8239;?</h2><p>«&nbsp;${esc(d.objet)}&nbsp;», ${eur(d.montant)}</p>
+            <div class="actions"><button class="btn-texte" id="b-non">Garder</button><button class="btn-danger" id="b-oui">Annuler la demande</button></div>`, (r2) => {
+            $('#b-non', r2).addEventListener('click', () => ficheDemande(d));
+            $('#b-oui', r2).addEventListener('click', async () => {
+              try { await q(sb.from('expense_requests').update({ statut: 'annulee' }).eq('id', d.id)); fermerFeuille(); toast('Demande annulée'); recharger(); } catch (err) { erreur(err); }
+            });
+          });
+        }
+      }));
     });
-  }));
-  brancherPieces(recharger);
+  }
 }
 
 function feuilleDemande(apres) {
