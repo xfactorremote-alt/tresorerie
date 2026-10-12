@@ -1938,60 +1938,112 @@ function fonctionMembre(m) {
 const ORDRE_ROLES = ['president', 'vice_president', 'tresorier', 'tresorier_adjoint', 'secretaire', 'bureau'];
 const rangRole = (r) => { const i = ORDRE_ROLES.indexOf(r); return i < 0 ? (r === 'adherent' ? 99 : 50) : i; };
 
+// Petit menu d'actions sous un bouton (« ⋯ ») : se ferme au choix, au clic à côté et avec Échap
+function menuActions(bouton, actions) {
+  document.querySelector('.menu-actions')?.remove();
+  const m = document.createElement('div'); m.className = 'menu-actions menu-periode'; m.setAttribute('role', 'menu');
+  m.innerHTML = actions.map(([l, ic], k) => `<button type="button" role="menuitem" data-k="${k}"><span class="coche">${icone(ic, 16)}</span><span><b>${esc(l)}</b></span></button>`).join('');
+  bouton.parentElement.style.position = 'relative'; bouton.after(m); bouton.setAttribute('aria-expanded', 'true');
+  const fermer = () => { m.remove(); bouton.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', aCote, true); document.removeEventListener('keydown', echap); };
+  const aCote = (e) => { if (!m.contains(e.target) && e.target !== bouton) fermer(); };
+  const echap = (e) => { if (e.key === 'Escape') { fermer(); bouton.focus(); } };
+  setTimeout(() => { document.addEventListener('click', aCote, true); document.addEventListener('keydown', echap); });
+  m.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => { fermer(); actions[Number(b.dataset.k)][2](); }));
+  m.querySelector('button')?.focus();
+}
+
+// Membres : en-tête, recherche avec le menu « ⋯ » (liens, import, export), filtre Tous / Actifs / Inactifs,
+// lignes sobres qui ouvrent la fiche du membre (coordonnées et toutes les actions, dont Supprimer)
 async function pageMembres() {
-  const admin = peut('administrer');
   const actifs = S.membres.filter((m) => m.actif);
   const inactifs = S.membres.length - actifs.length;
-  const bureau = S.membres.filter((m) => { const f = fonctionMembre(m); return f && f.role !== 'adherent'; })
+  const filtre = ['tous', 'actifs', 'inactifs'].includes(S.filtreMembres) ? S.filtreMembres : 'tous';
+  const vus = S.membres.filter((m) => filtre === 'tous' || (filtre === 'actifs' ? m.actif : !m.actif));
+  const bureau = vus.filter((m) => { const f = fonctionMembre(m); return f && f.role !== 'adherent'; })
     .sort((x, y) => rangRole(fonctionMembre(x).role) - rangRole(fonctionMembre(y).role));
-  const autres = S.membres.filter((m) => !bureau.includes(m));
-  const pucesFonction = (m) => {
-    const f = fonctionMembre(m);
-    if (!f) return '';
-    if (f.etat === 'invite') return `<span class="puce puce-partiel" title="Invitation en attente">${esc(nomRole(f.role))} · invité</span>`;
-    if (f.etat === 'desactive') return `<span class="puce puce-neutre">${esc(nomRole(f.role))} · accès coupé</span>`;
-    return f.role === 'adherent' ? '<span class="puce puce-neutre">Accès adhérent</span>' : `<span class="puce puce-ok">${esc(nomRole(f.role))}</span>`;
-  };
+  const autres = vus.filter((m) => !bureau.includes(m));
   const ligne = (m) => `
-        <li data-nom="${esc(sansAccents(nomComplet(m)))}" ${m.actif ? '' : 'class="inactif"'}>
+        <li class="cliquable${m.actif ? '' : ' inactif'}" data-nom="${esc(sansAccents(nomComplet(m)))}" data-fiche="${m.id}" tabindex="0" role="button">
           ${avatar(m)}
-          <div class="corps"><b>${esc(nomComplet(m))}${m.id === S.profil.member_id ? ' <span class="muted">(vous)</span>' : ''}</b><span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}${m.profession ? ' · ' + esc(m.profession) : ''}${m.actif ? '' : ' · inactif'}</span>
-            <div class="membre-etats">${pucesFonction(m)}${m.consent_anniversaire ? '' : '<span class="puce puce-neutre" title="Anniversaire visible uniquement par le bureau">Sans accord</span>'}</div></div>
-          <div class="membre-actions">
-            ${peut('gerer_membres', 'gerer_cotisations') && m.actif ? `<button class="btn-texte btn-petit" data-lien="${m.id}">Lien</button>` : ''}
-            ${admin ? `<button class="btn-texte btn-petit" data-acces="${m.id}">Fonction</button>` : ''}
-            ${peut('gerer_membres') ? `<button class="btn-texte btn-petit" data-modif="${m.id}">Modifier</button>` : ''}
-          </div>
+          <div class="corps"><b>${esc(nomComplet(m))}${m.id === S.profil.member_id ? ' <span class="muted">(vous)</span>' : ''}</b>
+            <span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}${m.profession ? ' · ' + esc(m.profession) : ''}</span></div>
+          <span class="membre-etats">${pucesFonction(m)}${m.actif ? '' : '<span class="puce puce-neutre">Inactif</span>'}</span>
+          ${icone('suivant', 18)}
         </li>`;
+  const actions = [
+    ...(peut('gerer_membres', 'gerer_cotisations') && S.membres.length ? [['Liens personnels', 'lien', feuilleLiens]] : []),
+    ...(peut('gerer_membres') ? [['Importer (CSV, Excel)', 'ajout', feuilleImport]] : []),
+    ['Exporter la liste', 'telecharger', () => choisirFormat('Exporter la liste des membres', () => pdfMembres(), csvMembres)],
+  ];
+  const segment = (k, l, n) => `<button type="button" role="tab" data-filtre="${k}" aria-selected="${filtre === k}">${l} <small>${n}</small></button>`;
   rendre(`<div class="page">
-    <div class="page-titre"><h1>Membres</h1>
-      <span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? `, ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
-      ${peut('gerer_membres', 'gerer_cotisations') && S.membres.length ? '<button class="btn-tonal btn-petit" id="b-liens">Liens personnels</button>' : ''}
-      ${peut('gerer_membres') ? '<button class="btn-tonal btn-petit" id="b-import">Importer (CSV, Excel)</button>' : ''}
-      <button class="btn-bleu btn-petit" id="b-export-m">Exporter</button>
-    </div>
-    ${S.membres.length ? '<input type="search" id="recherche" placeholder="Rechercher un membre" aria-label="Rechercher un membre">' : ''}
+    <div class="page-titre"><h1>Membres</h1><span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? ` · ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
+      ${peut('gerer_membres') ? '<button class="fab" id="b-ajout" aria-label="Ajouter un membre" title="Ajouter un membre"></button>' : ''}</div>
+    ${S.membres.length ? `<div class="barre-recherche"><input type="search" id="recherche" placeholder="Rechercher un membre" aria-label="Rechercher un membre">
+      <button type="button" class="btn-tonal btn-icone-carre" id="b-actions" aria-haspopup="menu" aria-expanded="false" aria-label="Autres actions" title="Autres actions">⋯</button></div>
+      ${inactifs ? `<div class="segmente" role="tablist" aria-label="Filtrer les membres">${segment('tous', 'Tous', S.membres.length)}${segment('actifs', 'Actifs', actifs.length)}${segment('inactifs', 'Inactifs', inactifs)}</div>` : ''}` : ''}
     ${bureau.length ? `<section class="carte"><h2>Bureau</h2><ul class="liste liste-membres">${bureau.map(ligne).join('')}</ul></section>` : ''}
     <section class="carte">
       ${bureau.length ? '<h2>Membres</h2>' : ''}
       ${autres.length ? `<ul class="liste liste-membres">${autres.map(ligne).join('')}</ul>`
-      : S.membres.length ? '<div class="vide">Tous les membres font partie du bureau.</div>'
-      : `<div class="vide">Aucun membre.${peut('gerer_membres') ? '<span>Ajoutez-les un par un ou importez votre liste.</span>' : ''}</div>`}
+      : S.membres.length ? `<div class="vide">${filtre === 'inactifs' ? 'Aucun membre inactif.' : 'Tous ces membres font partie du bureau.'}</div>`
+      : `<div class="vide">Aucun membre.${peut('gerer_membres') ? '<span>Ajoutez-les avec le bouton +, ou importez votre liste avec ⋯.</span>' : ''}</div>`}
     </section>
-    ${admin ? '<p class="muted aide-bas">« Lien » : la page personnelle d’un membre (cotisation, participations, rendez-vous), sans compte ni mot de passe. « Fonction » : désigner un membre du bureau et lui donner un compte. Les fonctions et leurs droits se règlent dans Paramètres, Rôles et droits.</p>' : ''}
-    ${peut('gerer_membres') ? `<button class="fab" id="b-ajout" aria-label="Ajouter un membre" title="Ajouter un membre"></button>` : ''}
   </div>`);
   $('#recherche')?.addEventListener('input', (e) => {
     const v = sansAccents(e.target.value);
     document.querySelectorAll('.liste-membres li').forEach((li) => { li.hidden = v && !li.dataset.nom.includes(v); });
   });
   $('#b-ajout')?.addEventListener('click', () => feuilleMembre());
-  $('#b-import')?.addEventListener('click', feuilleImport);
-  document.querySelectorAll('[data-modif]').forEach((b) => b.addEventListener('click', () => feuilleMembre(S.membres.find((m) => m.id === b.dataset.modif))));
-  document.querySelectorAll('[data-acces]').forEach((b) => b.addEventListener('click', () => feuilleAcces(S.membres.find((m) => m.id === b.dataset.acces))));
-  document.querySelectorAll('[data-lien]').forEach((b) => b.addEventListener('click', () => feuilleLien(S.membres.find((m) => m.id === b.dataset.lien))));
-  $('#b-liens')?.addEventListener('click', feuilleLiens);
-  $('#b-export-m').addEventListener('click', () => choisirFormat('Exporter la liste des membres', () => pdfMembres(), csvMembres));
+  $('#b-actions')?.addEventListener('click', (e) => menuActions(e.currentTarget, actions));
+  document.querySelectorAll('[data-filtre]').forEach((b) => b.addEventListener('click', () => { S.filtreMembres = b.dataset.filtre; pageMembres(); }));
+  document.querySelectorAll('[data-fiche]').forEach((li) => {
+    const ouvrir = () => feuilleFicheMembre(S.membres.find((m) => m.id === li.dataset.fiche));
+    li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+  });
+}
+function pucesFonction(m) {
+  const f = fonctionMembre(m);
+  if (!f) return '';
+  if (f.etat === 'invite') return `<span class="puce puce-partiel" title="Invitation en attente">${esc(nomRole(f.role))} · invité</span>`;
+  if (f.etat === 'desactive') return `<span class="puce puce-neutre">${esc(nomRole(f.role))} · accès coupé</span>`;
+  return f.role === 'adherent' ? '<span class="puce puce-neutre">Accès adhérent</span>' : `<span class="puce puce-ok">${esc(nomRole(f.role))}</span>`;
+}
+// Fiche d'un membre : coordonnées et toutes les actions (lien personnel, fonction, modifier, inactif, supprimer)
+function feuilleFicheMembre(m) {
+  if (!m) return;
+  const admin = peut('administrer'), gere = peut('gerer_membres');
+  const wa = numeroWa(m.whatsapp || '');
+  const actions = [
+    ...(peut('gerer_membres', 'gerer_cotisations') && m.actif ? [['lien', 'lien', 'Lien personnel', 'Sa page de cotisation et de rendez-vous, sans compte']] : []),
+    ...(admin ? [['acces', 'acces', 'Fonction et accès', 'Membre du bureau, compte sur la plateforme']] : []),
+    ...(gere ? [['modif', 'ecritures', 'Modifier la fiche', 'Nom, anniversaire, coordonnées, photo'],
+      ['actif', m.actif ? 'cadenas' : 'valide', m.actif ? 'Rendre inactif' : 'Réactiver', m.actif ? 'Il n’apparaît plus dans les cotisations ni les relances' : 'Il revient dans les cotisations et les relances']] : []),
+  ];
+  ouvrirFeuille(`<div class="fiche-membre-tete">${avatar(m)}<div><h2>${esc(nomComplet(m))}</h2>
+      <div class="membre-etats">${pucesFonction(m)}<span class="puce ${m.actif ? 'puce-ok' : 'puce-neutre'}">${m.actif ? 'Actif' : 'Inactif'}</span>${m.consent_anniversaire ? '' : '<span class="puce puce-neutre" title="Anniversaire visible uniquement par le bureau">Anniversaire privé</span>'}</div></div></div>
+    <div class="details">
+      <div class="ligne-detail"><span class="muted">Anniversaire</span><span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}</span></div>
+      ${m.profession ? `<div class="ligne-detail"><span class="muted">Profession</span><span>${esc(m.profession)}</span></div>` : ''}
+      ${m.whatsapp ? `<div class="ligne-detail"><span class="muted">WhatsApp</span>${wa ? `<a href="https://wa.me/${wa}" target="_blank" rel="noopener">${esc(m.whatsapp)}</a>` : `<span>${esc(m.whatsapp)}</span>`}</div>` : ''}
+      ${m.email ? `<div class="ligne-detail"><span class="muted">E-mail</span><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div>` : ''}
+    </div>
+    ${actions.length ? `<ul class="liste liste-menu liste-actions-fiche">${actions.map(([k, ic, l, d]) => `<li><button type="button" class="action-fiche" data-action="${k}">${icone(ic, 18)}<span class="corps"><b>${l}</b><span>${d}</span></span>${icone('suivant', 16)}</button></li>`).join('')}</ul>` : ''}
+    <div class="actions" style="justify-content:space-between">${gere ? `<button type="button" class="btn-texte btn-texte-danger" id="b-suppr-membre">${icone('corbeille', 16)} Supprimer</button>` : '<span></span>'}<button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    const apres = async () => { S.membres = await q(sb.from('members').select('*').order('nom')); pageMembres(); };
+    $('#b-suppr-membre', root)?.addEventListener('click', () => supprimerAvecConfirmation('members', m.id, nomComplet(m), apres));
+    root.querySelectorAll('[data-action]').forEach((b) => b.addEventListener('click', async () => {
+      const a = b.dataset.action;
+      if (a === 'lien') return feuilleLien(m);
+      if (a === 'acces') return feuilleAcces(m);
+      if (a === 'modif') return feuilleMembre(m);
+      if (a === 'actif') {
+        try { await q(sb.from('members').update({ actif: !m.actif }).eq('id', m.id)); fermerFeuille(); toast(m.actif ? `${m.prenom} est inactif` : `${m.prenom} est réactivé`); await apres(); }
+        catch (e) { erreur(e); }
+      }
+    }));
+  });
 }
 const csvMembres = () => telechargerCsv('membres.csv',
   ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Fonction', 'Accord anniversaire', 'Actif'],

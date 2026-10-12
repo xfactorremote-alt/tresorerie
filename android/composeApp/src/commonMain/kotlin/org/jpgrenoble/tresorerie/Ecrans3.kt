@@ -15,6 +15,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.UploadFile
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.ManageAccounts
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -638,7 +648,10 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     var maFiche by remember { mutableStateOf(false) }
     val admin = d.peut("administrer")
     var recherche by remember { mutableStateOf("") }
-    var fiche by remember { mutableStateOf<Membre?>(null) }
+    var fiche by remember { mutableStateOf<Membre?>(null) }        // modification
+    var detail by remember { mutableStateOf<Membre?>(null) }       // fiche du membre (coordonnées et actions)
+    var filtre by remember { mutableStateOf("tous") }
+    var menuActions by remember { mutableStateOf(false) }
     var ajout by remember { mutableStateOf(false) }
     var version by remember { mutableStateOf(0) }
     var aImporter by remember { mutableStateOf<Pair<List<NouveauMembre>, List<String>>?>(null) }
@@ -667,53 +680,76 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     fun fonctionDe(m: Membre): Pair<String, String>? =
         profils.firstOrNull { it.memberId == m.id }?.let { it.role to (if (it.actif) "compte" else "coupe") }
             ?: invitations.firstOrNull { it.membreId == m.id }?.let { it.role to "invite" }
-    val vus = membres.filter { recherche.isBlank() || it.nomComplet.lowercase().contains(recherche.trim().lowercase()) }
+    val vus = membres.filter { (recherche.isBlank() || it.nomComplet.lowercase().contains(recherche.trim().lowercase())) &&
+        (filtre == "tous" || (filtre == "actifs") == it.actif) }
+    val nbInactifs = membres.count { !it.actif }
     val bureau = vus.filter { fonctionDe(it)?.first?.let { r -> r != "adherent" } == true }.sortedBy { rangRole(fonctionDe(it)!!.first) }
     val autres = vus - bureau.toSet()
     val sansFiche = d.profil.memberId == null && d.peut("gerer_membres")
+    @Composable fun PuceFonction(m: Membre) {
+        val f = fonctionDe(m)
+        when {
+            f == null -> {}
+            f.second == "invite" -> Puce("${d.nomRole(f.first)} · invité", Couleurs.JauneClair, Couleurs.SurJaune)
+            f.second == "coupe" -> Puce("${d.nomRole(f.first)} · accès coupé", Color(0xFFEFEDEC), Couleurs.Texte2)
+            f.first == "adherent" -> Puce("Accès adhérent", Color(0xFFEFEDEC), Couleurs.Texte2)
+            else -> Puce(d.nomRole(f.first), Couleurs.BleuClair, Couleurs.SurBleuClair)
+        }
+    }
+    @Composable fun AvatarMembre(m: Membre, taille: Int) {
+        val img = photos[m.id]
+        if (img != null) Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.size(taille.dp).clip(CircleShape))
+        else Box(Modifier.size(taille.dp).background(Couleurs.OrangeClair, CircleShape), contentAlignment = Alignment.Center) {
+            Text("${m.prenom.take(1)}${m.nom.take(1)}", color = Couleurs.SurOrangeClair, fontWeight = FontWeight.Bold, fontSize = (taille / 3).sp)
+        }
+    }
+    // Ligne sobre : photo, nom, anniversaire et profession, fonction ; un appui ouvre la fiche (comme le site)
     val ligne: @Composable (Membre) -> Unit = { m ->
-        Row(Modifier.fillMaxWidth().clickable(enabled = d.peut("gerer_membres")) { fiche = m }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            val img = photos[m.id]
-            if (img != null) Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.size(44.dp).clip(CircleShape))
-            else Box(Modifier.size(44.dp).background(Couleurs.OrangeClair, CircleShape), contentAlignment = Alignment.Center) {
-                Text("${m.prenom.take(1)}${m.nom.take(1)}", color = Couleurs.SurOrangeClair, fontWeight = FontWeight.Bold)
-            }
+        Row(Modifier.fillMaxWidth().clickable { detail = m }.padding(vertical = 10.dp).alpha(if (m.actif) 1f else 0.6f), verticalAlignment = Alignment.CenterVertically) {
+            AvatarMembre(m, 44)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(m.nomComplet + (if (m.id == d.profil.memberId) " (vous)" else "") + if (!m.actif) " (inactif)" else "", fontWeight = FontWeight.SemiBold)
-                Text("${m.jour} ${MOIS[m.mois - 1]}" + (m.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
-                val f = fonctionDe(m)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    when {
-                        f == null -> {}
-                        f.second == "invite" -> Puce("${d.nomRole(f.first)} · invité", Couleurs.JauneClair, Couleurs.SurJaune)
-                        f.second == "coupe" -> Puce("${d.nomRole(f.first)} · accès coupé", Color(0xFFEFEDEC), Couleurs.Texte2)
-                        f.first == "adherent" -> Puce("Accès adhérent", Color(0xFFEFEDEC), Couleurs.Texte2)
-                        else -> Puce(d.nomRole(f.first), Couleurs.BleuClair, Couleurs.SurBleuClair)
-                    }
-                    if (!m.consentement) Puce("Sans accord", Color(0xFFEFEDEC), Couleurs.Texte2)
-                }
+                Text(m.nomComplet + if (m.id == d.profil.memberId) " (vous)" else "", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${m.jour} ${MOIS[m.mois - 1]}" + (m.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (gereLiens && m.actif) TextButton(onClick = { lienDe = m }) { Text("Lien") }
-            if (admin) TextButton(onClick = { fonction = m }) { Text("Fonction") }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                PuceFonction(m)
+                if (!m.actif) Puce("Inactif", Color(0xFFEFEDEC), Couleurs.Texte2)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
     }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp)) {
             item {
-                Titre("Membres") { OutlinedButton(onClick = { exporter = true }) { Text("Exporter") } }
-            }
-            item {
-                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (gereLiens && membres.isNotEmpty()) FilledTonalButton(onClick = { tousLiens = true }) { Text("Liens personnels") }
-                    if (d.peut("gerer_membres")) OutlinedButton(onClick = choixCsv) { Text("Importer (CSV, Excel)") }
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+                    Text("Membres", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("${membres.count { it.actif }} actif" + (if (membres.count { it.actif } > 1) "s" else "") + if (nbInactifs > 0) " · $nbInactifs inactif" + (if (nbInactifs > 1) "s" else "") else "",
+                        color = Couleurs.Texte2, modifier = Modifier.padding(bottom = 6.dp))
                 }
             }
-            item { Text("${membres.count { it.actif }} actifs", color = Couleurs.Texte2, modifier = Modifier.padding(bottom = 8.dp)) }
+            // Recherche et menu « ⋯ » (liens personnels, import, export), comme le site
             item {
-                OutlinedTextField(recherche, { recherche = it }, label = { Text("Rechercher") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(recherche, { recherche = it }, placeholder = { Text("Rechercher un membre") }, singleLine = true,
+                        leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.weight(1f))
+                    Box {
+                        OutlinedIconButton(onClick = { menuActions = true }, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.MoreHoriz, "Autres actions") }
+                        DropdownMenu(menuActions, { menuActions = false }) {
+                            if (gereLiens && membres.isNotEmpty()) DropdownMenuItem(text = { Text("Liens personnels") }, leadingIcon = { Icon(Icons.Outlined.Link, null) }, onClick = { menuActions = false; tousLiens = true })
+                            if (d.peut("gerer_membres")) DropdownMenuItem(text = { Text("Importer (CSV, Excel)") }, leadingIcon = { Icon(Icons.Outlined.UploadFile, null) }, onClick = { menuActions = false; choixCsv() })
+                            DropdownMenuItem(text = { Text("Exporter la liste") }, leadingIcon = { Icon(Icons.Outlined.Download, null) }, onClick = { menuActions = false; exporter = true })
+                        }
+                    }
+                }
+            }
+            if (nbInactifs > 0) item {
+                SingleChoiceSegmentedButtonRow(Modifier.padding(bottom = 8.dp)) {
+                    listOf("tous" to "Tous ${membres.size}", "actifs" to "Actifs ${membres.size - nbInactifs}", "inactifs" to "Inactifs $nbInactifs").forEachIndexed { k, (c, l) ->
+                        SegmentedButton(selected = filtre == c, onClick = { filtre = c }, shape = SegmentedButtonDefaults.itemShape(k, 3)) { Text(l, maxLines = 1) }
+                    }
+                }
             }
             if (bureau.isNotEmpty()) {
                 item { Text("Bureau", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
@@ -721,10 +757,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                 item { Text("Membres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp)) }
             }
             items(autres, key = { it.id }) { ligne(it) }
-            if (admin) item {
-                Text("Pour désigner un membre du bureau : « Fonction » sur sa ligne, puis choisissez sa fonction. Les fonctions et leurs droits se règlent dans Paramètres, Rôles et droits.",
-                    fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.padding(top = 16.dp))
-            }
+            if (vus.isEmpty() && membres.isNotEmpty()) item { Text(if (filtre == "inactifs") "Aucun membre inactif." else "Aucun membre trouvé.", color = Couleurs.Texte2, modifier = Modifier.padding(top = 12.dp)) }
         }
         if (d.peut("gerer_membres")) {
             ExtendedFloatingActionButton(onClick = { ajout = true }, containerColor = Couleurs.Jaune, contentColor = Couleurs.SurJaune,
@@ -741,6 +774,12 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
         FicheMembre(null, membres, titre = "Ma fiche de membre", onCree = { id, n -> Repo.lierProfil(d.profil.id, id, n) },
             onFini = { ok -> maFiche = false; if (ok) { message("Votre fiche est créée"); recharger() } }, message = message)
     }
+    detail?.let { m -> FicheDetailMembre(d, m, { AvatarMembre(m, 64) }, { PuceFonction(m) }, gereLiens, message,
+        onLien = { detail = null; lienDe = m }, onFonction = { detail = null; fonction = m }, onModifier = { detail = null; fiche = m },
+        onActif = { detail = null; scope.launch {
+            try { Repo.majMembre(m.id, NouveauMembre(m.prenom, m.nom, m.jour, m.mois, m.profession, m.whatsapp, m.consentement, null, m.email), !m.actif, null)
+                message(if (m.actif) "${m.prenom} est inactif" else "${m.prenom} est réactivé"); version++; recharger() } catch (e: Exception) { message(traduireErreur(e)) } } },
+        onSupprimer = if (d.peut("gerer_membres")) ({ detail = null; supprimerMembre("members", m.id, m.nomComplet) }) else null) { detail = null } }
     lienDe?.let { m ->
         ModalBottomSheet(onDismissRequest = { lienDe = null }) {
             FeuilleLien(d, m, liens.firstOrNull { it.membreId == m.id }, message, onChange = { scope.launch { liens = try { Repo.liens() } catch (_: Exception) { liens } } }) { lienDe = null }
@@ -780,6 +819,60 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             },
             dismissButton = { TextButton(onClick = { aImporter = null }) { Text("Annuler") } },
         )
+    }
+}
+
+/** Fiche d'un membre : coordonnées et toutes les actions (lien personnel, fonction, modifier, inactif, supprimer), comme feuilleFicheMembre du site. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FicheDetailMembre(d: Donnees, m: Membre, avatar: @Composable () -> Unit, puceFonction: @Composable () -> Unit, gereLiens: Boolean, message: (String) -> Unit,
+                              onLien: () -> Unit, onFonction: () -> Unit, onModifier: () -> Unit, onActif: () -> Unit, onSupprimer: (() -> Unit)?, onFermer: () -> Unit) {
+    val uri = LocalUriHandler.current
+    ModalBottomSheet(onDismissRequest = onFermer) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                avatar()
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(m.nomComplet, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        puceFonction()
+                        if (m.actif) Puce("Actif", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("Inactif", Color(0xFFEFEDEC), Couleurs.Texte2)
+                        if (!m.consentement) Puce("Anniversaire privé", Color(0xFFEFEDEC), Couleurs.Texte2)
+                    }
+                }
+            }
+            @Composable fun Info(l: String, v: String, lien: String? = null) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Text(l, color = Couleurs.Texte2, modifier = Modifier.weight(1f))
+                    Text(v, color = if (lien != null) Color(0xFF1B77B0) else Couleurs.Texte, modifier = if (lien != null) Modifier.clickable { runCatching { uri.openUri(lien) } } else Modifier)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+            }
+            Info("Anniversaire", "${m.jour} ${MOIS[m.mois - 1]}")
+            m.profession?.let { Info("Profession", it) }
+            m.whatsapp?.let { w -> Info("WhatsApp", w, numeroWa(w)?.let { "https://wa.me/$it" }) }
+            m.email?.let { Info("E-mail", it, "mailto:$it") }
+            @Composable fun Action(icone: androidx.compose.ui.graphics.vector.ImageVector, titre: String, sous: String, onClick: () -> Unit) {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(icone, null, tint = Couleurs.Orange)
+                    Column(Modifier.weight(1f)) { Text(titre, fontWeight = FontWeight.SemiBold); Text(sous, fontSize = 13.sp, color = Couleurs.Texte2) }
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
+                }
+            }
+            if (gereLiens && m.actif) Action(Icons.Outlined.Link, "Lien personnel", "Sa page de cotisation et de rendez-vous, sans compte", onLien)
+            if (d.peut("administrer")) Action(Icons.Outlined.ManageAccounts, "Fonction et accès", "Membre du bureau, compte sur la plateforme", onFonction)
+            if (d.peut("gerer_membres")) {
+                Action(Icons.Outlined.Edit, "Modifier la fiche", "Nom, anniversaire, coordonnées, photo", onModifier)
+                Action(if (m.actif) Icons.Outlined.Lock else Icons.Outlined.CheckCircle, if (m.actif) "Rendre inactif" else "Réactiver",
+                    if (m.actif) "Il n’apparaît plus dans les cotisations ni les relances" else "Il revient dans les cotisations et les relances", onActif)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                onSupprimer?.let { BoutonSupprimer(it) }
+                Spacer(Modifier.weight(1f))
+                Button(onClick = onFermer) { Text("Fermer") }
+            }
+        }
     }
 }
 

@@ -589,9 +589,9 @@ p.anniv,.agenda .anniv{font-size:13px;padding:4px 8px;align-self:flex-start;bord
 .carte-sortie{justify-content:space-between}
 .btn-sortie{align-self:flex-start}
 .param-compte .carte{gap:14px}
-.liste-membres li{flex-wrap:nowrap;align-items:flex-start}
-.liste-membres li>.avatar{margin-top:2px}
-.liste-membres li.inactif{opacity:.6}
+.liste-membres li{flex-wrap:nowrap}
+.liste-membres li>.avatar{flex:none}
+/* inactif : voir plus bas (nom et photo atténués) */
 .membre-etats{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
 .membre-etats:empty{display:none}
 .membre-actions{display:flex;gap:2px;align-items:center;flex:none}
@@ -931,7 +931,7 @@ a.tuile:active{transform:scale(.98)}
 @keyframes glisse-droite{from{opacity:.3;transform:translateX(-40px)}to{opacity:1;transform:none}}
 
 /* ---------- Toute l'application : entrées en cascade, survols, appuis ---------- */
-.contenu>.page>*{animation:entree var(--d-doux) var(--c-decel-moy) both}
+.contenu>.page>*{animation:entree var(--d-doux) var(--c-decel-moy) backwards}  /* « backwards » : rien ne reste après l’animation, sinon le bouton + (position fixe) suivrait le bloc au lieu de l’écran */
 .contenu>.page>*:nth-child(2){animation-delay:30ms}.contenu>.page>*:nth-child(3){animation-delay:60ms}.contenu>.page>*:nth-child(4){animation-delay:90ms}
 .contenu>.page>*:nth-child(5){animation-delay:120ms}.contenu>.page>*:nth-child(6){animation-delay:150ms}.contenu>.page>*:nth-child(n+7){animation-delay:180ms}
 .membre-principal>*,.membre-cote>*,.rub-grille>*,.kpis>*,.comptes>*,.tuiles>*{animation:entree var(--d-doux) var(--c-decel-moy) both}
@@ -1245,3 +1245,27 @@ dialog.visionneuse img{max-width:100%;max-height:calc(100dvh - 64px);object-fit:
 .lien-texte:hover,.lien-texte:focus-visible{text-decoration:underline}
 .connexion-bascule{margin:0;padding-top:14px;border-top:1px solid var(--bord-doux);text-align:center;color:var(--texte-2);font-size:14px}
 .connexion-bascule + .connexion-bascule{border-top:0;padding-top:0}
+
+/* ---------- Membres : recherche + menu ⋯, filtre, lignes sobres, fiche du membre ---------- */
+.barre-recherche{display:flex;gap:8px;align-items:center;position:relative}
+.barre-recherche input{flex:1;min-width:0}
+.btn-icone-carre{flex:none;width:40px;min-width:40px;height:40px;min-height:40px;padding:0;font-size:22px;line-height:1;display:grid;place-items:center}
+.menu-actions{left:auto !important;right:0}
+.liste-membres li{display:flex;align-items:center;gap:12px}
+.liste-membres li .corps{flex:1;min-width:0}
+.liste-membres li .corps b,.liste-membres li .corps span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.liste-membres li > .membre-etats{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:45%;margin-top:0}
+.liste-membres li > svg:last-child{flex:none;color:var(--texte-3)}
+.liste-membres li.inactif .corps,.liste-membres li.inactif .avatar{opacity:.6}
+@media (max-width:479px){.liste-membres li > .membre-etats .puce-neutre{display:none}}
+.segmente small{color:var(--texte-3);font-weight:600;margin-left:2px}
+.fiche-membre-tete{display:flex;gap:14px;align-items:center}
+.fiche-membre-tete .avatar{width:64px;height:64px;font-size:22px;flex:none}
+.fiche-membre-tete h2{margin:0 0 6px}
+.fiche-membre-tete .membre-etats{display:flex;flex-wrap:wrap;gap:4px}
+.liste-actions-fiche{margin:0;padding:0}
+.action-fiche{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:8px 6px;border:0;background:transparent;text-align:left;font:inherit;color:var(--texte);border-radius:var(--r-moyen);cursor:pointer}
+.action-fiche > svg:first-child{color:var(--primaire);flex:none}
+.action-fiche .corps{flex:1;display:flex;flex-direction:column}
+.action-fiche .corps span{color:var(--texte-3);font-size:13px}
+@media (hover:hover){.action-fiche:hover{background:var(--survol)}}
