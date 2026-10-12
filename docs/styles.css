@@ -1135,3 +1135,20 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
   .annonces-item.entre,.annonces-item.entre.depuis-gauche{animation:fondu .3s linear both}.annonces-item.sort{animation:none;opacity:0}
   .annonces-item.entre .ann-puce,.annonces-item.entre .annonce::after,.annonces.eclat{animation:none}
 }
+
+/* Bouton de filtre du planning des membres : période choisie dans un petit menu (Fluent 2) */
+.filtre-planning{position:relative;align-self:flex-start;margin-bottom:8px}
+.rubrique:has(.menu-periode:not([hidden])),.vm-suite:has(.menu-periode:not([hidden])){position:relative;z-index:40;overflow:visible}
+.filtre-planning #b-periode{display:inline-flex;align-items:center;gap:6px}
+.filtre-planning #b-periode[aria-expanded=true] svg:last-child{transform:rotate(180deg)}
+.menu-periode{position:absolute;top:calc(100% + 4px);left:0;z-index:30;min-width:220px;padding:4px;display:flex;flex-direction:column;gap:2px;
+  background:var(--surface);border:1px solid var(--bord-doux);border-radius:var(--r-xgrand);box-shadow:var(--ombre16);animation:menu-entree .16s var(--c-decel-moy)}
+.menu-periode[hidden]{display:none}
+.menu-periode button{display:flex;align-items:center;gap:8px;min-height:40px;padding:6px 10px;border:0;border-radius:4px;background:transparent;color:var(--texte);text-align:left;font:inherit}
+.menu-periode button span:last-child{display:flex;flex-direction:column}
+.menu-periode button small{color:var(--texte-3);font-size:12px}
+.menu-periode .coche{width:16px;display:inline-flex;color:var(--primaire)}
+.menu-periode button[aria-checked=true] b{color:var(--primaire)}
+.menu-periode button:hover,.menu-periode button:focus-visible{background:var(--survol);outline:none}
+@keyframes menu-entree{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.menu-periode{animation:none}}

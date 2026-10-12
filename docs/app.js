@@ -943,10 +943,9 @@ function listeAnniversaires(anniv, mois) {
 // les anniversaires et mes versements. Deux colonnes sur ordinateur et tablette en paysage.
 function vueMembre(o) {
   const { planning = [], cot = [], parts = [], infos, anniv = null, mois, versements = null, avance = 0, montant = null, connecte = false } = o;
-  // Au programme : « Ce mois-ci » ou « Toute l'année » (12 prochains mois, groupés par mois) ; le prochain est sur la bannière
-  const moisCourant = aujourdhui().slice(0, 7);
-  const nomMois = MOIS_LONGS[Number(moisCourant.slice(5, 7)) - 1];
-  S.planningMembre = planning.slice(1).filter((p) => p.date_debut);
+  // Au programme : tous les rendez-vous de la période choisie par le bouton de filtre (semaine, mois, 3 mois, année),
+  // y compris le prochain même s'il passe aussi sur la bannière (sinon un mois qui n'en a qu'un paraît vide)
+  S.planningMembre = planning.filter((p) => p.date_debut);
   const retard = retardDe(cot);
   const aRegler = parts.filter((p) => Number(p.montant_attendu) > 0 && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
   const resteParts = aRegler.reduce((t, p) => t + Number(p.montant_attendu) - Number(p.donne), 0);
@@ -968,9 +967,7 @@ function vueMembre(o) {
   const carteVersements = versements?.length ? rubrique('m-versements', 'Mes versements', `${versements.length} dernier${versements.length > 1 ? 's' : ''}`,
     `<ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul>`, { ouverte: false }) : '';
   return `<div class="vue-membre">
-    <div class="vm-suite">${rubrique('m-planning', 'Au programme', resumePlanningMembre(), `<div class="segmente" role="tablist" aria-label="Période">
-        <button type="button" role="tab" data-periode="mois" aria-selected="${vuePlanningMembre() === 'mois'}">${majuscule(nomMois)}</button>
-        <button type="button" role="tab" data-periode="annee" aria-selected="${vuePlanningMembre() === 'annee'}">Toute l’année</button></div>
+    <div class="vm-suite">${rubrique('m-planning', 'Au programme', resumePlanningMembre(), `${filtrePlanningMembre()}
       <div id="m-planning-liste">${listePlanningMembre()}</div>`)}</div>
     <div class="vm-cote">${carteCotis}${carteRegler}${carteParts}${carteAnniv}${carteVersements}</div>
   </div>`;
@@ -1148,24 +1145,45 @@ async function pageTableauAdherent(anniv, mois) {
   marquerVu('cotisations'); marquerVu('communiques');
 }
 
-// Planning de la page du membre : le mois en cours ou toute l'année (choix gardé sur l'appareil, même règle sur Android)
-const vuePlanningMembre = () => { try { return localStorage.getItem('planningMembre') || 'mois'; } catch { return 'mois'; } };
+// Planning de la page du membre : période choisie par le bouton de filtre, gardée sur l'appareil (même règle sur Android)
+const PERIODES_PLANNING = {
+  semaine: { libelle: 'Semaine', detail: '7 prochains jours', resume: 'cette semaine', vide: 'Rien de prévu dans les 7 prochains jours.' },
+  mois: { libelle: '', detail: 'mois en cours', resume: '', vide: '' },
+  trimestre: { libelle: '3 mois', detail: '3 prochains mois', resume: 'sur 3 mois', vide: 'Rien de prévu dans les 3 prochains mois.' },
+  annee: { libelle: 'Année', detail: '12 prochains mois', resume: 'sur l’année', vide: 'Rien d’annoncé pour les 12 prochains mois.' },
+};
+function periodePlanning(k) {
+  if (k !== 'mois') return PERIODES_PLANNING[k];
+  const m = MOIS_LONGS[Number(aujourdhui().slice(5, 7)) - 1];
+  return { libelle: majuscule(m), detail: 'mois en cours', resume: `en ${m}`, vide: `Rien de prévu d’ici la fin ${/^[aeiouéâ]/.test(m) ? 'd’' : 'de '}${m}.` };
+}
+const vuePlanningMembre = () => { try { const v = localStorage.getItem('planningMembre'); return PERIODES_PLANNING[v] ? v : 'mois'; } catch { return 'mois'; } };
+// Ajoute des mois sans déborder sur le mois suivant (30 novembre + 3 mois = 28 ou 29 février, comme kotlinx.datetime)
+const plusMois = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, Math.min(d.getDate(), new Date(d.getFullYear(), d.getMonth() + n + 1, 0).getDate()));
+// Un rendez-vous est retenu s'il n'est pas terminé et commence avant la fin de la période
 function planningMembreFiltre(vue = vuePlanningMembre()) {
-  const l = S.planningMembre || [], mois = aujourdhui().slice(0, 7);
-  if (vue === 'mois') return l.filter((p) => p.date_debut.slice(0, 7) === mois);
-  const fin = isoLocal(new Date(new Date().getFullYear() + 1, new Date().getMonth(), new Date().getDate()));
-  return l.filter((p) => p.date_debut <= fin);
+  const l = S.planningMembre || [], auj = aujourdhui(), d = new Date();
+  const fin = vue === 'semaine' ? isoLocal(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 6))
+    : vue === 'mois' ? isoLocal(new Date(d.getFullYear(), d.getMonth() + 1, 0))
+      : isoLocal(plusMois(d, vue === 'trimestre' ? 3 : 12));
+  return l.filter((p) => (p.date_fin || p.date_debut) >= auj && p.date_debut <= fin);
 }
 function resumePlanningMembre() {
   const n = planningMembreFiltre().length;
-  return n ? `${n} rendez-vous${vuePlanningMembre() === 'annee' ? ' sur l’année' : ' ce mois-ci'}` : 'Rien d’autre';
+  return `${n ? `${n} rendez-vous` : 'Rien'} ${periodePlanning(vuePlanningMembre()).resume}`;
+}
+function filtrePlanningMembre() {
+  const v = vuePlanningMembre();
+  return `<div class="filtre-planning"><button type="button" class="btn-tonal btn-petit" id="b-periode" aria-haspopup="menu" aria-expanded="false" aria-label="Période affichée : ${esc(periodePlanning(v).libelle)}">${icone('filtre', 16)} ${esc(periodePlanning(v).libelle)} ${icone('chevron', 14)}</button>
+    <div class="menu-periode" role="menu" hidden>${Object.keys(PERIODES_PLANNING).map((k) => `<button type="button" role="menuitemradio" aria-checked="${k === v}" data-periode="${k}">
+      <span class="coche">${k === v ? icone('valide', 16) : ''}</span><span><b>${esc(periodePlanning(k).libelle)}</b><small>${periodePlanning(k).detail}</small></span></button>`).join('')}</div></div>`;
 }
 function listePlanningMembre() {
   const vue = vuePlanningMembre(), l = planningMembreFiltre(vue);
-  if (!l.length) return `<p class="muted" style="margin:0">${vue === 'mois' ? 'Pas d’autre rendez-vous ce mois-ci. Voyez « Toute l’année ».' : 'Aucun autre rendez-vous annoncé pour les douze prochains mois.'}</p>`;
-  if (vue === 'mois') return listePlanningCouleur(l);
+  if (!l.length) return `<p class="muted" style="margin:0">${periodePlanning(vue).vide} Le bouton de filtre montre une période plus longue.</p>`;
+  if (vue === 'semaine' || vue === 'mois') return listePlanningCouleur(l);
   const groupes = {};
-  l.forEach((p) => { (groupes[p.date_debut.slice(0, 7)] ||= []).push(p); });
+  l.forEach((p) => { (groupes[(p.date_debut < aujourdhui() ? aujourdhui() : p.date_debut).slice(0, 7)] ||= []).push(p); });
   const an = String(new Date().getFullYear());
   return Object.entries(groupes).map(([m, ps]) => `<h3 class="mois-planning">${majuscule(MOIS_LONGS[Number(m.slice(5, 7)) - 1])}${m.slice(0, 4) !== an ? ' ' + m.slice(0, 4) : ''}<small>${ps.length}</small></h3>${listePlanningCouleur(ps)}`).join('');
 }
@@ -1174,13 +1192,28 @@ function brancherPlanningMembre(ouvrir) {
     const go = () => { const e = (S.planningMembre || []).find((p) => String(p.id) === li.dataset.evt); if (e) ouvrir(e); };
     li.addEventListener('click', go); li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(); });
   });
-  document.querySelectorAll('.segmente [data-periode]').forEach((b) => b.addEventListener('click', () => {
+  const bouton = $('#b-periode'), menu = $('.menu-periode');
+  if (!bouton || !menu) return;
+  // Menu du filtre : se ferme au choix, au clic à côté et avec Échap
+  const fermer = () => { menu.hidden = true; bouton.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', aCote, true); document.removeEventListener('keydown', echap); };
+  const aCote = (ev) => { if (!ev.target.closest('.filtre-planning')) fermer(); };
+  const echap = (ev) => { if (ev.key === 'Escape') { fermer(); bouton.focus(); } };
+  bouton.addEventListener('click', () => {
+    if (!menu.hidden) return fermer();
+    menu.hidden = false; bouton.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', aCote, true); document.addEventListener('keydown', echap);
+    menu.querySelector('[aria-checked=true]')?.focus();
+  });
+  menu.querySelectorAll('[data-periode]').forEach((b) => b.addEventListener('click', () => {
     try { localStorage.setItem('planningMembre', b.dataset.periode); } catch { /* stockage indisponible */ }
-    document.querySelectorAll('.segmente [data-periode]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    fermer();
+    const f = $('.filtre-planning'); f.outerHTML = filtrePlanningMembre();
     const z = $('#m-planning-liste'); z.innerHTML = listePlanningMembre(); z.classList.remove('anime-entree'); void z.offsetWidth; z.classList.add('anime-entree');
     const r = $('[data-rub=m-planning] .rub-resume'); if (r) r.textContent = resumePlanningMembre();
-    brancherListe();
+    brancherPlanningMembre(ouvrir);
+    $('#b-periode')?.focus();
   }));
+  brancherListe();
 }
 
 // Liste des rendez-vous avec la couleur de chacun (vue des membres)

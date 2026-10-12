@@ -15,6 +15,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountBalance
@@ -48,6 +52,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -1260,13 +1266,10 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
         EtatNouveautes.vu("cotisations"); EtatNouveautes.vu("communiques")
     }
     val mois = aujourdhui().monthNumber
-    // Au programme ce mois-ci : les autres rendez-vous du mois en cours (le prochain est déjà sur la bannière)
-    // Au programme : « Ce mois-ci » ou « Toute l'année » (12 prochains mois, groupés par mois) ; le prochain est sur la bannière
-    val moisCourant = aujourdhui().toString().take(7)
-    var vuePlanning by remember { mutableStateOf(lirePreference("planning.membre") ?: "mois") }
-    val finAnnee = aujourdhui().plus(DatePeriod(years = 1)).toString()
-    val aVenir = planning.drop(1).filter { it.debut != null }
-    val suite = if (vuePlanning == "mois") aVenir.filter { it.debut!!.take(7) == moisCourant } else aVenir.filter { it.debut!! <= finAnnee }
+    // Au programme : tous les rendez-vous de la période choisie par le bouton de filtre (semaine, mois, 3 mois, année),
+    // y compris le prochain même s'il passe aussi sur la bannière (sinon un mois qui n'en a qu'un paraît vide)
+    var vuePlanning by remember { mutableStateOf(lirePreference("planning.membre")?.takeIf { it in PERIODES_PLANNING } ?: "mois") }
+    val suite = planningMembreFiltre(planning, vuePlanning, aujourdhui())
     val retard = retardDe(cotis)
     val resteParts = parts.filter { (it.montantAttendu ?: 0.0) > 0 && it.donne < it.montantAttendu!! && !it.cloturee }.sumOf { it.montantAttendu!! - it.donne }
     val agenda = { p: Projet -> if (!ajouterAgenda(p.nom, p.debut ?: "", p.heureDebut, p.fin, p.heureFin, p.lieu, p.description)) message("Aucune application d’agenda sur ce téléphone") }
@@ -1283,18 +1286,12 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     }
     val etatCotis = if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour"
     val nomMois = MOIS[mois - 1]
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable fun Suite() = Rubrique("m-planning", "Au programme",
-        if (suite.isEmpty()) "Rien d’autre" else "${suite.size} rendez-vous" + if (vuePlanning == "annee") " sur l’année" else " ce mois-ci") {
-        SingleChoiceSegmentedButtonRow {
-            listOf("mois" to nomMois.replaceFirstChar { it.uppercase() }, "annee" to "Toute l’année").forEachIndexed { i, (k, l) ->
-                SegmentedButton(selected = vuePlanning == k, onClick = { vuePlanning = k; garderPreference("planning.membre", k) },
-                    shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(l) }
-            }
-        }
-        if (suite.isEmpty()) Text(if (vuePlanning == "mois") "Pas d’autre rendez-vous ce mois-ci. Voyez « Toute l’année »." else "Aucun autre rendez-vous annoncé pour les douze prochains mois.", color = Couleurs.Texte2)
-        if (vuePlanning == "mois") suite.forEach { p -> LigneRendezVous(p) { detail = p } }
-        else suite.groupBy { it.debut!!.take(7) }.forEach { (m, ps) ->
+        "${if (suite.isEmpty()) "Rien" else "${suite.size} rendez-vous"} ${periodePlanning(vuePlanning).resume}") {
+        FiltrePlanning(vuePlanning) { vuePlanning = it; garderPreference("planning.membre", it) }
+        if (suite.isEmpty()) Text("${periodePlanning(vuePlanning).vide} Le bouton de filtre montre une période plus longue.", color = Couleurs.Texte2)
+        if (vuePlanning == "semaine" || vuePlanning == "mois") suite.forEach { p -> LigneRendezVous(p) { detail = p } }
+        else suite.groupBy { maxOf(it.debut!!.take(10), aujourdhui().toString()).take(7) }.forEach { (m, ps) ->
             Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(MOIS[m.drop(5).toInt() - 1].replaceFirstChar { it.uppercase() } + if (m.take(4) != aujourdhui().year.toString()) " " + m.take(4) else "",
                     fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
@@ -1345,6 +1342,51 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
 }
 
 // Rendez-vous dans une liste, avec sa couleur (filet, date pleine, « Dans N jours »)
+// Planning de la page du membre : période choisie par le bouton de filtre, gardée sur l'appareil (même règle que le site)
+class PeriodePlanning(val libelle: String, val detail: String, val resume: String, val vide: String)
+val PERIODES_PLANNING = listOf("semaine", "mois", "trimestre", "annee")
+fun periodePlanning(k: String, auj: LocalDate = aujourdhui()): PeriodePlanning = when (k) {
+    "semaine" -> PeriodePlanning("Semaine", "7 prochains jours", "cette semaine", "Rien de prévu dans les 7 prochains jours.")
+    "trimestre" -> PeriodePlanning("3 mois", "3 prochains mois", "sur 3 mois", "Rien de prévu dans les 3 prochains mois.")
+    "annee" -> PeriodePlanning("Année", "12 prochains mois", "sur l’année", "Rien d’annoncé pour les 12 prochains mois.")
+    else -> { val m = MOIS[auj.monthNumber - 1]; val de = if (m.first() in "aeiouéâ") "d’" else "de "
+        PeriodePlanning(m.replaceFirstChar { it.uppercase() }, "mois en cours", "en $m", "Rien de prévu d’ici la fin $de$m.") }
+}
+/** Un rendez-vous est retenu s'il n'est pas terminé et commence avant la fin de la période (même calcul que le site). */
+fun planningMembreFiltre(planning: List<Projet>, vue: String, auj: LocalDate): List<Projet> {
+    val fin = when (vue) {
+        "semaine" -> auj.plus(DatePeriod(days = 6))
+        "mois" -> LocalDate(auj.year, auj.monthNumber, 1).plus(DatePeriod(months = 1)).minus(DatePeriod(days = 1))
+        "trimestre" -> auj.plus(DatePeriod(months = 3))
+        else -> auj.plus(DatePeriod(years = 1))
+    }.toString()
+    val a = auj.toString()
+    return planning.filter { it.debut != null && (it.fin ?: it.debut).take(10) >= a && it.debut.take(10) <= fin }
+}
+
+/** Bouton de filtre « Période » avec son petit menu (comme le site). */
+@Composable
+fun FiltrePlanning(vue: String, onChoix: (String) -> Unit) {
+    var ouvert by remember { mutableStateOf(false) }
+    Box {
+        FilledTonalButton(onClick = { ouvert = true }, contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(36.dp)
+            .semantics { contentDescription = "Période affichée : ${periodePlanning(vue).libelle}" }) {
+            Icon(Icons.Outlined.FilterList, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+            Text(periodePlanning(vue).libelle); Spacer(Modifier.width(2.dp))
+            Icon(if (ouvert) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.size(18.dp))
+        }
+        DropdownMenu(ouvert, onDismissRequest = { ouvert = false }) {
+            PERIODES_PLANNING.forEach { k ->
+                val p = periodePlanning(k)
+                DropdownMenuItem(text = { Column { Text(p.libelle, fontWeight = FontWeight.SemiBold, color = if (k == vue) Couleurs.Orange else Couleurs.Texte)
+                        Text(p.detail, fontSize = 12.sp, color = Couleurs.Texte2) } },
+                    leadingIcon = { Box(Modifier.size(20.dp)) { if (k == vue) Icon(Icons.Outlined.Check, null, tint = Couleurs.Orange) } },
+                    onClick = { ouvert = false; onChoix(k) })
+            }
+        }
+    }
+}
+
 @Composable
 fun LigneRendezVous(p: Projet, onClick: () -> Unit) {
     val (fond, encre, accent) = couleurEvt(p.id)

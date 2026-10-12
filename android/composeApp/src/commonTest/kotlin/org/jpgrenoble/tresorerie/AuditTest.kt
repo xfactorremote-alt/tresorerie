@@ -240,4 +240,20 @@ class AuditTest {
         assertTrue("\"statut\":\"soumise\"" in json.encodeToString(NouvelleDemande.serializer(), NouvelleDemande("u", "Achat", 10.0, "c1")))
         assertTrue("\"nature\":\"devis\"" in json.encodeToString(NouveauDevis.serializer(), NouveauDevis("r1", "x.pdf", "application/pdf", 10, "u")))
     }
+
+    // Cas réel du 12 octobre : la seule activité d'octobre est la prochaine, elle doit rester dans « Octobre »
+    @Test fun planningDuMembreParPeriode() {
+        val auj = kotlinx.datetime.LocalDate(2026, 10, 12)
+        val l = listOf(Projet("e0", "Camp en cours", "2026-10-10", "2026-10-13"), Projet("e1", "Répétitions", "2026-10-16", "2026-10-16"),
+            Projet("e2", "Messe", "2026-11-01"), Projet("e3", "Concert", "2026-12-06"), Projet("e4", "Kermesse", "2027-05-20"),
+            Projet("e5", "Passé", "2026-10-01", "2026-10-02"), Projet("e6", "Trop loin", "2027-11-01"))
+        fun ids(v: String) = planningMembreFiltre(l, v, auj).map { it.id }
+        assertEquals(listOf("e0", "e1"), ids("semaine"))
+        assertEquals(emptyList(), planningMembreFiltre(l, "semaine", kotlinx.datetime.LocalDate(2026, 10, 20)).map { it.id })
+        assertEquals(listOf("e0", "e1"), ids("mois"))
+        assertEquals(listOf("e0", "e1", "e2", "e3"), ids("trimestre"))
+        assertEquals(listOf("e0", "e1", "e2", "e3", "e4"), ids("annee"))
+        assertEquals("en octobre", periodePlanning("mois", auj).resume)
+        assertEquals("Rien de prévu d’ici la fin d’octobre.", periodePlanning("mois", auj).vide)
+    }
 }
