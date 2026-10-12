@@ -59,7 +59,8 @@ fun couleurEvt(id: String) = EVT_PALETTE[indiceCouleur(id)]
 // « Dans 3 jours », « Demain », « Aujourd'hui »
 fun dansJours(date: String): String {
     val j = kotlinx.datetime.LocalDate.parse(date.take(10)).toEpochDays() - aujourdhui().toEpochDays()
-    return when { j < 0 -> "En cours"; j == 0 -> "Aujourd’hui"; j == 1 -> "Demain"; else -> "Dans $j jours" }
+    // « Demain », « Dans 12 jours », puis en mois au-delà de 45 jours (« Dans 6 mois ») ; même règle que le site
+    return when { j < 0 -> "En cours"; j == 0 -> "Aujourd’hui"; j == 1 -> "Demain"; j <= 45 -> "Dans $j jours"; else -> "Dans ${kotlin.math.round(j / 30.44).toInt()} mois" }
 }
 
 // =====================================================================

@@ -1899,3 +1899,63 @@ begin
     end if;
   end loop;
 end $$;
+
+-- =====================================================================
+-- 16. Planning de l'année sur la page des membres (12 octobre 2026) : voir correctifs-2026-10-12-planning-annee.sql
+-- =====================================================================
+-- Correctif du 12 octobre 2026 : planning de l'année sur la page des membres, bannière qui fait défiler tout
+-- 1. Lien personnel : les rendez-vous des 12 prochains mois (jusqu'à 60), et plus seulement 120 jours
+-- 2. Bannière : par défaut, chaque annonce (rendez-vous, rappels, communiqués) passe à chaque visite ;
+--    les réglages déjà modifiés par l'association ne sont pas touchés
+create or replace function public.situation_par_lien(p_jeton text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare mid uuid; r jsonb;
+begin
+  if p_jeton is null or length(p_jeton) not in (12, 32) then return null; end if;
+  update liens_membres set nb_consultations = nb_consultations
+         + case when derniere_consultation is null or derniere_consultation < now() - interval '30 minutes' then 1 else 0 end,
+       derniere_consultation = now()
+   where (length(p_jeton) = 32 and jeton = p_jeton) or (length(p_jeton) = 12 and code = lower(p_jeton)) returning member_id into mid;
+  if mid is null then return null; end if;
+  select jsonb_build_object(
+    'association', (select jsonb_build_object('nom', o.nom, 'logo_path', o.logo_path, 'banniere_path', o.banniere_path) from organisation o),
+    'membre', (select jsonb_build_object('prenom', m.prenom, 'nom', m.nom, 'actif', m.actif) from members m where m.id = mid),
+    'reglages', jsonb_build_object(
+       'montant', (select valeur from settings where cle = 'cotisation_montant'),
+       'periode_mois', (select valeur from settings where cle = 'cotisation_periode_mois'),
+       'infos_paiement', (select texte from settings where cle = 'infos_paiement')),
+    'periodes', coalesce((select jsonb_agg(jsonb_build_object('periode', v.periode, 'annee', v.annee, 'montant_du', v.montant_du,
+                   'regle', v.regle, 'statut', v.statut) order by v.periode desc)
+                 from v_cotisations_periodes v where v.member_id = mid), '[]'::jsonb),
+    'avance', greatest(0, coalesce((select sum(t.montant) from transactions t where t.est_cotisation and t.member_id = mid), 0)
+                 - coalesce((select sum(c.montant_du) from cotisations c where c.member_id = mid), 0)),
+    'versements', coalesce((select jsonb_agg(jsonb_build_object('date', t.date_op, 'montant', t.montant,
+                   'objet', case when t.est_cotisation then 'Cotisation' else coalesce((select c.nom from collectes c where c.id = t.collecte_id), t.libelle) end)
+                   order by t.date_op desc)
+                 from (select * from transactions t where t.member_id = mid and t.sens = 'recette'
+                       and (t.est_cotisation or t.collecte_id is not null) order by t.date_op desc limit 24) t), '[]'::jsonb),
+    'participations', coalesce((select jsonb_agg(x order by x->>'cree' desc) from (
+        select jsonb_build_object('nom', c.nom, 'montant_attendu', c.montant_attendu, 'donne', coalesce(sum(t.montant), 0),
+               'date_limite', c.date_limite, 'cloturee', c.cloturee, 'cree', c.created_at) x
+        from collectes c
+        left join transactions t on t.collecte_id = c.id and t.member_id = mid
+        where c.tous_membres or exists (select 1 from collecte_membres cm where cm.collecte_id = c.id and cm.member_id = mid)
+        group by c.id
+        having not c.cloturee or coalesce(sum(t.montant), 0) <> 0) s), '[]'::jsonb),
+    'communiques', coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'titre', c.titre, 'texte', c.texte, 'priorite', c.priorite,
+                   'debut', c.debut, 'fin', c.fin) order by c.debut desc)
+                 from communiques c where c.visible_adherents and c.debut <= current_date and (c.fin is null or c.fin >= current_date)), '[]'::jsonb),
+    'banniere', (select texte from settings where cle = 'banniere'),
+    'a_venir', coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'nom', p.nom, 'date_debut', p.date_debut, 'date_fin', p.date_fin,
+                   'heure_debut', p.heure_debut, 'heure_fin', p.heure_fin, 'lieu', p.lieu, 'description', p.description)
+                   order by p.date_debut, p.heure_debut nulls first)
+                 from (select * from projects p where p.visible_adherents and p.date_debut is not null
+                       and coalesce(p.date_fin, p.date_debut) >= current_date and p.date_debut <= current_date + 366
+                       order by p.date_debut limit 60) p), '[]'::jsonb)
+  ) into r;
+  return r;
+end $$;
+
+update public.settings set texte = '{"rotation":8,"rdv":{"priorite":1,"frequence":"toujours"},"cotisation":{"priorite":2,"frequence":"toujours"},"participation":{"priorite":2,"frequence":"toujours"},"communique":{"priorite":1,"frequence":"toujours"}}'
+ where cle = 'banniere'
+   and texte = '{"rotation":8,"rdv":{"priorite":1,"frequence":"toujours"},"cotisation":{"priorite":2,"frequence":"jour"},"participation":{"priorite":2,"frequence":"jour"},"communique":{"priorite":1,"frequence":"toujours"}}';

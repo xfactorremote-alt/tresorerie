@@ -65,6 +65,9 @@ function seed() {
     P('p4', 'Réunion du bureau', 'evenement', dansJours(5), '19:30', '21:00', 'Chez le président', false, 'Ordre du jour : budget de la sortie'),
     P('p5', 'Culte des jeunes', 'evenement', dansJours(9), '15:00', '17:00', 'Église', true, null),
     P('p6', 'Répétition de la chorale', 'evenement', dansJours(2), '18:30', '20:00', 'Église', true, null),
+    // Activités prévues à long terme (planning de l'année)
+    P('p7', 'Kermesse de printemps', 'activite', `${an + 1}-04-18`, '10:00', '18:00', 'Cour de la paroisse', true, 'Stands, jeux et repas'),
+    P('p8', 'Camp d’été', 'activite', `${an + 1}-07-12`, '09:00', null, 'Vercors', true, 'Une semaine en montagne', `${an + 1}-07-18`),
   ];
   projects.find((x) => x.id === 'p6').created_at = ilYa(1).toISOString();   // ajoutés récemment : apparaissent dans « Nouveautés »
   projects.find((x) => x.id === 'p5').created_at = ilYa(2).toISOString();
@@ -191,7 +194,7 @@ function seed() {
         { id: 'cq2', titre: 'Réunion du bureau jeudi', texte: 'Préparation de l’assemblée générale.', debut: iso(ilYa(2)), fin: null, priorite: 'normale', visible_adherents: false, created_by: ids.p, created_at: ilYa(2).toISOString() },
       ],
       settings: [
-        { cle: 'banniere', valeur: null, texte: JSON.stringify({ rotation: 8, rdv: { priorite: 1, frequence: 'toujours' }, cotisation: { priorite: 2, frequence: 'jour' }, participation: { priorite: 2, frequence: 'jour' }, communique: { priorite: 1, frequence: 'toujours' } }) },
+        { cle: 'banniere', valeur: null, texte: JSON.stringify({ rotation: 8, rdv: { priorite: 1, frequence: 'toujours' }, cotisation: { priorite: 2, frequence: 'toujours' }, participation: { priorite: 2, frequence: 'toujours' }, communique: { priorite: 1, frequence: 'toujours' } }) },
         { cle: 'cotisation_montant', valeur: 20 }, { cle: 'cotisation_periode_mois', valeur: 1 },
         { cle: 'delai_justificatif_jours', valeur: 7 }, { cle: 'seuil_alerte_budget_pct', valeur: 90 }, { cle: 'seuil_justification', valeur: 100 },
         { cle: 'infos_paiement', valeur: null, texte: 'Virement : IBAN FR76 0000 0000 0000 0000 0000 000 (démonstration)\nEspèces : auprès du trésorier après le culte' },
@@ -471,8 +474,8 @@ export function createMockClient() {
             donne: t.transactions.filter((x) => x.collecte_id === c.id && x.member_id === m.id).reduce((s, x) => s + Number(x.montant), 0) })).filter((c) => !c.cloturee || c.donne !== 0),
           communiques: t.communiques.filter((c) => c.visible_adherents && c.debut <= iso(new Date()) && (!c.fin || c.fin >= iso(new Date()))).map(({ id, titre, texte, priorite, debut, fin }) => ({ id, titre, texte, priorite, debut, fin })),
           banniere: reg('banniere')?.texte || null,
-          a_venir: t.projects.filter((p) => p.visible_adherents && p.date_debut && (p.date_fin || p.date_debut) >= iso(new Date()) && p.date_debut <= dansJours(120))
-            .sort((a, b) => (a.date_debut > b.date_debut ? 1 : -1)).slice(0, 12),
+          a_venir: t.projects.filter((p) => p.visible_adherents && p.date_debut && (p.date_fin || p.date_debut) >= iso(new Date()) && p.date_debut <= dansJours(366))
+            .sort((a, b) => (a.date_debut > b.date_debut ? 1 : -1)).slice(0, 60),
         });
       }
       if (!db.session) return ko('Non connecté');

@@ -2,6 +2,7 @@ package org.jpgrenoble.tresorerie
 
 import kotlin.test.Test
 import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -222,5 +223,11 @@ class AuditTest {
         assertTrue(Demo.communiques.none { it.id == id })
         Demo.restaurer(cb, tres)
         assertTrue(Demo.communiques.any { it.id == id })
+    }
+
+    // Compte à rebours lisible pour les activités lointaines (même règle que dansJours du site)
+    @Test fun compteAReboursEnMois() {
+        fun dans(j: Int) = dansJours(aujourdhui().plus(kotlinx.datetime.DatePeriod(days = j)).toString())
+        assertEquals("Demain", dans(1)); assertEquals("Dans 45 jours", dans(45)); assertEquals("Dans 6 mois", dans(183)); assertEquals("Dans 9 mois", dans(273))
     }
 }

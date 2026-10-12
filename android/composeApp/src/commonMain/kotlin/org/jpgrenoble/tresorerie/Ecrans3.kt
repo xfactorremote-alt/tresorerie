@@ -1261,8 +1261,12 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     }
     val mois = aujourdhui().monthNumber
     // Au programme ce mois-ci : les autres rendez-vous du mois en cours (le prochain est déjà sur la bannière)
+    // Au programme : « Ce mois-ci » ou « Toute l'année » (12 prochains mois, groupés par mois) ; le prochain est sur la bannière
     val moisCourant = aujourdhui().toString().take(7)
-    val suite = planning.drop(1).filter { it.debut?.take(7) == moisCourant }
+    var vuePlanning by remember { mutableStateOf(lirePreference("planning.membre") ?: "mois") }
+    val finAnnee = aujourdhui().plus(DatePeriod(years = 1)).toString()
+    val aVenir = planning.drop(1).filter { it.debut != null }
+    val suite = if (vuePlanning == "mois") aVenir.filter { it.debut!!.take(7) == moisCourant } else aVenir.filter { it.debut!! <= finAnnee }
     val retard = retardDe(cotis)
     val resteParts = parts.filter { (it.montantAttendu ?: 0.0) > 0 && it.donne < it.montantAttendu!! && !it.cloturee }.sumOf { it.montantAttendu!! - it.donne }
     val agenda = { p: Projet -> if (!ajouterAgenda(p.nom, p.debut ?: "", p.heureDebut, p.fin, p.heureFin, p.lieu, p.description)) message("Aucune application d’agenda sur ce téléphone") }
@@ -1279,9 +1283,26 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     }
     val etatCotis = if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour"
     val nomMois = MOIS[mois - 1]
-    @Composable fun Suite() = Rubrique("m-planning", "Au programme en $nomMois", if (suite.isEmpty()) "Rien d’autre" else "${suite.size} rendez-vous") {
-        if (suite.isEmpty()) Text("Pas d’autre rendez-vous en $nomMois.", color = Couleurs.Texte2)
-        suite.forEach { p -> LigneRendezVous(p) { detail = p } }
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable fun Suite() = Rubrique("m-planning", "Au programme",
+        if (suite.isEmpty()) "Rien d’autre" else "${suite.size} rendez-vous" + if (vuePlanning == "annee") " sur l’année" else " ce mois-ci") {
+        SingleChoiceSegmentedButtonRow {
+            listOf("mois" to nomMois.replaceFirstChar { it.uppercase() }, "annee" to "Toute l’année").forEachIndexed { i, (k, l) ->
+                SegmentedButton(selected = vuePlanning == k, onClick = { vuePlanning = k; garderPreference("planning.membre", k) },
+                    shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(l) }
+            }
+        }
+        if (suite.isEmpty()) Text(if (vuePlanning == "mois") "Pas d’autre rendez-vous ce mois-ci. Voyez « Toute l’année »." else "Aucun autre rendez-vous annoncé pour les douze prochains mois.", color = Couleurs.Texte2)
+        if (vuePlanning == "mois") suite.forEach { p -> LigneRendezVous(p) { detail = p } }
+        else suite.groupBy { it.debut!!.take(7) }.forEach { (m, ps) ->
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(MOIS[m.drop(5).toInt() - 1].replaceFirstChar { it.uppercase() } + if (m.take(4) != aujourdhui().year.toString()) " " + m.take(4) else "",
+                    fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+                Text("${ps.size}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2,
+                    modifier = Modifier.background(Color(0xFFEFEDEC), RoundedCornerShape(50)).padding(horizontal = 7.dp))
+            }
+            ps.forEach { p -> LigneRendezVous(p) { detail = p } }
+        }
     }
     @Composable fun Cotisation() = Rubrique("m-cotisation", "Ma cotisation", etatCotis, alerte = retard > 0.005) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

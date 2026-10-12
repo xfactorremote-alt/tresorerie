@@ -943,10 +943,10 @@ function listeAnniversaires(anniv, mois) {
 // les anniversaires et mes versements. Deux colonnes sur ordinateur et tablette en paysage.
 function vueMembre(o) {
   const { planning = [], cot = [], parts = [], infos, anniv = null, mois, versements = null, avance = 0, montant = null, connecte = false } = o;
-  // Au programme ce mois-ci : les autres rendez-vous du mois en cours (le prochain est déjà sur la bannière)
+  // Au programme : « Ce mois-ci » ou « Toute l'année » (12 prochains mois, groupés par mois) ; le prochain est sur la bannière
   const moisCourant = aujourdhui().slice(0, 7);
-  const suite = planning.slice(1).filter((p) => p.date_debut && p.date_debut.slice(0, 7) === moisCourant);
   const nomMois = MOIS_LONGS[Number(moisCourant.slice(5, 7)) - 1];
+  S.planningMembre = planning.slice(1).filter((p) => p.date_debut);
   const retard = retardDe(cot);
   const aRegler = parts.filter((p) => Number(p.montant_attendu) > 0 && Number(p.donne) < Number(p.montant_attendu) && !p.cloturee);
   const resteParts = aRegler.reduce((t, p) => t + Number(p.montant_attendu) - Number(p.donne), 0);
@@ -968,7 +968,10 @@ function vueMembre(o) {
   const carteVersements = versements?.length ? rubrique('m-versements', 'Mes versements', `${versements.length} dernier${versements.length > 1 ? 's' : ''}`,
     `<ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul>`, { ouverte: false }) : '';
   return `<div class="vue-membre">
-    <div class="vm-suite">${rubrique('m-planning', `Au programme en ${nomMois}`, suite.length ? `${suite.length} rendez-vous` : 'Rien d’autre', suite.length ? listePlanningCouleur(suite) : `<p class="muted" style="margin:0">Pas d’autre rendez-vous en ${nomMois}.</p>`)}</div>
+    <div class="vm-suite">${rubrique('m-planning', 'Au programme', resumePlanningMembre(), `<div class="segmente" role="tablist" aria-label="Période">
+        <button type="button" role="tab" data-periode="mois" aria-selected="${vuePlanningMembre() === 'mois'}">${majuscule(nomMois)}</button>
+        <button type="button" role="tab" data-periode="annee" aria-selected="${vuePlanningMembre() === 'annee'}">Toute l’année</button></div>
+      <div id="m-planning-liste">${listePlanningMembre()}</div>`)}</div>
     <div class="vm-cote">${carteCotis}${carteRegler}${carteParts}${carteAnniv}${carteVersements}</div>
   </div>`;
 }
@@ -976,8 +979,8 @@ function vueMembre(o) {
 // ---------- Annonces de la bannière : rendez-vous, relances, communiqués ----------
 // Règles réglables (Paramètres › Bannière et communiqués) : priorité de chaque type (1 = d'abord), fréquence
 // (toujours, une fois par jour sur l'appareil, jamais) et durée de chaque annonce. Même calcul sur Android (annoncesBanniere).
-const REGLES_BANNIERE = { rotation: 8, rdv: { priorite: 1, frequence: 'toujours' }, cotisation: { priorite: 2, frequence: 'jour' },
-  participation: { priorite: 2, frequence: 'jour' }, communique: { priorite: 1, frequence: 'toujours' } };
+const REGLES_BANNIERE = { rotation: 8, rdv: { priorite: 1, frequence: 'toujours' }, cotisation: { priorite: 2, frequence: 'toujours' },
+  participation: { priorite: 2, frequence: 'toujours' }, communique: { priorite: 1, frequence: 'toujours' } };
 function reglesBanniere(texte) {
   let r = {}; try { r = JSON.parse(texte || '{}') || {}; } catch { r = {}; }
   const out = { rotation: Number(r.rotation ?? REGLES_BANNIERE.rotation) };
@@ -1110,7 +1113,8 @@ function detailEvenementMembre(e) {
 }
 
 function brancherVueMembre(planning, ouvrir) {
-  document.querySelectorAll('.vue-membre [data-evt]').forEach((li) => {
+  brancherPlanningMembre(ouvrir);
+  document.querySelectorAll('.vue-membre [data-evt]:not(#m-planning-liste [data-evt])').forEach((li) => {
     const go = (ev) => { ev.stopPropagation(); const e = planning.find((p) => String(p.id) === li.dataset.evt); if (e) ouvrir(e); };
     li.addEventListener('click', go); li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(ev); });
   });
@@ -1125,6 +1129,41 @@ async function pageTableauAdherent(anniv, mois) {
   brancherVueMembre(planning, (e) => detailEvenement(e, () => router()));
   brancherAnnonces((e) => detailEvenement(e, () => router()));
   marquerVu('cotisations'); marquerVu('communiques');
+}
+
+// Planning de la page du membre : le mois en cours ou toute l'année (choix gardé sur l'appareil, même règle sur Android)
+const vuePlanningMembre = () => { try { return localStorage.getItem('planningMembre') || 'mois'; } catch { return 'mois'; } };
+function planningMembreFiltre(vue = vuePlanningMembre()) {
+  const l = S.planningMembre || [], mois = aujourdhui().slice(0, 7);
+  if (vue === 'mois') return l.filter((p) => p.date_debut.slice(0, 7) === mois);
+  const fin = isoLocal(new Date(new Date().getFullYear() + 1, new Date().getMonth(), new Date().getDate()));
+  return l.filter((p) => p.date_debut <= fin);
+}
+function resumePlanningMembre() {
+  const n = planningMembreFiltre().length;
+  return n ? `${n} rendez-vous${vuePlanningMembre() === 'annee' ? ' sur l’année' : ' ce mois-ci'}` : 'Rien d’autre';
+}
+function listePlanningMembre() {
+  const vue = vuePlanningMembre(), l = planningMembreFiltre(vue);
+  if (!l.length) return `<p class="muted" style="margin:0">${vue === 'mois' ? 'Pas d’autre rendez-vous ce mois-ci. Voyez « Toute l’année ».' : 'Aucun autre rendez-vous annoncé pour les douze prochains mois.'}</p>`;
+  if (vue === 'mois') return listePlanningCouleur(l);
+  const groupes = {};
+  l.forEach((p) => { (groupes[p.date_debut.slice(0, 7)] ||= []).push(p); });
+  const an = String(new Date().getFullYear());
+  return Object.entries(groupes).map(([m, ps]) => `<h3 class="mois-planning">${majuscule(MOIS_LONGS[Number(m.slice(5, 7)) - 1])}${m.slice(0, 4) !== an ? ' ' + m.slice(0, 4) : ''}<small>${ps.length}</small></h3>${listePlanningCouleur(ps)}`).join('');
+}
+function brancherPlanningMembre(ouvrir) {
+  const brancherListe = () => document.querySelectorAll('#m-planning-liste [data-evt]').forEach((li) => {
+    const go = () => { const e = (S.planningMembre || []).find((p) => String(p.id) === li.dataset.evt); if (e) ouvrir(e); };
+    li.addEventListener('click', go); li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(); });
+  });
+  document.querySelectorAll('.segmente [data-periode]').forEach((b) => b.addEventListener('click', () => {
+    try { localStorage.setItem('planningMembre', b.dataset.periode); } catch { /* stockage indisponible */ }
+    document.querySelectorAll('.segmente [data-periode]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    const z = $('#m-planning-liste'); z.innerHTML = listePlanningMembre(); z.classList.remove('anime-entree'); void z.offsetWidth; z.classList.add('anime-entree');
+    const r = $('[data-rub=m-planning] .rub-resume'); if (r) r.textContent = resumePlanningMembre();
+    brancherListe();
+  }));
 }
 
 // Liste des rendez-vous avec la couleur de chacun (vue des membres)
@@ -4384,7 +4423,8 @@ const EVT_PALETTE = [['#FFE1D6', '#8A2A06', '#C23E10'], ['#D7ECFA', '#0B4A73', '
   ['#FCE0EC', '#86184A', '#C2367A'], ['#D4F1F0', '#0D5653', '#1B8A85'], ['#FFF0C7', '#6B4A00', '#C58A00']];
 const couleurEvt = (e) => EVT_PALETTE[[...String(e?.id || '')].reduce((t, c) => t + c.charCodeAt(0), 0) % EVT_PALETTE.length];
 const styleEvt = (e) => { const [f, t, a] = couleurEvt(e); return `--evt-fond:${f};--evt-texte:${t};--evt-accent:${a}`; };
-const dansJours = (d) => { const j = Math.round((dateDe(d) - dateDe(aujourdhui())) / 864e5); return j < 0 ? 'En cours' : j === 0 ? 'Aujourd’hui' : j === 1 ? 'Demain' : `Dans ${j} jours`; };
+// « Demain », « Dans 12 jours », puis en mois au-delà de 45 jours (« Dans 6 mois ») ; même règle sur Android
+const dansJours = (d) => { const j = Math.round((dateDe(d) - dateDe(aujourdhui())) / 864e5); return j < 0 ? 'En cours' : j === 0 ? 'Aujourd’hui' : j === 1 ? 'Demain' : j <= 45 ? `Dans ${j} jours` : `Dans ${Math.round(j / 30.44)} mois`; };
 
 async function pageActivites() {
   const P = (S.planning = S.planning || { vue: preferencePlanning('vuePlanning2', 'calendrier'), affichage: preferencePlanning('affichagePlanning', 'mois'), ref: isoLocal(new Date()) });

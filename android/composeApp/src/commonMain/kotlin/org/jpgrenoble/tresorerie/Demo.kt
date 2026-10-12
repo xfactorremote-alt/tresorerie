@@ -516,6 +516,9 @@ object Demo {
         Projet("p4", "Réunion du bureau", ilYaPublic(-5), ilYaPublic(-5), "Ordre du jour : budget de la sortie", false, "evenement", "19:30", "21:00", "Chez le président"),
         Projet("p5", "Culte des jeunes", ilYaPublic(-9), ilYaPublic(-9), null, true, "evenement", "15:00", "17:00", "Église", creeLe = ilYaPublic(2) + "T10:00:00Z"),
         Projet("p6", "Répétition de la chorale", ilYaPublic(-2), ilYaPublic(-2), null, true, "evenement", "18:30", "20:00", "Église", creeLe = ilYaPublic(1) + "T10:00:00Z"),
+        // Activités prévues à long terme (planning de l'année)
+        Projet("p7", "Kermesse de printemps", "${aujourdhui().year + 1}-04-18", "${aujourdhui().year + 1}-04-18", "Stands, jeux et repas", true, "activite", "10:00", "18:00", "Cour de la paroisse"),
+        Projet("p8", "Camp d’été", "${aujourdhui().year + 1}-07-12", "${aujourdhui().year + 1}-07-18", "Une semaine en montagne", true, "activite", "09:00", null, "Vercors"),
     ).map { if (it.creeLe == null) it.copy(creeLe = ilYaPublic(60) + "T10:00:00Z") else it }.toMutableList()
     private fun ilYaPublic(j: Int) = aujourdhui().minus(DatePeriod(days = j)).toString()
 

@@ -1091,3 +1091,12 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .ligne-regle b{font-size:14px;font-weight:600}
 @media (max-width:560px){.ligne-regle{grid-template-columns:1fr 1fr}.ligne-regle b{grid-column:1/-1}}
 .annonces-piste{grid-template-columns:minmax(0,1fr)}.annonces-item,.annonce{min-width:0}
+
+/* Choix de période (Fluent 2 : contrôle segmenté, coins 4 px) et titres de mois du planning de l'année */
+.segmente{display:inline-flex;align-self:flex-start;padding:2px;gap:2px;border-radius:var(--r-moyen);background:var(--surface-2);border:1px solid var(--bord-doux)}
+.segmente button{min-height:32px;padding:0 14px;border:0;border-radius:3px;background:transparent;color:var(--texte-2);font-weight:600;font-size:14px}
+.segmente button[aria-selected=true]{background:var(--surface);color:var(--texte);box-shadow:var(--ombre2)}
+@media (hover:hover){.segmente button[aria-selected=false]:hover{color:var(--texte);background:var(--survol)}}
+.mois-planning{display:flex;align-items:baseline;gap:8px;margin:14px 0 4px;font-size:15px;line-height:20px;font-weight:600;color:var(--texte-2)}
+.mois-planning:first-child{margin-top:4px}
+.mois-planning small{font-size:12px;font-weight:600;color:var(--texte-3);background:var(--surface-2);border-radius:var(--r-rond);padding:0 7px}

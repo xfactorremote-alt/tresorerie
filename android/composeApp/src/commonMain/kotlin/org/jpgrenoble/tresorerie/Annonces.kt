@@ -64,7 +64,7 @@ import kotlinx.serialization.json.putJsonObject
 // Même calcul que annoncesBanniere / reglesBanniere du site : priorité de chaque type (1 = d'abord), fréquence
 // (toujours, une fois par jour sur l'appareil, jamais), durée de chaque annonce ; un communiqué « haute » passe en premier.
 // =====================================================================
-const val REGLES_BANNIERE_DEFAUT = """{"rotation":8,"rdv":{"priorite":1,"frequence":"toujours"},"cotisation":{"priorite":2,"frequence":"jour"},"participation":{"priorite":2,"frequence":"jour"},"communique":{"priorite":1,"frequence":"toujours"}}"""
+const val REGLES_BANNIERE_DEFAUT = """{"rotation":8,"rdv":{"priorite":1,"frequence":"toujours"},"cotisation":{"priorite":2,"frequence":"toujours"},"participation":{"priorite":2,"frequence":"toujours"},"communique":{"priorite":1,"frequence":"toujours"}}"""
 
 data class RegleAnnonce(val priorite: Int, val frequence: String)
 data class ReglesBanniere(val rotation: Int, val types: Map<String, RegleAnnonce>)
