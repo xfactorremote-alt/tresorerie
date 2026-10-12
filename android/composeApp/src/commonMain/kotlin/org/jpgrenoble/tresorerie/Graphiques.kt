@@ -39,11 +39,11 @@ import kotlin.math.round
 private val LIGNE_ZERO = Color(0xFFCFC8C5)
 
 object CouleursGraph {
-    val Recette = Color(0xFF1B77B0); val Depense = Color(0xFFC23E10); val Grille = Color(0xFFE9E5E3)
-    val Piste = Color(0xFFF1EEEC); val Alerte = Color(0xFFBA1A1A); val Moyen = Color(0xFFB07A00)
+    val Recette = Couleurs.Bleu; val Depense = Couleurs.Orange; val Grille = Color(0xFFE9E5E3)
+    val Piste = Color(0xFFF1EEEC); val Alerte = Couleurs.Erreur; val Moyen = Color(0xFFB07A00)
     const val RECETTE = "#1B77B0"; const val DEPENSE = "#C23E10"; const val ALERTE = "#BA1A1A"
     // Code couleur unique : recettes en bleu, dépenses en orange, trésorerie en encre neutre
-    val Tresorerie = Color(0xFF4A4543); const val TRESORERIE = "#4A4543"
+    val Tresorerie = Couleurs.TexteFort2; const val TRESORERIE = "#4A4543"
 }
 
 data class Mois(val cle: String, val rec: Double, val dep: Double, val solde: Double) { val libelle get() = MOIS_COURTS[cle.substring(5, 7).toInt() - 1] }
@@ -190,7 +190,7 @@ fun GraphColonnes(mois: List<Mois>, modifier: Modifier = Modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             listOf("Recettes" to CouleursGraph.Recette, "Dépenses" to CouleursGraph.Depense).forEach { (l, c) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.size(10.dp).background(c, RoundedCornerShape(2.dp))); Text(l, fontSize = 12.sp, color = Couleurs.Texte2)
+                    Box(Modifier.size(10.dp).background(c, Formes.Petit)); Text(l, fontSize = 12.sp, color = Couleurs.Texte2)
                 }
             }
         }
@@ -282,7 +282,7 @@ fun Jauge(titre: String, valeur: Double, cible: Double, detail: String, modifier
     val coul = CouleursGraph.Recette
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row { Text(titre, Modifier.weight(1f), fontSize = 13.sp, color = Couleurs.Texte2); Text("$p$NBSP%", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
-        Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(2.dp)).background(CouleursGraph.Piste)) {
+        Box(Modifier.fillMaxWidth().height(12.dp).clip(Formes.Petit).background(CouleursGraph.Piste)) {
             Box(Modifier.fillMaxHeight().fillMaxWidth(p / 100f).background(coul, RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp)))
         }
         Text(detail, fontSize = 12.sp, color = Couleurs.Texte2)
@@ -365,7 +365,7 @@ fun GraphAnneau(items: List<Element>, sens: String, modifier: Modifier = Modifie
         Column(m, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             parts.forEach { x ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(12.dp).background(couleurHex(x.couleur), RoundedCornerShape(2.dp)))
+                    Box(Modifier.size(12.dp).background(couleurHex(x.couleur), Formes.Petit))
                     Text(x.nom, Modifier.weight(1f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${round(100 * x.valeur / total).toInt()}$NBSP%", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Text(euros0(x.valeur), Modifier.widthIn(min = 64.dp), fontSize = 12.sp, color = Couleurs.Texte2, textAlign = TextAlign.End)

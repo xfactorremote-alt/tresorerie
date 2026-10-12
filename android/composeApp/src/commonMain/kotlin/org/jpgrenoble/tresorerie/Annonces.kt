@@ -40,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlinx.datetime.minus
@@ -201,7 +203,7 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
             }.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }.padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(44.dp).graphicsLayer { scaleX = saut.value; scaleY = saut.value; rotationZ = (1f - saut.value) * -24f }
-                    .clip(RoundedCornerShape(8.dp)).background(puce), contentAlignment = Alignment.Center) {
+                    .clip(Formes.XGrand).background(puce), contentAlignment = Alignment.Center) {
                     when (a) {
                         is Annonce.Rdv -> { val j = LocalDate.parse(a.e.debut!!.take(10))
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -225,18 +227,22 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
                     Text(titre, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (sous.isNotEmpty()) Text(sous, fontSize = 13.sp, color = Color.White.copy(alpha = 0.88f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (a is Annonce.Rdv) Surface(onClick = { onAgenda(a.e) }, shape = RoundedCornerShape(6.dp), color = Color.White.copy(alpha = 0.08f), contentColor = Color.White,
+                if (a is Annonce.Rdv) Surface(onClick = { onAgenda(a.e) }, shape = Formes.Grand, color = Color.White.copy(alpha = 0.08f), contentColor = Color.White,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.45f)), modifier = Modifier.size(40.dp)) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.EditCalendar, contentDescription = "Ajouter à mon agenda", modifier = Modifier.size(20.dp)) }
                 } else Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White.copy(alpha = 0.8f))
             }
         }
-        if (annonces.size > 1) Row(Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Zone tactile de 24 dp autour de chaque point (comme le site, WCAG 2.5.8) ; le point visible reste de 6 dp
+        if (annonces.size > 1) Row(Modifier.align(Alignment.BottomEnd).padding(end = 1.dp).offset(y = 3.dp)) {
             annonces.indices.forEach { k ->
                 val large by androidx.compose.animation.core.animateDpAsState(if (k == i) 22.dp else 6.dp, label = "point")
-                Box(Modifier.height(6.dp).width(large).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.45f)).clickable { if (k != i) aller(k, if (k < i) -1 else 1) }) {
-                    // Le point actif se remplit pendant que l'annonce est affichée
-                    if (k == i) Box(Modifier.fillMaxHeight().fillMaxWidth(if (rotation > 0) progres.value.coerceAtLeast(0.01f) else 1f).background(Color.White))
+                Box(Modifier.height(24.dp).width(large + 18.dp).clickable { if (k != i) aller(k, if (k < i) -1 else 1) }
+                    .semantics { contentDescription = "Annonce ${k + 1} sur ${annonces.size}" }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.height(6.dp).width(large).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.45f))) {
+                        // Le point actif se remplit pendant que l'annonce est affichée
+                        if (k == i) Box(Modifier.fillMaxHeight().fillMaxWidth(if (rotation > 0) progres.value.coerceAtLeast(0.01f) else 1f).background(Color.White))
+                    }
                 }
             }
         }
@@ -274,28 +280,28 @@ private fun RubriqueGenre(id: String, g: GenreCommunique, l: List<Communique>, m
         accent = g.fort, icone = g.icone, forcee = nouveaux + aRep > 0, halo = nouveaux + aRep > 0) {
         l.forEach { c ->
             val nouveau = !CommuniquesVus.vu(c.id) && !aRepondre(c, mesReponses)
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOuvrir(c) }.padding(vertical = 8.dp),
+            Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable { onOuvrir(c) }.padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                 // Date de publication aux couleurs de la rubrique (orange si Important), comme le site
-                val (fond, encre) = if (c.priorite == "haute") Color(0xFFFFDBCF) to Color(0xFF3B0A00) else g.clair to g.fort
-                Column(Modifier.width(44.dp).clip(RoundedCornerShape(8.dp)).background(fond).padding(vertical = 4.dp),
+                val (fond, encre) = if (c.priorite == "haute") Couleurs.OrangeClair to Couleurs.SurOrangeClair else g.clair to g.fort
+                Column(Modifier.width(44.dp).clip(Formes.XGrand).background(fond).padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("${c.debut.substring(8, 10).toInt()}", fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = encre)
                     Text(MOIS_COURTS[c.debut.substring(5, 7).toInt() - 1].uppercase(), fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = encre)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(c.titre, fontWeight = FontWeight.SemiBold, color = if (nouveau) Color(0xFF00344F) else Couleurs.Texte, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(c.titre, fontWeight = FontWeight.SemiBold, color = if (nouveau) Couleurs.SurBleuClair else Couleurs.Texte, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     c.texte?.lineSequence()?.firstOrNull()?.let { Text(it, fontSize = 14.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     if (c.genre == "photos") Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        c.photos.take(4).forEach { PhotoPartage(it, Modifier.size(44.dp).clip(RoundedCornerShape(4.dp))) }
+                        c.photos.take(4).forEach { PhotoPartage(it, Modifier.size(44.dp).clip(Formes.Moyen)) }
                     }
                     if (c.genre == "lien") Text(hoteDe(c.lien), fontSize = 12.sp, color = Couleurs.Texte2)
                     c.fin?.let { Text((if (c.genre == "sondage") "Répondre avant le " else "Jusqu’au ") + dateFr(it), fontSize = 12.sp, color = Couleurs.Texte2) }
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Color(0xFF410002))
+                    if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Couleurs.SurErreurClair)
                     EtiquetteCommunique(c, mesReponses)
-                    if (nouveau) Puce("Nouveau", Color(0xFFCDE8F8), Color(0xFF00344F))
+                    if (nouveau) Puce("Nouveau", Couleurs.BleuClair, Couleurs.SurBleuClair)
                 }
             }
         }
@@ -310,12 +316,12 @@ fun FeuilleCommunique(c: Communique, maReponse: JsonObject? = null, onRepondu: (
     ModalBottomSheet(onDismissRequest = onFermer) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Surface(shape = RoundedCornerShape(50), color = Color(0xFFEFEDEC)) {
+                Surface(shape = RoundedCornerShape(50), color = Couleurs.Surface2) {
                     Row(Modifier.padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(g.icone, null, Modifier.size(14.dp), tint = Couleurs.Texte2); Text(g.libelle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
                     }
                 }
-                if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Color(0xFF410002))
+                if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Couleurs.SurErreurClair)
             }
             Text(c.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Publié le ${dateFr(c.debut)}" + (c.fin?.let { (if (c.genre == "sondage") " · répondre avant le " else " · jusqu’au ") + dateFr(it) } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
@@ -359,7 +365,7 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
                 if (liste.isEmpty()) Text("Aucun communiqué pour l’instant.", color = Couleurs.Texte2)
                 liste.forEachIndexed { i, c ->
                     if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { if (gere && c.genre == "sondage") resultats = c else if (gere) edition = c else lu = c }.padding(vertical = 8.dp),
+                    Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable { if (gere && c.genre == "sondage") resultats = c else if (gere) edition = c else lu = c }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Box(Modifier.size(40.dp).background(Couleurs.OrangeClair, CircleShape), contentAlignment = Alignment.Center) { Icon(genreDe(c).icone, null, tint = Couleurs.SurOrangeClair, modifier = Modifier.size(18.dp)) }   // .avatar du site
                         Column(Modifier.weight(1f)) {
@@ -368,7 +374,7 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
                                 (if (c.genre == "sondage") " · ${nbRep[c.id] ?: 0} réponse" + (if ((nbRep[c.id] ?: 0) > 1) "s" else "") else "") +
                                 (if (c.visible) "" else " · bureau seulement"), fontSize = 13.sp, color = Couleurs.Texte2)
                         }
-                        when (c.priorite) { "haute" -> Puce("Important", Couleurs.ErreurClair, Color(0xFF410002)); "basse" -> Puce("Discret", Color(0xFFEFEDEC), Couleurs.Texte2); else -> Puce("Normal", Color(0xFFEFEDEC), Couleurs.Texte2) }
+                        when (c.priorite) { "haute" -> Puce("Important", Couleurs.ErreurClair, Couleurs.SurErreurClair); "basse" -> Puce("Discret", Couleurs.Surface2, Couleurs.Texte2); else -> Puce("Normal", Couleurs.Surface2, Couleurs.Texte2) }
                     }
                 }
             }
@@ -482,7 +488,7 @@ private fun EditionCommunique(c: Communique?, onSupprimer: (() -> Unit)?, messag
         when (genre) {
             "sondage" -> {
                 questions.forEachIndexed { k, q ->
-                    Surface(shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE8E3E1)), color = Color.Transparent) {
+                    Surface(shape = Formes.XGrand, border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.BordDoux), color = Color.Transparent) {
                         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Question ${k + 1}", fontWeight = FontWeight.SemiBold)
                             OutlinedTextField(q.intitule, { questions[k] = q.copy(intitule = it.take(200)) }, placeholder = { Text("Quel samedi vous convient ?") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -506,7 +512,7 @@ private fun EditionCommunique(c: Communique?, onSupprimer: (() -> Unit)?, messag
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         l.forEachIndexed { k, (ch, f) ->
                             val index = ligne * 3 + k
-                            Box(Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(6.dp))) {
+                            Box(Modifier.weight(1f).aspectRatio(1f).clip(Formes.Grand)) {
                                 if (f == null) PhotoPartage(ch, Modifier.fillMaxSize())
                                 else imageDepuisOctets(f.octets)?.let { androidx.compose.foundation.Image(it, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
                                 IconButton(onClick = { if (index < photos.size) photos.removeAt(index) else nouvelles.removeAt(index - photos.size) },
@@ -528,8 +534,8 @@ private fun EditionCommunique(c: Communique?, onSupprimer: (() -> Unit)?, messag
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(debut, { debut = it }, label = { Text("Afficher à partir du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDebut == null, modifier = Modifier.weight(1f))
-            OutlinedTextField(fin, { fin = it }, label = { Text(if (genre == "sondage") "Réponses jusqu’au (facultatif)" else "Jusqu’au (facultatif)") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = fin.isNotBlank() && (dFin == null || (dDebut != null && dFin < dDebut)), modifier = Modifier.weight(1f))
+            ChampDate(debut, { debut = it }, label = { Text("Afficher à partir du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDebut == null, modifier = Modifier.weight(1f))
+            ChampDate(fin, { fin = it }, label = { Text(if (genre == "sondage") "Réponses jusqu’au (facultatif)" else "Jusqu’au (facultatif)") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = fin.isNotBlank() && (dFin == null || (dDebut != null && dFin < dDebut)), modifier = Modifier.weight(1f))
         }
         val P = listOf("haute" to "Important (en premier sur la bannière)", "normale" to "Normal", "basse" to "Discret")
         Text("Priorité", fontWeight = FontWeight.SemiBold)

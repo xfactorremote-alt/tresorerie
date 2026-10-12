@@ -157,14 +157,14 @@ fun GrillePeriodes(cases: List<Pair<String, String?>>, pas: Int, modifier: Modif
             val (fond, texte) = when (st) {
                 "regle" -> Couleurs.Bleu to Color.White
                 "partiel" -> Couleurs.Jaune to Couleurs.SurJaune
-                "impaye" -> Couleurs.ErreurClair to Color(0xFF410002)
+                "impaye" -> Couleurs.ErreurClair to Couleurs.SurErreurClair
                 null -> Color.Transparent to Couleurs.Texte2
-                else -> Color(0xFFEFEDEC) to Couleurs.Texte2
+                else -> Couleurs.Surface2 to Couleurs.Texte2
             }
             val etat = when (st) { "regle" -> "réglé"; "partiel" -> "partiel"; "impaye" -> "impayé"; "a_venir" -> "à venir"; "dispense" -> "dispensé"; null -> "non dû"; else -> st }
             Box(Modifier.weight(1f).height(22.dp).clip(RoundedCornerShape(5.dp)).background(fond)
                 .semantics { contentDescription = "${nomPeriode(p, pas)} : $etat" }
-                .then(if (st == "impaye") Modifier.border(1.dp, Couleurs.Erreur, RoundedCornerShape(5.dp)) else if (st == null) Modifier.border(1.dp, Color(0xFFD9D3D0), RoundedCornerShape(5.dp)) else Modifier),
+                .then(if (st == "impaye") Modifier.border(1.dp, Couleurs.Erreur, RoundedCornerShape(5.dp)) else if (st == null) Modifier.border(1.dp, Couleurs.Bord, RoundedCornerShape(5.dp)) else Modifier),
                 contentAlignment = Alignment.Center) {
                 if (pas == 1) Text(MOIS_COURTS[p.substring(5, 7).toInt() - 1], fontSize = 10.sp, fontWeight = FontWeight.Bold, color = texte, maxLines = 1)
             }
@@ -180,7 +180,7 @@ private fun Legende() {
     FlowRow(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("regle", "partiel", "impaye", "a_venir", "dispense").forEach { st ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val fond = when (st) { "regle" -> Couleurs.Bleu; "partiel" -> Couleurs.Jaune; "impaye" -> Couleurs.ErreurClair; else -> Color(0xFFEFEDEC) }
+                val fond = when (st) { "regle" -> Couleurs.Bleu; "partiel" -> Couleurs.Jaune; "impaye" -> Couleurs.ErreurClair; else -> Couleurs.Surface2 }
                 Box(Modifier.size(14.dp).clip(RoundedCornerShape(3.dp)).background(fond)
                     .then(if (st == "impaye") Modifier.border(1.dp, Couleurs.Erreur, RoundedCornerShape(3.dp)) else Modifier))
                 Text(STATUTS_PERIODE[st] ?: "", fontSize = 12.sp, color = Couleurs.Texte2)
@@ -293,17 +293,17 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
         ChampTiers(tiersNom, { tiersNom = it }, suggestions, if (sens == "recette") "Tiers : membre ou donateur" else "Tiers : fournisseur")
         if (sens == "recette") ChoixListe("Rubrique", rubriques.firstOrNull { it.first == rubrique }?.second ?: "Aucune", rubriques.map { it.second }) { rubrique = rubriques[it].first }
         info?.let {
-            Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.Moyen, modifier = Modifier.fillMaxWidth()) {
                 Text(it, Modifier.padding(12.dp), fontSize = 14.sp)
             }
         }
         OutlinedTextField(libelle, { libelle = it.take(120); libelleSaisi = it.isNotEmpty() }, label = { Text("Libellé") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(date, { date = it }, label = { Text("Date") }, singleLine = true, placeholder = { Text("JJ/MM/AAAA") },
+        ChampDate(date, { date = it }, label = { Text("Date") }, singleLine = true, placeholder = { Text("JJ/MM/AAAA") },
             isError = dateValide == null, modifier = Modifier.fillMaxWidth())
         ChoixListe("Catégorie", categorie?.nom ?: "", categories.map { it.nom }) { i -> categorie = categories[i] }
         ChoixListe("Mode de paiement", MODES[mode] ?: mode, MODES.values.toList()) { mode = MODES.keys.toList()[it] }
         ChoixListe("Compte", compte?.nom ?: "", d.comptes.map { it.nom }) { compte = d.comptes[it] }
-        if (alerteMode.isNotEmpty()) Surface(color = Couleurs.JauneClair, contentColor = Couleurs.SurJaune, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        if (alerteMode.isNotEmpty()) Surface(color = Couleurs.JauneClair, contentColor = Couleurs.SurJaune, shape = Formes.Moyen, modifier = Modifier.fillMaxWidth()) {
             Text(alerteMode, Modifier.padding(12.dp), fontSize = 14.sp)
         }
         ChoixListe("Activité", projet?.nom ?: "Aucune", listOf("Aucune") + projets.map { it.nom }) { i -> projet = if (i == 0) null else projets[i - 1] }
@@ -368,7 +368,7 @@ private fun ChoixFormat(titre: String, onPdf: () -> Unit, onExcel: () -> Unit, o
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 listOf(Triple("PDF", "Mise en page pour imprimer, archiver ou transmettre", onPdf), Triple("Excel", "Tableau modifiable (CSV)", onExcel)).forEach { (t, s, action) ->
-                    Surface(onClick = { onFermer(); action() }, shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface,
+                    Surface(onClick = { onFermer(); action() }, shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface,
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0DCDA)), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp)) {
                             Text(t, fontWeight = FontWeight.Bold)
@@ -434,7 +434,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
                 }
             }
             if (gere && sansCotis > 0 && synth != null) item {
-                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(8.dp)) {
+                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.XGrand) {
                     FlowRow(Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         val s = if (sansCotis > 1) "s" else ""
                         Text("$sansCotis membre$s actif$s sans cotisation en $annee", Modifier.weight(1f).align(Alignment.CenterVertically), fontSize = 14.sp)
@@ -473,8 +473,8 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
                                 vues.forEachIndexed { i, (m, c) ->
                                     if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                                     val puces: @Composable () -> Unit = {
-                                        if (c.retard > 0.005) Puce("Retard ${euros(c.retard)}", Couleurs.ErreurClair, Color(0xFF410002)) else Puce("À jour", Couleurs.BleuClair, Couleurs.SurBleuClair)
-                                        if (c.avance > 0.005) Puce("Avance ${euros(c.avance)}", Color(0xFFEFEDEC), Couleurs.Texte2)
+                                        if (c.retard > 0.005) Puce("Retard ${euros(c.retard)}", Couleurs.ErreurClair, Couleurs.SurErreurClair) else Puce("À jour", Couleurs.BleuClair, Couleurs.SurBleuClair)
+                                        if (c.avance > 0.005) Puce("Avance ${euros(c.avance)}", Couleurs.Surface2, Couleurs.Texte2)
                                     }
                                     val actions: @Composable () -> Unit = {
                                         if (gere) {
@@ -542,7 +542,7 @@ private fun FicheCotisation(d: Donnees, m: Membre, annee: Int, pas: Int, message
             Avatar(m.prenom, m.nom)
             Text(m.nomComplet, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         }
-        Row { if (retard > 0.005) Puce("Retard ${euros(retard)}", Couleurs.ErreurClair, Color(0xFF410002)) else Puce("À jour", Couleurs.BleuClair, Couleurs.SurBleuClair) }
+        Row { if (retard > 0.005) Puce("Retard ${euros(retard)}", Couleurs.ErreurClair, Couleurs.SurErreurClair) else Puce("À jour", Couleurs.BleuClair, Couleurs.SurBleuClair) }
         TitreFiche("$annee")
         val deLAnnee = periodes.filter { it.annee == annee }.sortedBy { it.periode }
         if (deLAnnee.isEmpty()) Text("Aucune période", color = Couleurs.Texte2)
@@ -554,7 +554,7 @@ private fun FicheCotisation(d: Donnees, m: Membre, annee: Int, pas: Int, message
                     Text("${euros(p.regle)} sur ${euros(p.du)}", fontSize = 13.sp, color = Couleurs.Texte2)
                 }
                 val (f, c) = when (p.statut) { "regle" -> Couleurs.BleuClair to Couleurs.SurBleuClair; "partiel" -> Couleurs.JauneClair to Couleurs.SurJaune
-                    "impaye" -> Couleurs.ErreurClair to Color(0xFF410002); else -> Color(0xFFEFEDEC) to Couleurs.Texte2 }
+                    "impaye" -> Couleurs.ErreurClair to Couleurs.SurErreurClair; else -> Couleurs.Surface2 to Couleurs.Texte2 }
                 Puce(STATUTS_PERIODE[p.statut] ?: p.statut, f, c)
                 if (gere) TextButton(onClick = { edition = p }) { Text("Montant dû") }
             }
@@ -655,7 +655,7 @@ private fun CarteCollecte(c: Collecte, projets: List<Projet>, onClick: () -> Uni
     CarteBlanche(onClick = onClick) {
         Row(verticalAlignment = Alignment.Top) {
             Text(c.nom, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
-            if (c.cloturee) Puce("Clôturée", Color(0xFFEFEDEC), Couleurs.Texte2)
+            if (c.cloturee) Puce("Clôturée", Couleurs.Surface2, Couleurs.Texte2)
         }
         Text(listOfNotNull(projets.firstOrNull { it.id == c.projetId }?.nom, c.montantAttendu?.takeIf { it > 0 }?.let { "${euros(it)} par personne" } ?: "Montant libre",
             c.dateLimite?.let { "avant le ${dateFr(it)}" }).joinToString(" · "), fontSize = 13.sp, color = Couleurs.Texte2)
@@ -664,7 +664,7 @@ private fun CarteCollecte(c: Collecte, projets: List<Projet>, onClick: () -> Uni
             vise?.let { append(" sur ${euros(it)}") }
         }, fontSize = 15.sp)
         if (vise != null) LinearProgressIndicator(progress = { (c.totalRecu / vise).toFloat().coerceIn(0f, 1f) }, color = Couleurs.Bleu,
-            trackColor = Color(0xFFEFEDEC), modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape))
+            trackColor = Couleurs.Surface2, modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape))
         Text("${c.nbContributeurs} contributeur${if (c.nbContributeurs > 1) "s" else ""} · ${c.nbConcernes} membre${if (c.nbConcernes > 1) "s" else ""} concerné${if (c.nbConcernes > 1) "s" else ""}",
             fontSize = 13.sp, color = Couleurs.Texte2)
     }
@@ -705,7 +705,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             Text(c.nom, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (c.cloturee) Puce("Clôturée", Color(0xFFEFEDEC), Couleurs.Texte2)
+            if (c.cloturee) Puce("Clôturée", Couleurs.Surface2, Couleurs.Texte2)
         }
         Text(listOfNotNull(projets.firstOrNull { it.id == c.projetId }?.nom, if (att > 0) "${euros(att)} par personne" else "Montant libre",
             c.dateLimite?.let { "avant le ${dateFr(it)}" }).joinToString(" · "), fontSize = 13.sp, color = Couleurs.Texte2)
@@ -730,7 +730,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
                     }
                     // Situation toujours affichée (comme sur le site)
                     if (att > 0) {
-                        if (v >= att) Puce("Réglé", Couleurs.BleuClair, Couleurs.SurBleuClair) else if (v > 0) Puce("Partiel", Couleurs.JauneClair, Couleurs.SurJaune) else Puce("À régler", Couleurs.ErreurClair, Color(0xFF410002))
+                        if (v >= att) Puce("Réglé", Couleurs.BleuClair, Couleurs.SurBleuClair) else if (v > 0) Puce("Partiel", Couleurs.JauneClair, Couleurs.SurJaune) else Puce("À régler", Couleurs.ErreurClair, Couleurs.SurErreurClair)
                     } else if (v > 0) Puce("Donné", Couleurs.BleuClair, Couleurs.SurBleuClair)
                 }
                 // Actions sous la ligne, alignées sur le nom (actions-ligne du site)
@@ -803,7 +803,7 @@ fun FormulaireCollecte(d: Donnees, c: Collecte?, preProjet: String?, projets: Li
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
         OutlinedTextField(objectif, { objectif = it }, label = { Text("Objectif total (€)") }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(limite, { limite = it }, label = { Text("Date limite") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
+        ChampDate(limite, { limite = it }, label = { Text("Date limite") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
             isError = limite.isNotBlank() && dLimite == null, modifier = Modifier.fillMaxWidth())
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             listOf(true to "Tous les membres", false to "Choisir").forEachIndexed { i, (k, v) ->
@@ -848,14 +848,14 @@ object PreferencesPlanning {
 
 // Jetons du site (styles.css, Fluent 2) repris pour le Planning : coins 4 / 8, surfaces, traits
 private object CouleursPlanning {
-    val Surface2 = Color(0xFFEFEDEC); val BordDoux = Color(0xFFE8E3E1); val Bord = Color(0xFFD9D3D0)
-    val Texte2 = Color(0xFF4A4543); val Texte3 = Color(0xFF5A5350)
-    val JauneTrait = Color(0xFFF2C66A); val BleuTrait = Color(0xFF9CCBEA); val Info = Color(0xFFEAF4FB)
+    val Surface2 = Couleurs.Surface2; val BordDoux = Couleurs.BordDoux; val Bord = Couleurs.Bord
+    val Texte2 = Couleurs.TexteFort2; val Texte3 = Couleurs.Texte2
+    val JauneTrait = Couleurs.JauneTrait; val BleuTrait = Couleurs.BleuTrait; val Info = Color(0xFFEAF4FB)
     val JourFond = Color(0xFFFAFAF9); val JourWe = Color(0xFFFFF7F3); val JourAuj = Color(0xFFFFF4EF); val DateWe = Color(0xFFFFEDE5)
-    val PrimaireClair = Color(0xFFFFDBCF)
+    val PrimaireClair = Couleurs.OrangeClair
 }
-private val FormeP4 = RoundedCornerShape(4.dp)
-private val FormeP8 = RoundedCornerShape(8.dp)
+private val FormeP4 = Formes.Moyen
+private val FormeP8 = Formes.XGrand
 
 // Planning : même conception que le site (pageActivites). Deux onglets, « Calendrier » (bandeau du mois, affichage Mois
 // ou Semaine, Aujourd'hui) et « À venir » (rendez-vous des douze prochains mois, par mois). Un appui sur un jour ouvre
@@ -1250,9 +1250,9 @@ private fun CaseJour(j: LocalDate, rang: Int, cle: Int, hors: Boolean, weekEnd: 
             }
             if (e.size > 3) Text("+${e.size - 3}", fontSize = 11.sp, lineHeight = 14.sp, color = CouleursPlanning.Texte3)
             if (a.isNotEmpty()) {
-                if (compact) Box(Modifier.fillMaxWidth().height(4.dp).background(Couleurs.Jaune, RoundedCornerShape(2.dp)))
+                if (compact) Box(Modifier.fillMaxWidth().height(4.dp).background(Couleurs.Jaune, Formes.Petit))
                 else Text(a.joinToString(", ") { it.prenom }, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = Couleurs.SurJaune, modifier = Modifier.fillMaxWidth().background(Couleurs.JauneClair, RoundedCornerShape(2.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+                    color = Couleurs.SurJaune, modifier = Modifier.fillMaxWidth().background(Couleurs.JauneClair, Formes.Petit).padding(horizontal = 6.dp, vertical = 1.dp))
             }
         }
     }
@@ -1498,7 +1498,7 @@ fun EcranTiers(d: Donnees, message: (String) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (m != null) Avatar(m.prenom, m.nom)
                     Text(m?.nomComplet ?: t?.nom ?: "", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Puce(if (m != null) "Membre" else TYPES_TIERS[t?.type] ?: "", Color(0xFFEFEDEC), Couleurs.Texte2)
+                    Puce(if (m != null) "Membre" else TYPES_TIERS[t?.type] ?: "", Couleurs.Surface2, Couleurs.Texte2)
                 }
                 t?.let { listOfNotNull(it.telephone, it.email, it.notes).filter { s -> s.isNotBlank() }.takeIf { l -> l.isNotEmpty() }?.let { l -> Text(l.joinToString(" · "), color = Couleurs.Texte2, fontSize = 14.sp) } }
                 if (parRubrique.isNotEmpty()) {
@@ -1594,9 +1594,9 @@ fun ListeParticipations(parts: List<Participation>) {
             when {
                 att > 0 && p.donne >= att -> Puce("Réglé", Couleurs.BleuClair, Couleurs.SurBleuClair)
                 att > 0 && p.donne > 0 -> Puce("Reste ${euros(att - p.donne)}", Couleurs.JauneClair, Couleurs.SurJaune)
-                att > 0 -> Puce("${euros(att)} attendus", Couleurs.ErreurClair, Color(0xFF410002))
+                att > 0 -> Puce("${euros(att)} attendus", Couleurs.ErreurClair, Couleurs.SurErreurClair)
                 p.donne > 0 -> Puce("Merci", Couleurs.BleuClair, Couleurs.SurBleuClair)
-                else -> Puce("Libre", Color(0xFFEFEDEC), Couleurs.Texte2)
+                else -> Puce("Libre", Couleurs.Surface2, Couleurs.Texte2)
             }
         }
     }

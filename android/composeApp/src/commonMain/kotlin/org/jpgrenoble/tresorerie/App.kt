@@ -146,7 +146,7 @@ fun Connexion() {
             Text("Trésorerie de l’association", color = Couleurs.Texte2)
         }
         Text(if (premiere) "Créer mon mot de passe" else "Connexion", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
-        info?.let { Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(12.dp)) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
+        info?.let { Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.Moyen) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
         if (premiere) Text("Utilisez l’adresse e-mail que le trésorier a enregistrée pour vous, puis choisissez votre mot de passe.", color = Couleurs.Texte2, fontSize = 14.sp)
         OutlinedTextField(
             email, { email = it.trim() }, label = { Text("Adresse e-mail") }, singleLine = true,
@@ -158,7 +158,7 @@ fun Connexion() {
         if (premiere) ChampMotDePasse(mdp2, { mdp2 = it }, "Confirmez le mot de passe", ContentType.NewPassword, ImeAction.Done,
             erreur = mdp2.isNotEmpty() && mdp2 != mdp)
         if (!premiere) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { rester = !rester }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).clip(Formes.XGrand).clickable { rester = !rester }, verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(rester, { rester = it }); Text("Rester connecté", fontSize = 14.sp)
             }
             TextButton(onClick = {
@@ -186,7 +186,7 @@ fun Connexion() {
             enabled = !enCours && email.contains('@') && (if (premiere) mdp.length >= 8 && mdp == mdp2 else mdp.isNotEmpty()),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         ) { Text(if (enCours) "Connexion…" else if (premiere) "Créer mon compte" else "Se connecter", fontWeight = FontWeight.Bold) }
-        HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFFE8E3E1))
+        HorizontalDivider(color = Couleurs.BordDoux)
         // Bascule discrète entre connexion et première connexion
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             Text(if (premiere) "Vous avez déjà un compte$NBSP?" else "Première connexion$NBSP?", color = Couleurs.Texte2, fontSize = 14.sp)

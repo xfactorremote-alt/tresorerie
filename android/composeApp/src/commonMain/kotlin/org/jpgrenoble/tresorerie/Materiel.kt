@@ -53,8 +53,8 @@ private var filtreMaterielMemo = "service"
 private fun couleursEtat(etat: String): Pair<Color, Color> = when (etat) {
     "neuf", "bon" -> Couleurs.BleuClair to Couleurs.SurBleuClair
     "a_reparer" -> Couleurs.JauneClair to Couleurs.SurJaune
-    "hors_service" -> Couleurs.ErreurClair to Color(0xFF410002)
-    else -> Color(0xFFEFEDEC) to Couleurs.Texte2
+    "hors_service" -> Couleurs.ErreurClair to Couleurs.SurErreurClair
+    else -> Couleurs.Surface2 to Couleurs.Texte2
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -165,7 +165,7 @@ fun EcranMateriel(d: Donnees, message: (String) -> Unit, pre: NouveauMateriel? =
 // Chiffre clé avec sa ligne d'explication, comme les cartes .kpis du site
 @Composable
 private fun KpiMateriel(titre: String, valeur: String, sous: String, modifier: Modifier = Modifier) {
-    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp), modifier = modifier) {
+    Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, modifier = modifier) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(titre, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(valeur, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = Couleurs.Texte, maxLines = 1)
@@ -207,7 +207,7 @@ private fun rememberPhotoMateriel(chemin: String?, max: Int): ImageBitmap? {
 private fun VignetteMateriel(chemin: String?, designation: String, taille: Int = 44, apercu: ImageBitmap? = null) {
     val enLigne = rememberPhotoMateriel(chemin, 160)
     val img = apercu ?: enLigne
-    Box(Modifier.size(taille.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFEFEDEC)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(taille.dp).clip(Formes.Moyen).background(Couleurs.Surface2), contentAlignment = Alignment.Center) {
         if (img != null) Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         else Text(designation.take(1).uppercase().ifBlank { "–" }, fontWeight = FontWeight.Bold, color = Couleurs.Texte2)
     }
@@ -219,26 +219,26 @@ private fun GrandePhotoMateriel(chemin: String?) {
     val img = rememberPhotoMateriel(chemin, 1200) ?: return
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val hauteur = minOf(maxWidth * (img.height.toFloat() / img.width.coerceAtLeast(1)), 240.dp)
-        Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(hauteur).clip(RoundedCornerShape(10.dp)))
+        Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(hauteur).clip(Formes.Moyen))
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LigneMateriel(x: Materiel, detenteur: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 6.dp),
+    Row(Modifier.fillMaxWidth().clip(Formes.Moyen).clickable(onClick = onClick).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         VignetteMateriel(x.photo, x.designation)
         Column(Modifier.weight(1f)) {
             Text(x.designation + if (x.quantite > 1) "  × ${x.quantite}" else "", fontWeight = FontWeight.SemiBold)
             Text(listOfNotNull(x.marque, x.lieu).joinToString(" · ").ifBlank { ORIGINES_MATERIEL[x.origine] ?: "" }, fontSize = 13.sp, color = Couleurs.Texte2)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (x.sortiLe != null) Puce("${MOTIFS_SORTIE[x.motifSortie]} le ${dateFr(x.sortiLe)}", Color(0xFFEFEDEC), Couleurs.Texte2)
+                if (x.sortiLe != null) Puce("${MOTIFS_SORTIE[x.motifSortie]} le ${dateFr(x.sortiLe)}", Couleurs.Surface2, Couleurs.Texte2)
                 else {
                     if (x.etat !in listOf("bon", "neuf")) couleursEtat(x.etat).let { (f, c) -> Puce(ETATS_MATERIEL[x.etat] ?: x.etat, f, c) }
                     if (x.detenteurId != null) Puce("Chez $detenteur", Couleurs.JauneClair, Couleurs.SurJaune)
-                    if (x.origine == "pret") Puce("Prêt d’un tiers", Color(0xFFEFEDEC), Couleurs.Texte2)
-                    if (aVerifier(x)) Puce("À vérifier", Color(0xFFEFEDEC), Couleurs.Texte2)
+                    if (x.origine == "pret") Puce("Prêt d’un tiers", Couleurs.Surface2, Couleurs.Texte2)
+                    if (aVerifier(x)) Puce("À vérifier", Couleurs.Surface2, Couleurs.Texte2)
                 }
             }
         }
@@ -280,7 +280,7 @@ private fun FicheMateriel(d: Donnees, x: Materiel, message: (String) -> Unit, on
         x.sortiLe?.let { LigneInfo("Sorti", "${MOTIFS_SORTIE[x.motifSortie]} le ${dateFr(it)}") }
         x.notes?.let { Text(it, fontSize = 14.sp) }
         achat?.let { a ->
-            Surface(color = Color(0xFFEAF4FB), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = Color(0xFFEAF4FB), shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
                 Text("Achat enregistré le ${dateFr(a.date)} : ${a.libelle}, ${euros(a.montant)}", fontSize = 14.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
             }
         }
@@ -306,7 +306,7 @@ private fun FicheMateriel(d: Donnees, x: Materiel, message: (String) -> Unit, on
                 val motifs = MOTIFS_SORTIE.filterKeys { x.origine == "pret" || it != "rendu" }
                 ChoixListe("Motif", motifs[motif] ?: "", motifs.values.toList()) { motif = motifs.keys.toList()[it] }
                 val dt = dateDepuisFr(date)
-                OutlinedTextField(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.fillMaxWidth())
+                ChampDate(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(notes, { notes = it.take(160) }, label = { Text("Précision") }, placeholder = { Text("Vendu 80 € à…, déclaration de vol du…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("L’article reste dans l’historique. Une vente s’enregistre aussi en recette dans Opérations.", fontSize = 13.sp, color = Couleurs.Texte2)
                 Button(enabled = dt != null, onClick = { faire("Article sorti de l’inventaire") { Repo.sortirMateriel(x.id, dt.toString(), motif, listOfNotNull(MOTIFS_SORTIE[motif], notes.trim().ifBlank { null }).joinToString(" : ")) } }) { Text("Confirmer la sortie") }
@@ -363,7 +363,7 @@ fun FormulaireMateriel(x: Materiel?, pre: NouveauMateriel?, message: (String) ->
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { ChoixListe("Origine", ORIGINES_MATERIEL[origine] ?: "", ORIGINES_MATERIEL.values.toList()) { origine = ORIGINES_MATERIEL.keys.toList()[it] } }
-            OutlinedTextField(date, { date = it }, label = { Text("Date d’entrée") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = date.isNotBlank() && dt == null, modifier = Modifier.weight(1f))
+            ChampDate(date, { date = it }, label = { Text("Date d’entrée") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = date.isNotBlank() && dt == null, modifier = Modifier.weight(1f))
         }
         if (origine != "pret") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(valeur, { valeur = it }, label = { Text("Valeur d’achat ou du don") }, suffix = { Text("€") }, singleLine = true,

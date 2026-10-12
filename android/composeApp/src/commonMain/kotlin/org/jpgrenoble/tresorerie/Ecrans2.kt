@@ -78,7 +78,7 @@ internal fun BoutonPlus(description: String, modifier: Modifier = Modifier, onCl
 
 @Composable
 internal fun Puce(texte: String, fond: Color, couleur: Color, bord: Color? = null) =
-    Surface(color = fond, contentColor = couleur, shape = RoundedCornerShape(13.dp), border = bord?.let { BorderStroke(1.dp, it) }) {
+    Surface(color = fond, contentColor = couleur, shape = Formes.Rond, border = bord?.let { BorderStroke(1.dp, it) }) {
         Text(texte, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
     }
 
@@ -91,8 +91,8 @@ internal fun CarteBlanche(onClick: (() -> Unit)? = null, content: @Composable Co
 
 private fun couleursStatut(s: String): Pair<Color, Color> = when (s) {
     "validee", "justifiee" -> Couleurs.BleuClair to Couleurs.SurBleuClair
-    "refusee" -> Couleurs.ErreurClair to Color(0xFF410002)
-    "annulee", "brouillon" -> Color(0xFFEFEDEC) to Couleurs.Texte2
+    "refusee" -> Couleurs.ErreurClair to Couleurs.SurErreurClair
+    "annulee", "brouillon" -> Couleurs.Surface2 to Couleurs.Texte2
     else -> Couleurs.JauneClair to Couleurs.SurJaune
 }
 
@@ -106,10 +106,10 @@ private fun Chronologie(etapes: List<Triple<String, String, String>>) {
             Row(Modifier.height(IntrinsicSize.Min)) {
                 Box(Modifier.width(16.dp).fillMaxHeight()) {
                     // Filet : du point de cette étape jusqu'au point suivant
-                    if (i < etapes.lastIndex) Box(Modifier.padding(start = 7.dp, top = 9.dp).width(2.dp).fillMaxHeight().background(Color(0xFFE8E3E1)))
-                    if (i > 0) Box(Modifier.padding(start = 7.dp).width(2.dp).height(9.dp).background(Color(0xFFE8E3E1)))
-                    Box(Modifier.padding(top = 3.dp, start = 2.dp).size(12.dp).clip(RoundedCornerShape(6.dp)).background(couleur)
-                        .border(2.dp, if (etat.isEmpty()) Color(0xFFD9D3D0) else couleur, RoundedCornerShape(6.dp)))
+                    if (i < etapes.lastIndex) Box(Modifier.padding(start = 7.dp, top = 9.dp).width(2.dp).fillMaxHeight().background(Couleurs.BordDoux))
+                    if (i > 0) Box(Modifier.padding(start = 7.dp).width(2.dp).height(9.dp).background(Couleurs.BordDoux))
+                    Box(Modifier.padding(top = 3.dp, start = 2.dp).size(12.dp).clip(Formes.Grand).background(couleur)
+                        .border(2.dp, if (etat.isEmpty()) Couleurs.Bord else couleur, Formes.Grand))
                 }
                 Column(Modifier.padding(start = 6.dp, bottom = if (i < etapes.lastIndex) 12.dp else 0.dp)) {
                     Text(titre, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -123,10 +123,10 @@ private fun Chronologie(etapes: List<Triple<String, String, String>>) {
 // ---------- Dépenses ----------
 // Mêmes éléments visuels que le site : puces bordées, onglets de filtre, ligne de détail, encarts, justification
 private fun bordStatut(s: String): Color = when (s) {
-    "validee", "justifiee" -> Color(0xFF9CCBEA)
-    "refusee" -> Color(0xFFF2A8A0)
-    "annulee", "brouillon" -> Color(0xFFD9D3D0)
-    else -> Color(0xFFF2C66A)
+    "validee", "justifiee" -> Couleurs.BleuTrait
+    "refusee" -> Couleurs.ErreurTrait
+    "annulee", "brouillon" -> Couleurs.Bord
+    else -> Couleurs.JauneTrait
 }
 
 // Libellé de champ obligatoire : astérisque rouge comme `.obligatoire` du site
@@ -152,11 +152,11 @@ private fun OngletsFiltre(options: List<Triple<String, String, Int>>, choisi: St
             val actif = k == choisi
             Surface(onClick = { onChoix(k) }, shape = RoundedCornerShape(50), color = if (actif) Couleurs.OrangeClair else Color.White,
                 contentColor = if (actif) Couleurs.SurOrangeClair else Couleurs.Texte2,
-                border = BorderStroke(1.dp, if (actif) Color(0xFFF5B39C) else Color(0xFFD9D3D0))) {
+                border = BorderStroke(1.dp, if (actif) Couleurs.OrangeTrait else Couleurs.Bord)) {
                 Row(Modifier.heightIn(min = 36.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(l, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
                     if (n > 0) Box(Modifier.padding(start = 6.dp).heightIn(min = 20.dp).widthIn(min = 20.dp).clip(RoundedCornerShape(50))
-                        .background(if (actif) Couleurs.Orange else Color(0xFFEFEDEC)).padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
+                        .background(if (actif) Couleurs.Orange else Couleurs.Surface2).padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
                         Text("$n", fontSize = 12.sp, color = if (actif) Color.White else Couleurs.Texte)
                     }
                 }
@@ -183,15 +183,15 @@ private fun LigneDetail(titre: String, valeur: String?) {
             Text(titre, color = Couleurs.Texte2, fontSize = 14.sp)
             Text(valeur, fontSize = 14.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
         }
-        HorizontalDivider(color = Color(0xFFE8E3E1))
+        HorizontalDivider(color = Couleurs.BordDoux)
     }
 }
 
 // Justification : filet à gauche sur fond gris (`.justification` du site)
 @Composable
 private fun BlocJustification(texte: String) {
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(4.dp)).background(Color(0xFFEFEDEC))) {
-        Box(Modifier.width(3.dp).fillMaxHeight().background(Color(0xFFD9D3D0)))
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(Formes.Moyen).background(Couleurs.Surface2)) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(Couleurs.Bord))
         Text(texte, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 14.sp)
     }
 }
@@ -199,8 +199,8 @@ private fun BlocJustification(texte: String) {
 // Encarts `.info` (bleu) et `.alerte` (rouge) du site
 @Composable
 private fun BlocInfo(texte: String, alerte: Boolean = false) {
-    Surface(color = if (alerte) Color(0xFFFDEDEB) else Color(0xFFEAF4FB), contentColor = if (alerte) Color(0xFF410002) else Couleurs.Texte,
-        shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, if (alerte) Color(0xFFF2A8A0) else Color(0xFF9CCBEA)), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = if (alerte) Color(0xFFFDEDEB) else Color(0xFFEAF4FB), contentColor = if (alerte) Couleurs.SurErreurClair else Couleurs.Texte,
+        shape = Formes.XGrand, border = BorderStroke(1.dp, if (alerte) Couleurs.ErreurTrait else Couleurs.BleuTrait), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(if (alerte) Icons.Outlined.ErrorOutline else Icons.Outlined.Info, null, Modifier.size(20.dp), tint = if (alerte) Couleurs.Erreur else Couleurs.Bleu)
             Text(texte, fontSize = 14.sp, lineHeight = 20.sp)
@@ -211,7 +211,7 @@ private fun BlocInfo(texte: String, alerte: Boolean = false) {
 // Bouton « danger » du site (fond clair, filet et texte rouges)
 @Composable
 private fun BoutonDanger(texte: String, enabled: Boolean = true, onClick: () -> Unit) =
-    OutlinedButton(onClick = onClick, enabled = enabled, border = BorderStroke(1.dp, Color(0xFFF2A8A0)),
+    OutlinedButton(onClick = onClick, enabled = enabled, border = BorderStroke(1.dp, Couleurs.ErreurTrait),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = Couleurs.Erreur)) { Text(texte) }
 
 // Pièce de la fiche (Devis, Signature, Justificatif) : petit bouton qui ouvre l'aperçu
@@ -242,7 +242,7 @@ private fun FeuilleApercu(seau: String, chemin: String, onFermer: () -> Unit) {
         when {
             echec -> Text("Fichier indisponible", color = Couleurs.Erreur, fontSize = 14.sp)
             img != null -> Image(img, "Document joint", contentScale = ContentScale.FillWidth,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(Color.White).border(1.dp, Color(0xFFD9D3D0), RoundedCornerShape(4.dp)))
+                modifier = Modifier.fillMaxWidth().clip(Formes.Moyen).background(Color.White).border(1.dp, Couleurs.Bord, Formes.Moyen))
             octets == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
@@ -345,10 +345,10 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                                 Text("${vus.size} demande" + if (vus.size > 1) "s" else "", color = Couleurs.Texte2, modifier = Modifier.weight(1f))
                                 Text(euros(vus.sumOf { it.montant }), fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             }
-                            HorizontalDivider(color = Color(0xFFE8E3E1))
+                            HorizontalDivider(color = Couleurs.BordDoux)
                             vus.forEachIndexed { i, x ->
                                 val r = retardDe(x)
-                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { detail = x }.padding(vertical = 10.dp),
+                                Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable { detail = x }.padding(vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                         Text(x.objet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -363,7 +363,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                                     }
                                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2, modifier = Modifier.size(18.dp))
                                 }
-                                if (i < vus.lastIndex) HorizontalDivider(color = Color(0xFFE8E3E1))
+                                if (i < vus.lastIndex) HorizontalDivider(color = Couleurs.BordDoux)
                             }
                         }
                     }
@@ -390,7 +390,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                         Text(x.objet, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             PuceDemande(x, etats)
-                            if (x.regularisation) Puce("Déjà payée", Color(0xFFEFEDEC), Couleurs.Texte2, Color(0xFFD9D3D0))
+                            if (x.regularisation) Puce("Déjà payée", Couleurs.Surface2, Couleurs.Texte2, Couleurs.Bord)
                         }
                     }
                     Text(euros(x.montant), fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -500,7 +500,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                     }
                 }
                 ChoixListe("Compte", compte?.nom ?: "", d.comptes.map { it.nom }) { compte = d.comptes[it] }
-                OutlinedTextField(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.fillMaxWidth())
+                ChampDate(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.fillMaxWidth())
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     TextButton(onClick = { aPayer = null }) { Text("Annuler") }
                     Button(enabled = !enCours && compte != null && dt != null, onClick = {
@@ -609,13 +609,13 @@ private fun FeuilleRegulariser(d: Donnees, x: Demande, op: Ecriture, message: (S
             x.motifRefus?.let { Text("Motif du refus$NBSP: $it", color = Couleurs.Texte2, fontSize = 14.sp) }
         }
         listOf(false to ("Erreur de saisie" to "la dépense n’a pas eu lieu, aucun argent n’est sorti"), true to ("Remboursement reçu" to "la personne a rendu l’argent")).forEach { (v, l) ->
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { rembourse = v }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clip(Formes.Moyen).clickable { rembourse = v }, verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(rembourse == v, { rembourse = v })
                 Text(buildAnnotatedString { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(l.first) }; append("$NBSP: " + l.second) }, fontSize = 15.sp)
             }
         }
         if (rembourse) {
-            OutlinedTextField(date, { date = it }, label = { Text("Date du remboursement") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.fillMaxWidth())
+            ChampDate(date, { date = it }, label = { Text("Date du remboursement") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null, modifier = Modifier.fillMaxWidth())
             ChoixListe("Arrivé sur le compte", compte?.nom ?: "", d.comptes.map { it.nom }) { compte = d.comptes[it] }
             ChoixListe("Mode", MODES[mode] ?: mode, MODES.values.toList()) { mode = MODES.keys.toList()[it] }
         }
@@ -672,7 +672,7 @@ private fun FormulaireDemande(d: Donnees, onFini: (Boolean) -> Unit, message: (S
         OutlinedTextField(justification, { justification = it.take(500) }, label = { Text(if (justifRequise) obligatoire("Pourquoi cette dépense") else AnnotatedString("Pourquoi cette dépense")) },
             placeholder = { Text("À quoi elle sert, pourquoi ce fournisseur, ce qui se passe si on ne la fait pas") }, minLines = 2,
             isError = justifRequise && justification.isBlank(), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(pourLe, { pourLe = it }, label = { Text("Pour le") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
+        ChampDate(pourLe, { pourLe = it }, label = { Text("Pour le") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
             isError = pourLe.isNotBlank() && dateSouhaitee == null, modifier = Modifier.fillMaxWidth())
         Text("Devis (facultatif)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         OutlinedButton(onClick = choixDevis, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
@@ -732,9 +732,9 @@ private fun Signature(x: Demande, d: Donnees, demandePar: String, devis: Piece?,
         Text(obligatoire("Signature"), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         Canvas(
             Modifier.fillMaxWidth().height(180.dp)
-                .background(Color.White, RoundedCornerShape(4.dp))
+                .background(Color.White, Formes.Moyen)
                 .drawBehind {
-                    drawRoundRect(Color(0xFF5A5350), cornerRadius = CornerRadius(4.dp.toPx()),
+                    drawRoundRect(Couleurs.Texte2, cornerRadius = CornerRadius(4.dp.toPx()),
                         style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
                 }
                 .onSizeChanged { taille = it }
@@ -748,7 +748,7 @@ private fun Signature(x: Demande, d: Donnees, demandePar: String, devis: Piece?,
         ) {
             (traits + listOf(courant)).filter { it.size > 1 }.forEach { t ->
                 val p = Path().apply { moveTo(t[0].x, t[0].y); t.drop(1).forEach { lineTo(it.x, it.y) } }
-                drawPath(p, Color(0xFF1C1B1A), style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                drawPath(p, Couleurs.Texte, style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -769,7 +769,7 @@ private fun Signature(x: Demande, d: Donnees, demandePar: String, devis: Piece?,
 
 @Composable
 internal fun Chiffre(titre: String, montant: Double, sous: String, couleur: Color, modifier: Modifier = Modifier) =
-    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp), modifier = modifier) {
+    Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, modifier = modifier) {
         Column(Modifier.padding(16.dp)) {
             Text(titre, fontSize = 13.sp, color = Couleurs.Texte2)
             Text(euros(montant), fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = couleur, maxLines = 1)
@@ -830,8 +830,8 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val ds = debutSaisi ?: dateFr(debutDefaut)
-                        OutlinedTextField(ds, { debutSaisi = it }, label = { Text("Début") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(ds) == null, modifier = Modifier.weight(1f))
-                        OutlinedTextField(finSaisie, { finSaisie = it }, label = { Text("Fin") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(finSaisie) == null, modifier = Modifier.weight(1f))
+                        ChampDate(ds, { debutSaisi = it }, label = { Text("Début") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(ds) == null, modifier = Modifier.weight(1f))
+                        ChampDate(finSaisie, { finSaisie = it }, label = { Text("Fin") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(finSaisie) == null, modifier = Modifier.weight(1f))
                     }
                     Text(obligatoire(if (compte?.type == "caisse") "Procès-verbal de comptage" else "Relevé de la période"), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
@@ -839,7 +839,7 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
                         Text("Choisir une photo ou un PDF", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     // Nom d'origine du fichier choisi, en puce bleue (puce-ok) comme le site
-                    releve?.let { Puce(it.nom ?: "Fichier joint (${it.ko}$NBSP" + "Ko)", Couleurs.BleuClair, Couleurs.SurBleuClair, Color(0xFF9CCBEA)) }
+                    releve?.let { Puce(it.nom ?: "Fichier joint (${it.ko}$NBSP" + "Ko)", Couleurs.BleuClair, Couleurs.SurBleuClair, Couleurs.BleuTrait) }
                 }
             }
             item {
@@ -859,7 +859,7 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
                                 val v = e.signe
                                 Text((if (v >= 0) "+ " else "− ") + euros(kotlin.math.abs(v)), color = if (v >= 0) Couleurs.Bleu else Couleurs.Orange, fontWeight = FontWeight.SemiBold)
                             }
-                            if (i < l.lastIndex) HorizontalDivider(color = Color(0xFFE8E3E1))
+                            if (i < l.lastIndex) HorizontalDivider(color = Couleurs.BordDoux)
                         }
                     }
                 }
@@ -872,7 +872,7 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
                             Triple("Pointé", euros(total), Couleurs.Fond),
                             Triple("Écart", ecart?.let { euros(it) } ?: "–", if (ecart == 0.0) Couleurs.BleuClair else Couleurs.JauneClair),
                         ).forEach { (t, v, fond) ->
-                            Surface(color = fond, shape = RoundedCornerShape(8.dp), modifier = Modifier.weight(1f)) {
+                            Surface(color = fond, shape = Formes.XGrand, modifier = Modifier.weight(1f)) {
                                 Column(Modifier.padding(12.dp)) {
                                     Text(t, fontSize = 13.sp, color = Couleurs.Texte2)
                                     Text(v, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1)
@@ -911,14 +911,14 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
                                 Text(d.comptes.firstOrNull { it.id == r.compteId }?.nom ?: "", fontWeight = FontWeight.SemiBold)
                                 Text("${dateFr(r.debut)} au ${dateFr(r.fin)}", fontSize = 13.sp, color = Couleurs.Texte2)
                                 if (r.termineLe != null) Text("Terminé le ${dateFr(r.termineLe.take(10))}", fontSize = 13.sp, color = Couleurs.Texte2)
-                                else Puce("En cours", Couleurs.JauneClair, Couleurs.SurJaune, Color(0xFFF2C66A))
+                                else Puce("En cours", Couleurs.JauneClair, Couleurs.SurJaune, Couleurs.JauneTrait)
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(euros(r.soldeReleve), fontWeight = FontWeight.SemiBold)
                                 if (r.releve != null) TextButton(onClick = { apercu = r.releve }) { Text("Voir") }
                             }
                         }
-                        if (i < historique.lastIndex) HorizontalDivider(color = Color(0xFFE8E3E1))
+                        if (i < historique.lastIndex) HorizontalDivider(color = Couleurs.BordDoux)
                     }
                 }
             }

@@ -49,8 +49,8 @@ import kotlinx.datetime.plus
 // Couleurs des rendez-vous : même palette et même calcul que le site (somme des codes de l'identifiant)
 // =====================================================================
 val EVT_PALETTE = listOf(
-    Triple(Color(0xFFFFE1D6), Color(0xFF8A2A06), Color(0xFFC23E10)), Triple(Color(0xFFD7ECFA), Color(0xFF0B4A73), Color(0xFF1B77B0)),
-    Triple(Color(0xFFDDF3E2), Color(0xFF145C2C), Color(0xFF2E8B4E)), Triple(Color(0xFFEBE3FA), Color(0xFF4A2C86), Color(0xFF7048B8)),
+    Triple(Color(0xFFFFE1D6), Color(0xFF8A2A06), Couleurs.Orange), Triple(Color(0xFFD7ECFA), Color(0xFF0B4A73), Couleurs.Bleu),
+    Triple(Color(0xFFDDF3E2), Color(0xFF145C2C), Couleurs.Vert), Triple(Color(0xFFEBE3FA), Color(0xFF4A2C86), Color(0xFF7048B8)),
     Triple(Color(0xFFFCE0EC), Color(0xFF86184A), Color(0xFFC2367A)), Triple(Color(0xFFD4F1F0), Color(0xFF0D5653), Color(0xFF1B8A85)),
     Triple(Color(0xFFFFF0C7), Color(0xFF6B4A00), Color(0xFFC58A00)),
 )
@@ -124,11 +124,11 @@ fun FeuilleNouveautes(onAller: (String) -> Unit, onFermer: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Nouveautés", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             if (els.isEmpty()) Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.CheckCircle, null, tint = Color(0xFF2E8B4E), modifier = Modifier.size(36.dp))
+                Icon(Icons.Outlined.CheckCircle, null, tint = Couleurs.Vert, modifier = Modifier.size(36.dp))
                 Text("Rien de nouveau. Vous êtes à jour.", color = Couleurs.Texte2)
             }
             els.forEach { e ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onAller(e.section); onFermer() }.padding(vertical = 6.dp),
+                Row(Modifier.fillMaxWidth().clip(Formes.Moyen).clickable { onAller(e.section); onFermer() }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     val (fond, encre) = couleursSection(e.section)
                     Box(Modifier.size(40.dp).clip(CircleShape).background(fond), contentAlignment = Alignment.Center) { Icon(iconeSection(e.section), null, tint = encre) }
@@ -185,7 +185,7 @@ fun rememberSuppression(message: (String) -> Unit, note: String? = null, apres: 
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     // Précision propre à l'élément (exercice : les écritures restent), comme la bande « info » du site
-                    if (note != null) Surface(color = Color(0xFFEAF4FB), shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB5D6EE))) {
+                    if (note != null) Surface(color = Color(0xFFEAF4FB), shape = Formes.XGrand, border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB5D6EE))) {
                         Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Outlined.Info, null, tint = Couleurs.Bleu, modifier = Modifier.size(20.dp))
                             Text(note, fontSize = 14.sp, color = Couleurs.Texte)
@@ -262,7 +262,7 @@ fun FeuilleMaFiche(d: Donnees, message: (String) -> Unit, onFini: (Boolean) -> U
             OutlinedTextField(whatsapp, { whatsapp = it.take(20) }, label = { Text("WhatsApp") }, placeholder = { Text("06 12 34 56 78") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
             OutlinedTextField(profession, { profession = it.take(80) }, label = { Text("Profession (facultatif)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { accord = !accord }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.clip(Formes.XGrand).clickable { accord = !accord }, verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(accord, { accord = it }); Text("J’accepte que mon anniversaire soit affiché aux autres membres", fontSize = 14.sp)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
@@ -360,7 +360,7 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
             ETAPES.forEachIndexed { i, t ->
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     val echelle by animateFloatAsState(if (i == etape) 1.15f else 1f)
-                    Box(Modifier.size(28.dp).scale(echelle).clip(CircleShape).background(when { i < etape -> Couleurs.Bleu; i == etape -> Couleurs.Orange; else -> Color(0xFFEFEDEC) }), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(28.dp).scale(echelle).clip(CircleShape).background(when { i < etape -> Couleurs.Bleu; i == etape -> Couleurs.Orange; else -> Couleurs.Surface2 }), contentAlignment = Alignment.Center) {
                         Text(if (i < etape) "✓" else "${i + 1}", color = if (i <= etape) Color.White else Couleurs.Texte2, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                     if (i == etape) Text(t, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -392,8 +392,8 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
                         Text("Période de 12 mois sur laquelle les comptes sont arrêtés et présentés à l’assemblée générale.", color = Couleurs.Texte2, fontSize = 14.sp)
                         listOf(Triple("Année civile", "1er janvier – 31 décembre $an", "$an-01-01"), Triple("Année scolaire", "1er septembre $an – 31 août ${an + 1}", "$an-09-01")).forEach { (t, s, deb) ->
                             val choisi = exDebut == deb
-                            Surface(onClick = { val x = exerciceDe(deb); exDebut = x.debut; exFin = x.fin; exLibelle = x.libelle }, shape = RoundedCornerShape(14.dp),
-                                color = if (choisi) Couleurs.OrangeClair else MaterialTheme.colorScheme.surface, border = androidx.compose.foundation.BorderStroke(if (choisi) 2.dp else 1.dp, if (choisi) Couleurs.Orange else Color(0xFFD9D3D0))) {
+                            Surface(onClick = { val x = exerciceDe(deb); exDebut = x.debut; exFin = x.fin; exLibelle = x.libelle }, shape = Formes.Moyen,
+                                color = if (choisi) Couleurs.OrangeClair else MaterialTheme.colorScheme.surface, border = androidx.compose.foundation.BorderStroke(if (choisi) 2.dp else 1.dp, if (choisi) Couleurs.Orange else Couleurs.Bord)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) { Text(t, fontWeight = FontWeight.Bold); Text(s, fontSize = 13.sp, color = Couleurs.Texte2) }
                             }
                         }
@@ -429,7 +429,7 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
                     }
                     else -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.CheckCircle, null, tint = Color(0xFF2E8B4E), modifier = Modifier.size(36.dp))
+                            Icon(Icons.Outlined.CheckCircle, null, tint = Couleurs.Vert, modifier = Modifier.size(36.dp))
                             Column { Text("Tout est prêt", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text("Modifiable à tout moment dans Paramètres.", color = Couleurs.Texte2, fontSize = 14.sp) }
                         }
                         LigneInfo("Association", o.nom + listOfNotNull(o.ville).joinToString("") { " · $it" })
@@ -460,8 +460,8 @@ private fun nombre2(s: String) = s.replace(',', '.').replace(" ", "").replace(NB
 fun statutExercice(e: Exercice): Triple<String, Color, Color> {
     val auj = aujourdhui().toString()
     return when {
-        e.cloture -> Triple("Clôturé", Color(0xFFEFEDEC), Couleurs.Texte2)
-        e.debut > auj -> Triple("À venir", Color(0xFFEFEDEC), Couleurs.Texte2)
+        e.cloture -> Triple("Clôturé", Couleurs.Surface2, Couleurs.Texte2)
+        e.debut > auj -> Triple("À venir", Couleurs.Surface2, Couleurs.Texte2)
         e.fin < auj -> Triple("À clôturer", Couleurs.JauneClair, Couleurs.SurJaune)
         else -> Triple("En cours", Couleurs.BleuClair, Couleurs.SurBleuClair)   // puce-ok du site
     }
@@ -588,7 +588,7 @@ fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit)
     // Une ligne, comme sur le site : type, libellé, « Supprimé le … par … · motif · restauré le … », Restaurer ou « Restauré »
     @Composable fun Ligne(x: ElementCorbeille) {
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Puce(TYPES_CORBEILLE[x.table] ?: x.table, Color(0xFFEFEDEC), Couleurs.Texte2)
+            Puce(TYPES_CORBEILLE[x.table] ?: x.table, Couleurs.Surface2, Couleurs.Texte2)
             Column(Modifier.weight(1f)) {
                 Text(x.libelle, fontWeight = FontWeight.SemiBold)
                 Text("Supprimé le ${dateFr(x.supprimeLe.take(10))} par ${nom(x.supprimePar)}" + (x.motif?.let { " · $it" } ?: "") +
@@ -623,7 +623,7 @@ fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit)
         // « Déjà restaurés (n) » : carte repliable, comme le <details> du site
         if (faits.isNotEmpty()) item {
             CarteBlanche {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { voirRestaures = !voirRestaures }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable { voirRestaures = !voirRestaures }, verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (voirRestaures) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
                     Text("Déjà restaurés (${faits.size})", fontWeight = FontWeight.SemiBold)
                 }
@@ -735,7 +735,7 @@ fun ParamSecurite(message: (String) -> Unit) {
             CarteBlanche {
                 Text("Session", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("Connecté avec $email" + if (lirePreference("resterConnecte") == "0") ", session fermée à la fermeture de l’application." else ", session gardée sur cet appareil.", color = Couleurs.Texte2, fontSize = 14.sp)
-                Button(onClick = { scope.launch { Repo.deconnecter() } }, colors = ButtonDefaults.buttonColors(containerColor = Couleurs.ErreurClair, contentColor = Color(0xFF410002))) { Text("Se déconnecter", fontWeight = FontWeight.Bold) }
+                Button(onClick = { scope.launch { Repo.deconnecter() } }, colors = ButtonDefaults.buttonColors(containerColor = Couleurs.ErreurClair, contentColor = Couleurs.SurErreurClair)) { Text("Se déconnecter", fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -756,7 +756,7 @@ fun ParamNotifications() {
         item {
             CarteBlanche {
                 Text("Alertes sur cet appareil", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Surface(color = if (autorise) Couleurs.BleuClair else Color(0xFFF3F1F0), shape = RoundedCornerShape(8.dp)) {
+                Surface(color = if (autorise) Couleurs.BleuClair else Couleurs.Survol, shape = Formes.XGrand) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Icon(if (autorise) Icons.Outlined.CheckCircle else Icons.Outlined.Notifications, null, tint = if (autorise) Couleurs.Bleu else Couleurs.Texte2, modifier = Modifier.size(18.dp))
                         Column {
@@ -772,11 +772,11 @@ fun ParamNotifications() {
                 }
                 var son by remember { mutableStateOf(lirePreference("notif.son") != "0") }
                 var vibre by remember { mutableStateOf(lirePreference("notif.vibration") != "0") }
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { son = !son; garderPreference("notif.son", if (son) "1" else "0") }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable { son = !son; garderPreference("notif.son", if (son) "1" else "0") }, verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.AutoMirrored.Outlined.VolumeUp, null, tint = Couleurs.Texte2, modifier = Modifier.size(18.dp))
                     Checkbox(son, { son = it; garderPreference("notif.son", if (it) "1" else "0") }); Text("Son à l’arrivée d’une nouveauté", fontSize = 14.sp)
                 }
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { vibre = !vibre; garderPreference("notif.vibration", if (vibre) "1" else "0") }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable { vibre = !vibre; garderPreference("notif.vibration", if (vibre) "1" else "0") }, verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Vibration, null, tint = Couleurs.Texte2, modifier = Modifier.size(18.dp))
                     Checkbox(vibre, { vibre = it; garderPreference("notif.vibration", if (it) "1" else "0") }); Text("Vibration du téléphone", fontSize = 14.sp)
                 }
@@ -811,15 +811,15 @@ fun sectionsParametres(d: Donnees): List<Pair<String, List<SectionParam>>> {
 }
 
 // Couleur de chaque groupe du menu (mêmes valeurs que .c-bleu, .c-orange… du site)
-private val COULEURS_GROUPES = mapOf("Mon compte" to (Color(0xFF1B77B0) to Color(0xFFE3F1FB)), "Association" to (Color(0xFFC23E10) to Color(0xFFFFEDE5)),
-    "Finances" to (Color(0xFF2E8B4E) to Color(0xFFE4F5E8)), "Accès" to (Color(0xFF7048B8) to Color(0xFFEFE9FA)), "Données" to (Color(0xFF5A5350) to Color(0xFFEEECEB)))
+private val COULEURS_GROUPES = mapOf("Mon compte" to (Couleurs.Bleu to Color(0xFFE3F1FB)), "Association" to (Couleurs.Orange to Color(0xFFFFEDE5)),
+    "Finances" to (Couleurs.Vert to Color(0xFFE4F5E8)), "Accès" to (Color(0xFF7048B8) to Color(0xFFEFE9FA)), "Données" to (Couleurs.Texte2 to Color(0xFFEEECEB)))
 
 @Composable
 fun MenuParametres(d: Donnees, choisie: String?, onChoix: (String) -> Unit, modifier: Modifier = Modifier) {
     // Menu en cartes groupées et colorées, distinct de la navigation de l'application (comme le site)
     LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(Couleurs.Orange, Color(0xFFE8743B)))).padding(14.dp),
+            Row(Modifier.fillMaxWidth().clip(Formes.XGrand).background(Brush.linearGradient(listOf(Couleurs.Orange, Color(0xFFE8743B)))).padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(44.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
                     Text(d.profil.nom.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }, fontWeight = FontWeight.Bold, color = Couleurs.Orange)
@@ -832,7 +832,7 @@ fun MenuParametres(d: Donnees, choisie: String?, onChoix: (String) -> Unit, modi
             item(key = groupe) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
                     Text(groupe.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Couleurs.Texte2, letterSpacing = 0.8.sp, modifier = Modifier.padding(horizontal = 6.dp))
-                    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp) {
+                    Surface(shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp) {
                         Column {
                             sections.forEachIndexed { i, sec ->
                                 if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
@@ -864,7 +864,7 @@ fun BarreParametres(d: Donnees, titre: String, retour: (() -> Unit)?, onFermer: 
     Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (retour != null) IconButton(onClick = retour) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour aux paramètres") }
-            else Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Couleurs.Orange), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Settings, null, tint = Color.White) }
+            else Box(Modifier.size(40.dp).clip(Formes.Moyen).background(Couleurs.Orange), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Settings, null, tint = Color.White) }
             Column(Modifier.weight(1f)) {
                 Text(titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(d.organisation.nom, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1)
@@ -921,10 +921,10 @@ suspend fun etapesMiseEnRoute(d: Donnees): List<Triple<String, Boolean, String>>
 @Composable
 fun ListeMiseEnRoute(etapes: List<Triple<String, Boolean, String>>, onChoix: (String) -> Unit) {
     etapes.forEach { (titre, fait, cible) ->
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = !fait) { onChoix(cible) }.padding(vertical = 8.dp),
+        Row(Modifier.fillMaxWidth().clip(Formes.Moyen).clickable(enabled = !fait) { onChoix(cible) }.padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(26.dp).background(if (fait) Couleurs.Bleu else Color.Transparent, CircleShape)
-                .then(if (fait) Modifier else Modifier.border(2.dp, Color(0xFFD9D3D0), CircleShape)), contentAlignment = Alignment.Center) {
+                .then(if (fait) Modifier else Modifier.border(2.dp, Couleurs.Bord, CircleShape)), contentAlignment = Alignment.Center) {
                 if (fait) Text("✓", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
             }
             Text(titre, fontWeight = FontWeight.SemiBold, color = if (fait) Couleurs.Texte2 else Couleurs.Texte, modifier = Modifier.weight(1f),

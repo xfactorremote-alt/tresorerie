@@ -46,7 +46,7 @@ fun FeuilleLien(d: Donnees, m: Membre, lien: LienMembre?, message: (String) -> U
             fontSize = 14.sp, color = Couleurs.Texte2)
         if (url != null) {
             // Aperçu tel que WhatsApp l'affiche : logo et nom de l'association plutôt que l'adresse nue
-            Surface(color = androidx.compose.ui.graphics.Color(0xFFF3F1F0), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = Couleurs.Survol, shape = Formes.Moyen, modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     LogoAsso(Modifier.size(48.dp))
                     Column(Modifier.weight(1f)) {
@@ -86,7 +86,7 @@ fun FeuilleLiens(d: Donnees, membres: List<Membre>, liens: List<LienMembre>, mes
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Liens personnels", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text("Chaque membre reçoit un lien qui ouvre sa page : cotisation, participations, rendez-vous. Pas de compte, pas d’installation.", fontSize = 14.sp, color = Couleurs.Texte2)
-        if (sans.isNotEmpty()) Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        if (sans.isNotEmpty()) Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.Moyen, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${sans.size} membre${if (sans.size > 1) "s" else ""} sans lien", Modifier.weight(1f))
                 Button(enabled = !enCours, onClick = {

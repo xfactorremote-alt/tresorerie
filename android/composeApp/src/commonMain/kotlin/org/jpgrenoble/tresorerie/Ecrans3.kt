@@ -171,7 +171,7 @@ private fun ParamCompte(d: Donnees, message: (String) -> Unit, recharger: () -> 
                         Text(d.profil.nom, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         if (email.isNotBlank()) Text(email, color = Couleurs.Texte2, fontSize = 14.sp)
                         Text(d.nomRole(d.profil.role), color = Couleurs.SurBleuClair, fontWeight = FontWeight.Bold, fontSize = 13.sp,
-                            modifier = Modifier.padding(top = 4.dp).background(Couleurs.BleuClair, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 3.dp))
+                            modifier = Modifier.padding(top = 4.dp).background(Couleurs.BleuClair, Formes.Moyen).padding(horizontal = 10.dp, vertical = 3.dp))
                     }
                 }
                 OutlinedTextField(nom, { nom = it.take(80) }, label = { Text("Nom affiché") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -241,7 +241,7 @@ private fun ParamAssociation(d: Donnees, message: (String) -> Unit, recharger: (
                 val apercuBanniere = remember(nouvelleBanniere, banniereActuelle, retirerBanniere) {
                     (nouvelleBanniere?.octets ?: banniereActuelle.takeIf { !retirerBanniere })?.let { imageDepuisOctets(it) }
                 }
-                Box(Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFFEFEDEC)), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().height(120.dp).clip(Formes.XGrand).background(Couleurs.Surface2), contentAlignment = Alignment.Center) {
                     if (apercuBanniere != null) Image(apercuBanniere, "Bannière", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     else Text(if (retirerBanniere) "La photo sera retirée à l’enregistrement." else "Aucune photo. Format paysage conseillé, au moins 1600${NBSP}pixels de large.", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.padding(12.dp))
                 }
@@ -335,7 +335,7 @@ private fun ParamComptes(d: Donnees, message: (String) -> Unit, recharger: () ->
                         OutlinedTextField(soldes[c.id] ?: "", { v -> soldes = soldes + (c.id to v) }, label = { Text("${c.nom} · solde de départ (€)") },
                             singleLine = true, isError = nombre(soldes[c.id] ?: "") == null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { actifs = actifs + (c.id to !(actifs[c.id] ?: c.actif)) }, verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.clip(Formes.XGrand).clickable { actifs = actifs + (c.id to !(actifs[c.id] ?: c.actif)) }, verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(actifs[c.id] ?: c.actif, { v -> actifs = actifs + (c.id to v) }); Text("Actif", fontSize = 14.sp)
                         }
                         IconButton(onClick = { supprimerCompte("accounts", c.id, c.nom) }) { Icon(Icons.Outlined.Delete, contentDescription = "Supprimer ${c.nom}", tint = Couleurs.Texte2) }
@@ -412,7 +412,7 @@ private fun ParamRoles(d: Donnees, message: (String) -> Unit, recharger: () -> U
                 }
             }
             if ((role.code to "valider_depenses") in liens && (role.code to "payer_depenses") in liens) item {
-                Surface(color = Couleurs.JauneClair, contentColor = Couleurs.SurJaune, shape = RoundedCornerShape(14.dp)) {
+                Surface(color = Couleurs.JauneClair, contentColor = Couleurs.SurJaune, shape = Formes.Moyen) {
                     Text("${role.nom} peut valider et payer. La même personne ne pourra pas payer une dépense qu’elle a validée.", Modifier.padding(12.dp), fontSize = 14.sp)
                 }
             }
@@ -514,7 +514,7 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () 
                                     }
                                 }
                             }
-                            Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { action({ Repo.majProfil(p.id, actif = !p.actif) }, if (!p.actif) "Accès réactivé" else "Accès désactivé") },
+                            Row(Modifier.clip(Formes.XGrand).clickable { action({ Repo.majProfil(p.id, actif = !p.actif) }, if (!p.actif) "Accès réactivé" else "Accès désactivé") },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(p.actif, { v -> action({ Repo.majProfil(p.id, actif = v) }, if (v) "Accès réactivé" else "Accès désactivé") }); Text("Actif", fontSize = 14.sp)
                             }
@@ -530,7 +530,7 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () 
                                 Text(inv.nom ?: inv.email, fontWeight = FontWeight.SemiBold)
                                 Text("${inv.email} · invitation en attente", fontSize = 13.sp, color = Couleurs.Texte2)
                             }
-                            Puce(nomRole(inv.role), Color(0xFFEFEDEC), Couleurs.Texte2)
+                            Puce(nomRole(inv.role), Couleurs.Surface2, Couleurs.Texte2)
                             TextButton(onClick = { action({ Repo.retirerInvitation(inv.email) }, "Invitation retirée") }) { Text("Retirer") }
                         }
                     }
@@ -613,9 +613,9 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
         }
     }) {
         OutlinedTextField(nom, { nom = it.take(80) }, label = { Text("Nom") }, placeholder = { Text("Répétition, réunion, concert, sortie…") }, singleLine = true)
-        OutlinedTextField(debut, { debut = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
+        ChampDate(debut, { debut = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
             isError = (debut.isNotBlank() && dDebut == null) || (type == "evenement" && debut.isBlank()))
-        OutlinedTextField(fin, { fin = it }, label = { Text("Jusqu’au") }, placeholder = { Text("Même jour") }, singleLine = true,
+        ChampDate(fin, { fin = it }, label = { Text("Jusqu’au") }, placeholder = { Text("Même jour") }, singleLine = true,
             isError = fin.isNotBlank() && (dFin == null || (dDebut != null && dFin < dDebut)))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(hDebut, { hDebut = it.take(5) }, label = { Text("Heure de début") }, placeholder = { Text("18:30") }, singleLine = true,
@@ -647,7 +647,7 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
             if (participation) {
                 OutlinedTextField(attendu, { attendu = it }, label = { Text("Montant par personne (€)") }, placeholder = { Text("Libre") },
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                OutlinedTextField(limite, { limite = it }, label = { Text("Date limite") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
+                ChampDate(limite, { limite = it }, label = { Text("Date limite") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
                     isError = limite.isNotBlank() && dLimite == null)
             }
         }
@@ -715,8 +715,8 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
         when {
             f == null -> {}
             f.second == "invite" -> Puce("${d.nomRole(f.first)} · invité", Couleurs.JauneClair, Couleurs.SurJaune)
-            f.second == "coupe" -> Puce("${d.nomRole(f.first)} · accès coupé", Color(0xFFEFEDEC), Couleurs.Texte2)
-            f.first == "adherent" -> Puce("Accès adhérent", Color(0xFFEFEDEC), Couleurs.Texte2)
+            f.second == "coupe" -> Puce("${d.nomRole(f.first)} · accès coupé", Couleurs.Surface2, Couleurs.Texte2)
+            f.first == "adherent" -> Puce("Accès adhérent", Couleurs.Surface2, Couleurs.Texte2)
             else -> Puce(d.nomRole(f.first), Couleurs.BleuClair, Couleurs.SurBleuClair)
         }
     }
@@ -729,7 +729,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     }
     // Ligne sobre : photo, nom (« (vous) » atténué), anniversaire et profession, fonction ; un appui ouvre la fiche (comme le site)
     @Composable fun Ligne(m: Membre, derniere: Boolean) {
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).clickable { detail = m }.padding(horizontal = 4.dp, vertical = 10.dp).alpha(if (m.actif) 1f else 0.6f), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clip(Formes.Moyen).clickable { detail = m }.padding(horizontal = 4.dp, vertical = 10.dp).alpha(if (m.actif) 1f else 0.6f), verticalAlignment = Alignment.CenterVertically) {
             AvatarMembre(m, 44)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -741,7 +741,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 PuceFonction(m)
-                if (!m.actif) Puce("Inactif", Color(0xFFEFEDEC), Couleurs.Texte2)
+                if (!m.actif) Puce("Inactif", Couleurs.Surface2, Couleurs.Texte2)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
         }
@@ -749,7 +749,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     }
     // Section en carte sobre (Bureau, Membres), comme les cartes du site
     @Composable fun Section(titre: String?, l: List<Membre>, vide: (@Composable () -> Unit)? = null) {
-        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
                 titre?.let { Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 6.dp)) }
                 val v = l.filter(trouve)
@@ -773,7 +773,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                     OutlinedTextField(recherche, { recherche = it }, placeholder = { Text("Rechercher un membre") }, singleLine = true,
                         modifier = Modifier.weight(1f).semantics { contentDescription = "Rechercher un membre" })
                     Box {
-                        OutlinedIconButton(onClick = { menuActions = true }, shape = RoundedCornerShape(4.dp), modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.MoreHoriz, "Autres actions") }
+                        OutlinedIconButton(onClick = { menuActions = true }, shape = Formes.Moyen, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.MoreHoriz, "Autres actions") }
                         DropdownMenu(menuActions, { menuActions = false }) {
                             if (gereLiens && membres.isNotEmpty()) DropdownMenuItem(text = { Text("Liens personnels") }, leadingIcon = { Icon(Icons.Outlined.Link, null) }, onClick = { menuActions = false; tousLiens = true })
                             if (d.peut("gerer_membres")) DropdownMenuItem(text = { Text("Importer (CSV, Excel)") }, leadingIcon = { Icon(Icons.Outlined.UploadFile, null) }, onClick = { menuActions = false; importer = true })
@@ -836,7 +836,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             Text("Exporter la liste des membres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 @Composable fun Choix(titre: String, sous: String, onClick: () -> Unit) =
-                    Surface(onClick = onClick, shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface,
+                    Surface(onClick = onClick, shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface,
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E0DE)), modifier = Modifier.weight(1f).fillMaxHeight()) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(titre, fontWeight = FontWeight.Bold); Text(sous, fontSize = 13.sp, color = Couleurs.Texte2)
@@ -869,13 +869,13 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                 TextButton(onClick = { enregistrer("modele-membres.csv", "text/csv", csv(listOf("prénom", "nom", "jour", "mois", "profession", "whatsapp", "email", "accord"),
                     listOf(listOf("Marie", "Exemple", 14, 3, "Infirmière", "06 12 34 56 78", "", "oui"))).encodeToByteArray()) }) { Text("Télécharger le modèle") }
             }
-            erreurImport?.let { Surface(color = Couleurs.ErreurClair, contentColor = Color(0xFF410002), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
+            erreurImport?.let { Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.SurErreurClair, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
             aImporter?.let { (ok, erreurs) ->
                 Text(buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("${ok.size}") }; append(" ligne${if (ok.size > 1) "s" else ""} prête${if (ok.size > 1) "s" else ""}, ")
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("${erreurs.size}") }; append(" refusée${if (erreurs.size > 1) "s" else ""}.")
                 })
-                if (erreurs.isNotEmpty()) Surface(color = Couleurs.ErreurClair, contentColor = Color(0xFF410002), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)) {
+                if (erreurs.isNotEmpty()) Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.SurErreurClair, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)) {
                     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) { erreurs.forEach { Text(it, fontSize = 13.sp) } }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
@@ -910,15 +910,15 @@ private fun FicheDetailMembre(d: Donnees, m: Membre, avatar: @Composable () -> U
                     Text(m.nomComplet, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         puceFonction()
-                        if (m.actif) Puce("Actif", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("Inactif", Color(0xFFEFEDEC), Couleurs.Texte2)
-                        if (!m.consentement) Puce("Anniversaire privé", Color(0xFFEFEDEC), Couleurs.Texte2)
+                        if (m.actif) Puce("Actif", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("Inactif", Couleurs.Surface2, Couleurs.Texte2)
+                        if (!m.consentement) Puce("Anniversaire privé", Couleurs.Surface2, Couleurs.Texte2)
                     }
                 }
             }
             @Composable fun Info(l: String, v: String, lien: String? = null) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                     Text(l, color = Couleurs.Texte2, modifier = Modifier.weight(1f))
-                    Text(v, color = if (lien != null) Color(0xFF1B77B0) else Couleurs.Texte, modifier = if (lien != null) Modifier.clickable { runCatching { uri.openUri(lien) } } else Modifier)
+                    Text(v, color = if (lien != null) Couleurs.Bleu else Couleurs.Texte, modifier = if (lien != null) Modifier.clickable { runCatching { uri.openUri(lien) } } else Modifier)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
             }
@@ -927,7 +927,7 @@ private fun FicheDetailMembre(d: Donnees, m: Membre, avatar: @Composable () -> U
             m.whatsapp?.let { w -> Info("WhatsApp", w, numeroWa(w)?.let { "https://wa.me/$it" }) }
             m.email?.let { Info("E-mail", it, "mailto:$it") }
             @Composable fun Action(icone: androidx.compose.ui.graphics.vector.ImageVector, titre: String, sous: String, onClick: () -> Unit) {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+                Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(icone, null, tint = Couleurs.Orange)
                     Column(Modifier.weight(1f)) { Text(titre, fontWeight = FontWeight.SemiBold); Text(sous, fontSize = 13.sp, color = Couleurs.Texte2) }
@@ -981,10 +981,10 @@ private fun FeuilleFonction(d: Donnees, m: Membre, profils: List<Profil>, invita
             // État de l'accès : pastille et nom du compte (ou adresse invitée), comme feuilleAcces du site
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 when {
-                    compte != null -> { if (compte.actif) Puce("Compte actif", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("Accès coupé", Color(0xFFEFEDEC), Couleurs.Texte2)
+                    compte != null -> { if (compte.actif) Puce("Compte actif", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("Accès coupé", Couleurs.Surface2, Couleurs.Texte2)
                         Text(compte.nom, fontSize = 14.sp, color = Couleurs.Texte2) }
                     invitation != null -> { Puce("Invitation en attente", Couleurs.JauneClair, Couleurs.SurJaune); Text(invitation.email, fontSize = 14.sp, color = Couleurs.Texte2) }
-                    else -> Puce("Sans accès", Color(0xFFEFEDEC), Couleurs.Texte2)
+                    else -> Puce("Sans accès", Couleurs.Surface2, Couleurs.Texte2)
                 }
             }
             if (compte == null && invitation == null && !envoye)
@@ -999,7 +999,7 @@ private fun FeuilleFonction(d: Donnees, m: Membre, profils: List<Profil>, invita
                 ChoixListe("Ou rattacher un compte déjà créé", lier?.nom ?: "Aucun", listOf("Aucun") + libres.map { it.nom }) { lier = if (it == 0) null else libres[it - 1] }
             if (envoye) {
                 // Après l'invitation : prévenir la personne (WhatsApp, e-mail), comme le site
-                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(8.dp)) {
+                Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.XGrand) {
                     Column(Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(buildAnnotatedString { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Accès accordé.") }; append(" ${m.prenom} crée son compte sur le site avec ${email.trim().lowercase()}.") }, fontSize = 14.sp)
                         val texte = "Bonjour ${m.prenom}, votre accès à la trésorerie ${d.organisation.nom} est prêt. Créez votre compte sur ${Config.SITE_URL} avec l’adresse ${email.trim().lowercase()}."
@@ -1233,8 +1233,8 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
                 val trimestres = listOf("1er trimestre (janv. à mars)", "2e trimestre (avr. à juin)", "3e trimestre (juil. à sept.)", "4e trimestre (oct. à déc.)")
                 if (libre && type == "trimestre") ChoixListe("Trimestre", trimestres[trimestre], trimestres) { trimestre = it }
                 if (libre && type == "libre") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(du, { du = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(du) == null, modifier = Modifier.weight(1f))
-                    OutlinedTextField(au, { au = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = periode == null, modifier = Modifier.weight(1f))
+                    ChampDate(du, { du = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(du) == null, modifier = Modifier.weight(1f))
+                    ChampDate(au, { au = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = periode == null, modifier = Modifier.weight(1f))
                 }
                 if (doc.c.size > 1) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     doc.c.forEachIndexed { i, f -> SegmentedButton(selected = format == f, onClick = { format = f }, shape = SegmentedButtonDefaults.itemShape(i, doc.c.size)) { Text(noms[f]!!) } }
@@ -1502,7 +1502,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
                 Text(MOIS[m.drop(5).toInt() - 1].replaceFirstChar { it.uppercase() } + if (m.take(4) != aujourdhui().year.toString()) " " + m.take(4) else "",
                     fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
                 Text("${ps.size}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2,
-                    modifier = Modifier.background(Color(0xFFEFEDEC), RoundedCornerShape(50)).padding(horizontal = 7.dp))
+                    modifier = Modifier.background(Couleurs.Surface2, RoundedCornerShape(50)).padding(horizontal = 7.dp))
             }
             ps.forEach { p -> LigneRendezVous(p) { detail = p } }
         }
@@ -1510,7 +1510,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     // Ma cotisation : l'état coloré dans le titre (icône verte ou rouge), la grille de l'année et sa légende (comme le site)
     @Composable fun Cotisation() = Rubrique("m-cotisation", "Ma cotisation", etatCotis, alerte = retard > 0.005,
         icone = if (retard > 0.005) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle,
-        teinteIcone = if (retard > 0.005) Couleurs.Erreur else if (cotis.isNotEmpty()) Color(0xFF2E8B4E) else Couleurs.Texte) {
+        teinteIcone = if (retard > 0.005) Couleurs.Erreur else if (cotis.isNotEmpty()) Couleurs.Vert else Couleurs.Texte) {
         val regle = cotis.filter { it.statut == "regle" || it.statut == "dispense" }.maxOfOrNull { it.periode }
         Text(buildAnnotatedString {
             withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = if (retard > 0.005) Couleurs.Erreur else Couleurs.Texte)) { append(etatCotis) }
@@ -1613,12 +1613,12 @@ fun FiltrePlanning(vue: String, onChoix: (String) -> Unit) {
 @Composable
 fun LigneRendezVous(p: Projet, onClick: () -> Unit) {
     val (fond, encre, accent) = couleurEvt(p.id)
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick)
+    Row(Modifier.fillMaxWidth().clip(Formes.Moyen).clickable(onClick = onClick)
         .drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         p.debut?.let { dt ->
             val j = LocalDate.parse(dt.take(10))
-            Column(Modifier.width(48.dp).clip(RoundedCornerShape(12.dp)).background(accent).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.width(48.dp).clip(Formes.Moyen).background(accent).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("${j.dayOfMonth}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = Color.White)
                 Text(MOIS_COURTS[j.monthNumber - 1], fontSize = 11.sp, color = Color.White)
             }
@@ -1660,7 +1660,7 @@ fun EcranPlus(d: Donnees, onChoix: (String) -> Unit) {
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(entrees, key = { it.first }) { (k, l, icone) ->
-            Surface(onClick = { onChoix(k) }, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(onClick = { onChoix(k) }, color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Icon(icone, null, tint = Couleurs.Orange)
                     Text(l, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.weight(1f))

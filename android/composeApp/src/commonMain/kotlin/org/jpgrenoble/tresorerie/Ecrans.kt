@@ -151,7 +151,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
         item {
             Banniere(d, onReglages = { onAller("parametres") }, onCloche = { onAller("nouveautes") }) {
                 if (voitSoldes) {
-                    Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable { onAller("operations:") }) {
+                    Column(Modifier.clip(Formes.Moyen).clickable { onAller("operations:") }) {
                         Text("Trésorerie au ${dateFr(jour)}", color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         if (soldes == null) LinearProgressIndicator(Modifier.width(160.dp).padding(vertical = 14.dp), color = Color.White)
                         else {
@@ -219,7 +219,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
         if (voitSoldes && operations.isNotEmpty()) {
             item {
                 Rubrique("indicateurs", "Chiffres $an", "Recettes ${euros0(rec)} · Dépenses ${euros0(dep)}") {
-                    val carteCotis: @Composable (Modifier) -> Unit = { m -> Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp),
+                    val carteCotis: @Composable (Modifier) -> Unit = { m -> Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand,
                         border = androidx.compose.foundation.BorderStroke(1.dp, BORD_CARTE), modifier = m) {
                         if (exigible > 0) Jauge("Cotisations encaissées", encaisse, exigible,
                             "${euros0(encaisse)} sur ${euros0(exigible)} · ${cotis.count { it.statut == "a_jour" }} membres à jour sur ${cotis.size}", Modifier.padding(14.dp).fillMaxWidth())
@@ -326,9 +326,9 @@ private fun DeuxColonnes(large: Boolean, gauche: @Composable ColumnScope.() -> U
 internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: (() -> Unit)? = null, compacte: Boolean = false, contenu: @Composable ColumnScope.() -> Unit) {
     val octets by Repo.banniere.collectAsState()
     val photo = remember(octets) { octets?.let { imageDepuisOctets(it) } }
-    val forme = RoundedCornerShape(28.dp)
+    val forme = Formes.XGrand
     Box(Modifier.fillMaxWidth().heightIn(min = if (compacte) 0.dp else 200.dp).clip(forme)
-        .background(Brush.radialGradient(listOf(Color(0xFF5A5350), Color(0xFF2B2826), Color(0xFF1C1B1A)), center = Offset(2000f, 0f), radius = 2200f))) {
+        .background(Brush.radialGradient(listOf(Couleurs.Texte2, Color(0xFF2B2826), Couleurs.Texte), center = Offset(2000f, 0f), radius = 2200f))) {
         if (photo != null) {
             Image(photo, null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
             Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x40141211), Color(0x8C141211), Color(0xD1141211)))))
@@ -342,7 +342,7 @@ internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: ((
                 }
                 // Cloche des nouveautés et roue dentée des Paramètres, posées sur la photo (l'accueil n'a pas de barre du haut)
                 if (onCloche != null) BoutonCloche(onCloche, clair = true)
-                if (onReglages != null) Surface(onClick = onReglages, color = Color.White.copy(alpha = 0.16f), contentColor = Color.White, shape = RoundedCornerShape(14.dp),
+                if (onReglages != null) Surface(onClick = onReglages, color = Color.White.copy(alpha = 0.16f), contentColor = Color.White, shape = Formes.Moyen,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)), modifier = Modifier.size(44.dp)) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Settings, contentDescription = "Paramètres") }
                 }
@@ -354,7 +354,7 @@ internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: ((
 
 @Composable
 private fun PuceBanniere(titre: String, valeur: String, modifier: Modifier = Modifier) =
-    Surface(color = Color.White.copy(alpha = 0.14f), contentColor = Color.White, shape = RoundedCornerShape(16.dp),
+    Surface(color = Color.White.copy(alpha = 0.14f), contentColor = Color.White, shape = Formes.Moyen,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)), modifier = modifier) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
             Text(titre, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -364,10 +364,10 @@ private fun PuceBanniere(titre: String, valeur: String, modifier: Modifier = Mod
 
 @Composable
 private fun CarteCompte(c: Solde, modifier: Modifier = Modifier, onClick: () -> Unit) =
-    Surface(onClick = onClick, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD9D3D0)), modifier = modifier) {
+    Surface(onClick = onClick, color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Bord), modifier = modifier) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(40.dp).background(Color(0xFFEFEDEC), CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp).background(Couleurs.Surface2, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(if (c.type == "caisse") Icons.Outlined.Payments else Icons.Outlined.AccountBalance, null, tint = Couleurs.Texte2, modifier = Modifier.size(22.dp))
             }
             Column(Modifier.weight(1f)) {
@@ -379,7 +379,7 @@ private fun CarteCompte(c: Solde, modifier: Modifier = Modifier, onClick: () -> 
 
 @Composable
 private fun Tuile(titre: String, valeur: String, detail: String, couleur: Color, modifier: Modifier = Modifier) =
-    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp), border = androidx.compose.foundation.BorderStroke(1.dp, BORD_CARTE), modifier = modifier) {
+    Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, border = androidx.compose.foundation.BorderStroke(1.dp, BORD_CARTE), modifier = modifier) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(titre, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(valeur, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = couleur, maxLines = 1)
@@ -401,7 +401,7 @@ internal fun ListeAnniversaires(anniv: List<Anniversaire>, mois: Int) {
                 Text("${a.jour} ${MOIS[mois - 1]}" + (a.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
             }
             if (a.jour == jour) Pastille("Aujourd’hui", Couleurs.JauneClair, Couleurs.SurJaune)
-            else if (a.jour < jour) Pastille("Passé", Color(0xFFEFEDEC), Couleurs.Texte2)
+            else if (a.jour < jour) Pastille("Passé", Couleurs.Surface2, Couleurs.Texte2)
         }
     }
 }
@@ -451,7 +451,7 @@ internal fun Avatar(prenom: String, nom: String, taille: Int = 44) =
 
 @Composable
 private fun Pastille(texte: String, fond: Color, couleur: Color) =
-    Surface(color = fond, contentColor = couleur, shape = RoundedCornerShape(13.dp)) {
+    Surface(color = fond, contentColor = couleur, shape = Formes.Rond) {
         Text(texte, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
     }
 
@@ -606,7 +606,7 @@ fun EcranOperations(d: Donnees, message: (String) -> Unit, compteInitial: String
             val filtresActifs = pastilles.isNotEmpty() || q.isNotEmpty()
             if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             else if (vues.isEmpty()) item {
-                Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
                     Text(if (filtresActifs) "Aucune opération pour ces filtres." else "Aucune opération.", color = Couleurs.Texte2, modifier = Modifier.padding(20.dp))
                 }
             }
@@ -702,7 +702,7 @@ private fun FormatExportOperations(titre: String, onPdf: () -> Unit, onCsv: () -
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         listOf(Triple("PDF", "Mise en page pour imprimer, archiver ou transmettre", onPdf), Triple("Excel", "Tableau modifiable (CSV)", onCsv)).forEach { (t, s, action) ->
-            Surface(onClick = action, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp),
+            Surface(onClick = action, color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand,
                 border = androidx.compose.foundation.BorderStroke(1.dp, BORD_CARTE), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(t, fontWeight = FontWeight.Bold)
@@ -746,8 +746,8 @@ private fun FeuilleFiltres(d: Donnees, collectes: List<Collecte>, sens0: String,
             compte = if (it == 0) null else d.comptes[it - 1].id
         }
         if (periode == "perso") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(du, { du = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDu == null, modifier = Modifier.weight(1f))
-            OutlinedTextField(au, { au = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
+            ChampDate(du, { du = it }, label = { Text("Du") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dDu == null, modifier = Modifier.weight(1f))
+            ChampDate(au, { au = it }, label = { Text("Au") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
                 isError = dAu == null || (dDu != null && dAu < dDu), modifier = Modifier.weight(1f))
         }
         ChoixListe("Catégorie", categoriesVues.firstOrNull { it.id == categorie }?.let { nomCat(it) } ?: "Toutes les catégories", listOf("Toutes les catégories") + categoriesVues.map { nomCat(it) }) {
@@ -755,7 +755,7 @@ private fun FeuilleFiltres(d: Donnees, collectes: List<Collecte>, sens0: String,
         }
         val rubs = listOf(null to "Toutes les rubriques", "cotisation" to "Cotisations") + collectes.map { it.id to it.nom }
         ChoixListe("Rubrique", rubs.firstOrNull { it.first == rubrique }?.second ?: "Toutes les rubriques", rubs.map { it.second }) { rubrique = rubs[it].first }
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { sansPiece = !sansPiece }, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clip(Formes.Moyen).clickable { sansPiece = !sansPiece }, verticalAlignment = Alignment.CenterVertically) {
             Checkbox(sansPiece, { sansPiece = it }); Text("Seulement les dépenses sans pièce justificative")
         }
         if (!persoValide) Text("Période invalide : la fin doit suivre le début", color = Couleurs.Erreur, fontSize = 13.sp)
@@ -772,7 +772,7 @@ private fun FeuilleFiltres(d: Donnees, collectes: List<Collecte>, sens0: String,
 private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepassee: Boolean, tiers: String, rubrique: String, demande: Demande?, onClick: () -> Unit) {
     val cat = d.nomCategorie(e.categorieId)
     val compte = d.comptes.firstOrNull { it.id == e.compteId }?.nom ?: ""
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+    Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Column(Modifier.weight(1f)) {
             Text(e.libelle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -782,14 +782,14 @@ private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepasse
         // État (puceEtat du site) puis pièce (trombone ou « Sans pièce ») : les deux peuvent se suivre
         when {
             demande?.statut == "soumise" -> Pastille("À valider", Couleurs.JauneClair, Couleurs.SurJaune)
-            demande?.statut == "refusee" && !contrepassee -> Pastille(if (demande.regularisation) "Refusée · à régulariser" else "Refusée", Couleurs.ErreurClair, Color(0xFF410002))
+            demande?.statut == "refusee" && !contrepassee -> Pastille(if (demande.regularisation) "Refusée · à régulariser" else "Refusée", Couleurs.ErreurClair, Couleurs.SurErreurClair)
             e.rapproche -> Pastille("Rapprochée", Couleurs.BleuClair, Couleurs.SurBleuClair)
-            e.contrepasseDe != null -> Pastille("Correction", Color(0xFFEFEDEC), Couleurs.Texte2)
-            contrepassee -> Pastille("Annulée", Color(0xFFEFEDEC), Couleurs.Texte2)
+            e.contrepasseDe != null -> Pastille("Correction", Couleurs.Surface2, Couleurs.Texte2)
+            contrepassee -> Pastille("Annulée", Couleurs.Surface2, Couleurs.Texte2)
             e.virement != null -> Pastille("Virement interne", Couleurs.BleuClair, Couleurs.SurBleuClair)
         }
         if (aPiece) Icon(Icons.Outlined.AttachFile, contentDescription = "Pièce jointe", tint = Couleurs.Texte2, modifier = Modifier.size(18.dp))
-        else if (e.sens == "depense" && e.estFlux && e.montant > 0 && e.contrepasseDe == null && !contrepassee) Pastille("Sans pièce", Couleurs.ErreurClair, Color(0xFF410002))
+        else if (e.sens == "depense" && e.estFlux && e.montant > 0 && e.contrepasseDe == null && !contrepassee) Pastille("Sans pièce", Couleurs.ErreurClair, Couleurs.SurErreurClair)
         Spacer(Modifier.width(2.dp))
         val v = e.signe
         Text((if (v >= 0) "+ " else "− ") + euros(kotlin.math.abs(v)),
@@ -799,8 +799,8 @@ private fun LigneOperation(d: Donnees, e: Ecriture, aPiece: Boolean, contrepasse
 
 @Composable
 internal fun Indicateur(titre: String, valeur: String, couleur: Color, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp),
-        modifier = modifier.then(if (onClick != null) Modifier.clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick) else Modifier)) {
+    Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand,
+        modifier = modifier.then(if (onClick != null) Modifier.clip(Formes.XGrand).clickable(onClick = onClick) else Modifier)) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(titre, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(valeur, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = couleur, maxLines = 1)
@@ -888,7 +888,7 @@ internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pi
         } })
         LigneInfo("État", when { e.rapproche -> "Rapprochée, verrouillée"; e.contrepasseDe != null -> "Correction d’une autre écriture"; correction != null -> "Annulée par contre-passation"; else -> "Active" })
         LigneInfo("Référence", refOperation(e.id))
-        if (alerteMode.isNotEmpty()) Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(12.dp)) {
+        if (alerteMode.isNotEmpty()) Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.Moyen) {
             Text(alerteMode, Modifier.padding(12.dp), fontSize = 14.sp)
         }
         // Historique : qui a fait quoi, et le lien vers l'écriture liée
@@ -1000,13 +1000,13 @@ fun FormulaireVirement(d: Donnees, message: (String) -> Unit, onFini: (Boolean) 
             OutlinedTextField(montant, { montant = it }, label = { Text("Montant (€)") }, singleLine = true, isError = montant.isNotEmpty() && (m == null || m <= 0),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
             // Date jamais dans le futur (max du site)
-            OutlinedTextField(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null || dt > aujourdhui(), modifier = Modifier.weight(1f))
+            ChampDate(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null || dt > aujourdhui(), modifier = Modifier.weight(1f))
         }
         OutlinedTextField(libelle, { libelle = it.take(120) }, label = { Text("Libellé") }, placeholder = { Text(nature) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.AttachFile, null); Spacer(Modifier.width(8.dp)); Text(bordereau?.let { "Bordereau joint (${it.ko}$NBSP" + "Ko)" } ?: "Bordereau ou ticket")
         }
-        Surface(color = Color(0xFFEFEDEC), shape = RoundedCornerShape(12.dp)) {
+        Surface(color = Couleurs.Surface2, shape = Formes.Moyen) {
             Text(if (source == dest) "Choisissez deux comptes différents." else "$nature$NBSP: −${euros(m ?: 0.0)} sur « ${s.nom} », +${euros(m ?: 0.0)} sur « ${dd.nom} ».",
                 Modifier.padding(12.dp), fontSize = 14.sp, color = if (source == dest) Couleurs.Erreur else Couleurs.Texte)
         }
@@ -1030,7 +1030,7 @@ val MODES = mapOf("especes" to "Espèces", "virement" to "Virement", "autre" to 
 internal fun PiecesVue(pieces: List<Piece>, signature: String?) {
     val ouvrir = rememberOuvrirFichier()
     if (pieces.isEmpty()) {
-        Surface(color = Color(0xFFEFEDEC), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Surface(color = Couleurs.Surface2, shape = Formes.Moyen, modifier = Modifier.fillMaxWidth()) {
             Text("Aucune pièce jointe", Modifier.padding(14.dp), color = Couleurs.Texte2, fontSize = 14.sp)
         }
     }
@@ -1063,7 +1063,7 @@ private fun ApercuFichier(titre: String, bucket: String, chemin: String, mime: S
             Icon(Icons.Outlined.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir le PDF")
         }
         img != null -> Image(img, titre, contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxWidth().height(hauteur.dp).clip(RoundedCornerShape(14.dp)).background(Color.White)
+            modifier = Modifier.fillMaxWidth().height(hauteur.dp).clip(Formes.Moyen).background(Color.White)
                 .clickable { octets?.let { ouvrir(nom, mime, it) } })
         else -> LinearProgressIndicator(Modifier.fillMaxWidth())
     }

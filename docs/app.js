@@ -894,7 +894,8 @@ async function pageTableau() {
   const retardsActifs = retards.filter((r) => !annulees.has(r.id));
   const aRegul = demandes.filter((d) => d.regularisation && d.statut === 'refusee' && !annulees.has(d.id));
   const aValider = demandes.filter((d) => d.statut === 'soumise');
-  const aPayer = demandes.filter((d) => d.statut === 'validee');
+  // Séparation des tâches : qui a validé une demande ne la paie pas (le bouton Payer lui est refusé), donc elle n'est pas « à payer » pour lui
+  const aPayer = demandes.filter((d) => d.statut === 'validee' && d.validee_par !== S.profil.id);
   const aJustifier = demandes.filter((d) => d.statut === 'payee' && !annulees.has(d.id) && (peut('payer_depenses', 'saisir_ecritures') || d.demandeur === S.profil.id));
   const alertesBudget = budget.filter((b) => b.alerte);
   const pl = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
@@ -1466,6 +1467,10 @@ async function pageEcritures() {
   const regularisation = new Set((demandesListe || []).filter((d) => d.regularisation).map((d) => d.id));
   const pieces = {};
   piecesListe.forEach((a) => { if (a.transaction_id) pieces[a.transaction_id] = a; });
+  // Justificatif déposé sur la demande payée : il vaut pièce de l'opération qui la paie (comme Android, aPiece)
+  const pieceDemande = {};
+  piecesListe.forEach((a) => { if (a.request_id && a.nature !== 'devis') pieceDemande[a.request_id] = a; });
+  toutes.forEach((t) => { if (!pieces[t.id] && t.request_id && pieceDemande[t.request_id]) pieces[t.id] = pieceDemande[t.request_id]; });
   const contrepassees = new Set(toutes.filter((t) => t.contrepasse_de).map((t) => t.contrepasse_de));
   const cat = nomCategorie;
   const cpt = (id) => S.comptes.find((c) => c.id === id)?.nom || '';
@@ -4501,6 +4506,8 @@ const syntheseDocument = (tuiles) => `<div class="doc-synthese">${tuiles.map(([l
 async function pdfJournal({ du, au, compte = '', sens = '', categorie = '', titre } = {}) {
   const [toutes, pieces] = await Promise.all([q(sb.from('transactions').select('*').order('date_op').order('created_at')), q(sb.from('attachments').select('*'))]);
   const avecPiece = new Set(pieces.map((a) => a.transaction_id).filter(Boolean));
+  const demandesAvecPiece = new Set(pieces.filter((a) => a.request_id && a.nature !== 'devis').map((a) => a.request_id));
+  toutes.forEach((t) => { if (t.request_id && demandesAvecPiece.has(t.request_id)) avecPiece.add(t.id); });
   const comptesVus = compte ? S.comptes.filter((c) => c.id === compte) : S.comptes;
   const dansCompte = (t) => comptesVus.some((c) => c.id === t.account_id);
   const avant = toutes.filter((t) => dansCompte(t) && du && t.date_op < du);

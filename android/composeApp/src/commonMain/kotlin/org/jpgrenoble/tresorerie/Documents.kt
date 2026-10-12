@@ -66,7 +66,10 @@ suspend fun documentHtml(d: Donnees, type: String, an: Int, du: String? = null, 
     "journal" -> {
         val toutes = Repo.toutesEcritures().sortedBy { it.date }
         val comptes = try { Repo.tousLesComptes() } catch (_: Exception) { d.comptes }
-        val avecPiece = Repo.pieces().mapNotNull { it.transactionId }.toSet()
+        // Pièce de l'opération, ou justificatif déposé sur la demande qu'elle paie (même règle que le site)
+        val lesPieces = Repo.pieces()
+        val demandesAvecPiece = lesPieces.filter { it.demandeId != null && it.nature != "devis" }.mapNotNull { it.demandeId }.toSet()
+        val avecPiece = lesPieces.mapNotNull { it.transactionId }.toSet() + toutes.filter { it.demandeId != null && it.demandeId in demandesAvecPiece }.map { it.id }
         val ms = d.membres; val ts = try { Repo.tiers() } catch (_: Exception) { emptyList() }
         val debut = du ?: "$an-01-01"; val fin = au ?: "$an-12-31"
         val vus = comptes.filter { compte == null || it.id == compte }

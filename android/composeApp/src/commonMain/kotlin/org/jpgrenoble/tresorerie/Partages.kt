@@ -53,9 +53,9 @@ data class GenreCommunique(val libelle: String, val sur: String, val action: Str
 
 // Une rubrique par genre sur la page des membres, avec sa couleur (mêmes couleurs que les groupes des Paramètres et le site)
 val GENRES_COMMUNIQUE = linkedMapOf(
-    "annonce" to GenreCommunique("Annonce", "Communiqué", "", Icons.Outlined.Campaign, "Communiqués", Color(0xFF1B77B0), Color(0xFFE3F1FB)),
-    "sondage" to GenreCommunique("Sondage", "Votre avis", "Touchez pour répondre", Icons.Outlined.Poll, "Sondages", Color(0xFFC23E10), Color(0xFFFFEDE5)),
-    "photos" to GenreCommunique("Photos", "Photos", "Touchez pour voir", Icons.Outlined.Image, "Photos", Color(0xFF2E8B4E), Color(0xFFE4F5E8)),
+    "annonce" to GenreCommunique("Annonce", "Communiqué", "", Icons.Outlined.Campaign, "Communiqués", Couleurs.Bleu, Color(0xFFE3F1FB)),
+    "sondage" to GenreCommunique("Sondage", "Votre avis", "Touchez pour répondre", Icons.Outlined.Poll, "Sondages", Couleurs.Orange, Color(0xFFFFEDE5)),
+    "photos" to GenreCommunique("Photos", "Photos", "Touchez pour voir", Icons.Outlined.Image, "Photos", Couleurs.Vert, Color(0xFFE4F5E8)),
     "lien" to GenreCommunique("Lien", "À voir", "Touchez pour ouvrir", Icons.Outlined.Link, "Liens", Color(0xFF7048B8), Color(0xFFEFE9FA)),
 )
 fun genreDe(c: Communique) = GENRES_COMMUNIQUE[c.genre] ?: GENRES_COMMUNIQUE.getValue("annonce")
@@ -115,7 +115,7 @@ fun aRepondre(c: Communique, mesReponses: Map<String, JsonObject>) = c.genre == 
 private val cacheDemo = mutableMapOf<String, ImageBitmap>()
 fun imageDemo(chemin: String): ImageBitmap = cacheDemo.getOrPut(chemin) {
     val n = chemin.filter { it.isDigit() }.toIntOrNull() ?: 1
-    val (a, b) = listOf(Color(0xFFF2994A) to Color(0xFFC23E10), Color(0xFF1B77B0) to Color(0xFF78BEE6), Color(0xFF2E8B4E) to Color(0xFFC8E6A0), Color(0xFF783CA0) to Color(0xFFF0B478))[(n - 1).mod(4)]
+    val (a, b) = listOf(Color(0xFFF2994A) to Couleurs.Orange, Couleurs.Bleu to Color(0xFF78BEE6), Couleurs.Vert to Color(0xFFC8E6A0), Color(0xFF783CA0) to Color(0xFFF0B478))[(n - 1).mod(4)]
     val img = ImageBitmap(600, 400)
     CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, androidx.compose.ui.graphics.Canvas(img), Size(600f, 400f)) {
         drawRect(Brush.verticalGradient(listOf(a, b)))
@@ -135,7 +135,7 @@ fun PhotoPartage(chemin: String, modifier: Modifier = Modifier, ajustement: Cont
             if (o != null) imageDepuisOctets(o)?.let { CachePhotos.images[chemin] = it; CachePhotos.octets[chemin] = o; if (CachePhotos.images.size > 60) CachePhotos.images.remove(CachePhotos.images.keys.first()); image = it }
         } catch (_: Exception) { }
     }
-    Box(modifier.background(Color(0xFFEFEDEC)), contentAlignment = Alignment.Center) {
+    Box(modifier.background(Couleurs.Surface2), contentAlignment = Alignment.Center) {
         image?.let { Image(it, null, contentScale = ajustement, modifier = Modifier.fillMaxSize()) }
             ?: Icon(Icons.Outlined.Image, null, tint = Couleurs.Texte2)
     }
@@ -168,7 +168,7 @@ fun GaleriePhotos(photos: List<String>, colonnes: Int = 3) {
         photos.chunked(colonnes).forEachIndexed { ligne, l ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 l.forEachIndexed { k, ch ->
-                    PhotoPartage(ch, Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(6.dp)).clickable { ouverte = ligne * colonnes + k })
+                    PhotoPartage(ch, Modifier.weight(1f).aspectRatio(1f).clip(Formes.Grand).clickable { ouverte = ligne * colonnes + k })
                 }
                 repeat(colonnes - l.size) { Spacer(Modifier.weight(1f)) }
             }
@@ -210,9 +210,9 @@ fun SondageMembre(c: Communique, maReponse: JsonObject?, onRepondu: (JsonObject)
     val ouvert = c.fin == null || c.fin >= aujourdhui().toString()
     LaunchedEffect(c.id, maReponse) { if (maReponse != null && c.resultatsVisibles && resultats == null) resultats = try { Repo.resultatsSondage(c.id) } catch (_: Exception) { null } }
     if (maReponse != null && !modifier) {
-        Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFEFEDEC), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF9CCBEA))) {
+        Surface(shape = Formes.XGrand, color = Couleurs.Surface2, border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.BleuTrait)) {
             Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Outlined.CheckCircle, null, tint = Color(0xFF1B77B0))
+                Icon(Icons.Outlined.CheckCircle, null, tint = Couleurs.Bleu)
                 Column {
                     Text("Votre réponse est enregistrée", fontWeight = FontWeight.SemiBold)
                     Text((if (c.anonyme) "Sondage anonyme : le bureau voit les totaux, pas qui a répondu quoi." else "Le bureau voit votre réponse.") +
@@ -232,16 +232,16 @@ fun SondageMembre(c: Communique, maReponse: JsonObject?, onRepondu: (JsonObject)
     }
     val choix = remember(c.id) { mutableStateMapOf<String, List<String>>().apply { c.questions.forEach { q -> put(q.id, maReponse?.reponseA(q.id) ?: emptyList()) } } }
     c.questions.forEachIndexed { i, q ->
-        Surface(shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE8E3E1)), color = Color.Transparent) {
+        Surface(shape = Formes.XGrand, border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.BordDoux), color = Color.Transparent) {
             Column(Modifier.padding(12.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("${i + 1}. ${q.intitule}" + if (!q.obligatoire) " (facultatif)" else "", fontWeight = FontWeight.SemiBold)
                 when (q.type) {
                     "texte" -> OutlinedTextField(choix[q.id]?.firstOrNull() ?: "", { choix[q.id] = listOf(it.take(1000)) }, minLines = 2, modifier = Modifier.fillMaxWidth())
                     else -> q.choix.forEach { ch ->
                         val coche = ch in (choix[q.id] ?: emptyList())
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
-                            .background(if (coche) Color(0xFFFFDBCF) else Color.Transparent)
-                            .border(1.dp, if (coche) Couleurs.Orange else Color(0xFFE8E3E1), RoundedCornerShape(6.dp))
+                        Row(Modifier.fillMaxWidth().clip(Formes.Grand)
+                            .background(if (coche) Couleurs.OrangeClair else Color.Transparent)
+                            .border(1.dp, if (coche) Couleurs.Orange else Couleurs.BordDoux, Formes.Grand)
                             .clickable { choix[q.id] = if (q.type == "multiple") (if (coche) choix[q.id]!! - ch else choix[q.id]!! + ch) else listOf(ch) }
                             .padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             if (q.type == "multiple") Checkbox(coche, null) else RadioButton(coche, null)
@@ -297,8 +297,8 @@ fun BlocResultats(c: Communique, r: ResultatsSondage, mien: JsonObject?) {
                     val n = comptes[ch] ?: 0
                     val pct = if (base > 0) (n * 100 + base / 2) / base else 0
                     val moi = mien?.reponseA(q.id)?.contains(ch) == true
-                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(Color(0xFFEFEDEC))) {
-                        Box(Modifier.matchParentSize().fillMaxWidth(pct / 100f).background(if (moi) Color(0xFFFFDBCF) else Color(0xFFCDE8F8)))
+                    Box(Modifier.fillMaxWidth().clip(Formes.Moyen).background(Couleurs.Surface2)) {
+                        Box(Modifier.matchParentSize().fillMaxWidth(pct / 100f).background(if (moi) Couleurs.OrangeClair else Couleurs.BleuClair))
                         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
                             Text(ch + if (moi) " · votre choix" else "", fontSize = 14.sp, modifier = Modifier.weight(1f))
                             Text("$pct % ($n)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -314,8 +314,8 @@ fun BlocResultats(c: Communique, r: ResultatsSondage, mien: JsonObject?) {
 @Composable
 fun EtiquetteCommunique(c: Communique, mesReponses: Map<String, JsonObject>) {
     when (c.genre) {
-        "sondage" -> if (c.id in mesReponses) Puce("Répondu", Color(0xFFCDE8F8), Color(0xFF00344F)) else Puce("À répondre", Color(0xFFFFDBCF), Color(0xFF3B0A00))
-        "photos" -> Puce("${c.photos.size} photo" + if (c.photos.size > 1) "s" else "", Color(0xFFEFEDEC), Couleurs.Texte2)
+        "sondage" -> if (c.id in mesReponses) Puce("Répondu", Couleurs.BleuClair, Couleurs.SurBleuClair) else Puce("À répondre", Couleurs.OrangeClair, Couleurs.SurOrangeClair)
+        "photos" -> Puce("${c.photos.size} photo" + if (c.photos.size > 1) "s" else "", Couleurs.Surface2, Couleurs.Texte2)
     }
 }
 
@@ -329,7 +329,7 @@ fun FeuilleResultatsSondage(c: Communique, message: (String) -> Unit, onModifier
     fun lisible(v: JsonObject, q: QuestionSondage) = v.reponseA(q.id).joinToString(" ; ")
     ModalBottomSheet(onDismissRequest = onFermer) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { Puce("Sondage", Color(0xFFEFEDEC), Couleurs.Texte2); if (c.anonyme) Puce("Anonyme", Color(0xFFEFEDEC), Couleurs.Texte2) }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { Puce("Sondage", Couleurs.Surface2, Couleurs.Texte2); if (c.anonyme) Puce("Anonyme", Couleurs.Surface2, Couleurs.Texte2) }
             Text(c.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text((c.fin?.let { "Réponses jusqu’au ${dateFr(it)}" } ?: "Sans date de fin") + " · " +
                 (if (c.resultatsVisibles) "résultats montrés aux membres après leur réponse" else "résultats réservés au bureau"), fontSize = 13.sp, color = Couleurs.Texte2)

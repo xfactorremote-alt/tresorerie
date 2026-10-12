@@ -128,7 +128,7 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
         }
         if (vide && gere) item {
             val n1 = x.resN1 > 0 || x.empN1 > 0
-            Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Budget $an à construire.", fontWeight = FontWeight.Bold)
                     Text("Saisissez le montant prévu de chaque ressource et de chaque emploi" + (if (n1) ", ou partez du réalisé ${an - 1}." else "."), fontSize = 14.sp)
@@ -145,7 +145,7 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
                 }
             }
         } else if (equilibre < 0) item {
-            Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.Erreur, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.Erreur, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
                 Text("Les emplois prévus dépassent les ressources de ${euros(-equilibre)}. À couvrir par la réserve ou par des ressources supplémentaires.", Modifier.padding(12.dp), fontSize = 14.sp)
             }
         }
@@ -200,7 +200,7 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
                 Triple<String, String, () -> Unit>("PDF", "Mise en page pour imprimer, archiver ou transmettre") { exporter = false; scope.launch { try { val (t, h) = documentHtml(d, "budget", an); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } }; Unit },
                 Triple<String, String, () -> Unit>("Excel", "Tableau modifiable (CSV)") { exporter = false; scope.launch { try { enregistrer("budget-$an.csv", "text/csv", exportCsv(d, "budget", an).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } }; Unit },
             ).forEach { (t, sous, action) ->
-                Surface(onClick = action, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp),
+                Surface(onClick = action, color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE6E1DE)), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) { Text(t, fontWeight = FontWeight.Bold); Text(sous, fontSize = 14.sp, color = Couleurs.Texte2) }
                 }
@@ -212,7 +212,7 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
 
 @Composable
 private fun Bandeau(texte: String) =
-    Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
         Text(texte, Modifier.padding(12.dp), fontSize = 14.sp)
     }
 
@@ -248,7 +248,7 @@ private fun LignePoste(x: PosteBudget, sens: String, an: Int, gere: Boolean, onP
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(x.cat.nom, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
                 if (depasse) Puce("Dépassé", Couleurs.ErreurClair, Couleurs.Erreur)
-                else if (hors) Puce("Non prévu", Color(0xFFEFEDEC), Couleurs.Texte2)
+                else if (hors) Puce("Non prévu", Couleurs.Surface2, Couleurs.Texte2)
             }
             if (gere) ChampPrevu(x, onPrevu, Modifier.width(120.dp))
             else Text(euros(x.prevu), fontWeight = FontWeight.SemiBold)
@@ -273,7 +273,7 @@ private fun LignePoste(x: PosteBudget, sens: String, an: Int, gere: Boolean, onP
 // Chiffre du haut de page (.kpis du site) : libellé, montant, sous-ligne ; trois par ligne
 @Composable
 private fun ChiffreBudget(titre: String, montant: Double, sous: String, couleur: Color, modifier: Modifier) =
-    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE6E1DE)), modifier = modifier) {
+    Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE6E1DE)), modifier = modifier) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
             Text(titre, fontSize = 12.sp, color = Couleurs.Texte2, lineHeight = 15.sp)
             Text(euros(montant), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = couleur)
@@ -313,14 +313,14 @@ private fun CarteActiviteBudget(a: ActiviteBudget, d: Donnees, gere: Boolean, on
             listOf(Triple("Ressources", euros(a.resReel) to a.resPrevu, Couleurs.Bleu), Triple("Emplois", euros(a.empReel) to a.empPrevu, Couleurs.Orange),
                 Triple("Résultat", ((if (res >= 0) "+" else "−") + NBSP + euros(kotlin.math.abs(res))) to (a.resPrevu - a.empPrevu), if (res < 0) Couleurs.Erreur else MaterialTheme.colorScheme.onSurface)
             ).forEach { (t, v, c) ->
-                Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(Couleurs.Fond).padding(horizontal = 10.dp, vertical = 8.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight().clip(Formes.XGrand).background(Couleurs.Fond).padding(horizontal = 10.dp, vertical = 8.dp)) {
                     Text(t, fontSize = 12.sp, color = Couleurs.Texte2)
                     Text(v.first, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text("prévu ${euros(v.second)}", fontSize = 12.sp, color = Couleurs.Texte2)
                 }
             }
         }
-        if (a.empPrevu > 0 && a.empReel > a.empPrevu) Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.Erreur, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        if (a.empPrevu > 0 && a.empReel > a.empPrevu) Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.Erreur, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
             Text("Emplois de l’activité au-delà du prévu", Modifier.padding(10.dp), fontSize = 14.sp)
         }
         // Même ordre que le site : « Prévoir une ligne », puis les lignes prévues
