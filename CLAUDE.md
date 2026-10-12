@@ -9,6 +9,7 @@ Avant de dire qu'un travail est fini :
 2. Compiler Android (`./gradlew :composeApp:compileDebugKotlinAndroid`) et lancer les tests (`:composeApp:testDebugUnitTest`).
 3. Tester le site en mode démonstration (Playwright), sans erreur JavaScript.
 4. Mettre à jour la démo des deux côtés (`docs/mock.js` et `Demo.kt`) avec les mêmes règles que la base.
+4 bis. À chaque publication, monter la version de l'application (`versionName`) et la même dans `docs/index.html` (`styles.css?v=…`, `app.js?v=…` et la table d'import des modules) : sans cela, les téléphones gardent l'ancienne présentation en mémoire. Le test `VersionTest` bloque si les deux diffèrent.
 5. Toute règle de gestion vit d'abord dans la base (`supabase/`), puis à l'identique dans `mock.js` et `Demo.kt`.
 6. Un calcul affiché porte le même nom des deux côtés (`calculBudget`, `serieMensuelle`, `EtatsDemandes`…) et le document PDF/Excel Android reprend les mêmes colonnes que le site.
 7. Les catégories internes (virements) ne sont jamais proposées à la saisie ni au budget, y compris après l'ajout d'une catégorie.

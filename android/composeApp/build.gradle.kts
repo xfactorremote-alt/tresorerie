@@ -51,8 +51,8 @@ android {
         applicationId = "org.jpgrenoble.tresorerie"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.23.1"
+        versionCode = 28
+        versionName = "0.23.2"
     }
     buildTypes {
         getByName("release") { isMinifyEnabled = false }
@@ -62,4 +62,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+}
+
+// VersionTest lit la version du site : le test se relance quand index.html ou ce fichier changent
+tasks.withType<Test>().configureEach {
+    inputs.file(rootProject.file("../docs/index.html"))
+    inputs.file(project.file("build.gradle.kts"))
 }
