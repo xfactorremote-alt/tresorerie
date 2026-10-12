@@ -400,6 +400,8 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
         EtatMiseEnRoute.restantes = reste
         if (reste > 0 && !ficheAuto && !EtatMiseEnRoute.fenetreMontree && Rappels.discretPermis(d.profil.id, "miseenroute")) {
             kotlinx.coroutines.delay(2500)
+            // Jamais dans les Paramètres (règle des fenêtres dosées) : on attend d'en être sorti
+            while (sousEcran == "parametres") kotlinx.coroutines.delay(1000)
             Rappels.marquerDiscret(d.profil.id, "miseenroute")
             val admin = d.peut("administrer")
             val r = snackbar.showSnackbar(if (admin) "Mise en route : $reste étape${if (reste > 1) "s" else ""} restante${if (reste > 1) "s" else ""}" else "Votre fiche de membre est à compléter",
@@ -407,22 +409,28 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
             if (r == SnackbarResult.ActionPerformed) { if (admin) miseEnRouteOuverte = true else ficheDemandee = true }
         }
     }
+    // Un rappel discret encore affiché ne suit pas dans les Paramètres (comme le site)
+    LaunchedEffect(enParametres) {
+        val m = snackbar.currentSnackbarData?.visuals?.message ?: ""
+        if (enParametres && (m.startsWith("Mise en route") || m.startsWith("Votre fiche"))) snackbar.currentSnackbarData?.dismiss()
+    }
     val c = EtatNouveautes.n.value.compteurs
     Scaffold(
         // Accueil : pas de barre du haut, la bannière porte déjà le logo, le nom et la roue dentée
-        topBar = { if (!enParametres && (if (adherentSeul) (vueAdherent != 0 || sousEcran != null) else onglet != Onglet.Accueil)) BarreHaut(d, retour, false, onCloche = { nouveautesOuvertes = true }) { ouvrirParametres() } },
+        // Paramètres : une page comme les autres (même barre du haut, roue dentée marquée, barre d'onglets visible), plus un espace à part
+        topBar = { if (enParametres) BarreHaut(d, null, true, onCloche = { nouveautesOuvertes = true }) { }
+            else if (if (adherentSeul) (vueAdherent != 0 || sousEcran != null) else onglet != Onglet.Accueil) BarreHaut(d, retour, false, onCloche = { nouveautesOuvertes = true }) { ouvrirParametres() } },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (enParametres) Unit
-            else if (adherentSeul) NavigationBar {
+            if (adherentSeul) NavigationBar {
                 listOf(Triple("Accueil", Icons.Outlined.Home, "cotisations"), Triple("Planning", Icons.Outlined.Event, "activites")).forEachIndexed { i, (l, ic, sec) ->
-                    NavigationBarItem(selected = vueAdherent == i && sousEcran == null, onClick = { vueAdherent = i; sousEcran = null },
+                    NavigationBarItem(selected = !enParametres && vueAdherent == i && sousEcran == null, onClick = { vueAdherent = i; sousEcran = null; avantParam = null; sectionParam = null },
                         icon = { IconeAvecPastille(ic, c[sec] ?: 0, null) }, label = { Text(l) })
                 }
             } else NavigationBar {
                 onglets.forEach { o ->
                     NavigationBarItem(
-                        selected = onglet == o, onClick = { onglet = o; sousEcran = null; if (o == Onglet.Operations) compteFiltre = null },
+                        selected = !enParametres && onglet == o, onClick = { onglet = o; sousEcran = null; avantParam = null; sectionParam = null; if (o == Onglet.Operations) compteFiltre = null },
                         icon = {
                             IconeAvecPastille(when (o) {
                                 Onglet.Accueil -> Icons.Outlined.Home

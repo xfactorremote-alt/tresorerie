@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -810,42 +811,28 @@ fun sectionsParametres(d: Donnees): List<Pair<String, List<SectionParam>>> {
     ).filter { it.second.isNotEmpty() }
 }
 
-// Couleur de chaque groupe du menu (mêmes valeurs que .c-bleu, .c-orange… du site)
-private val COULEURS_GROUPES = mapOf("Mon compte" to (Couleurs.Bleu to Color(0xFFE3F1FB)), "Association" to (Couleurs.Orange to Color(0xFFFFEDE5)),
-    "Finances" to (Couleurs.Vert to Color(0xFFE4F5E8)), "Accès" to (Color(0xFF7048B8) to Color(0xFFEFE9FA)), "Données" to (Couleurs.Texte2 to Color(0xFFEEECEB)))
-
+// Menu des Paramètres, sobre comme le reste de l'application (même rendu que .param-carte du site) :
+// titres de groupe en petites capitales, une carte blanche par groupe, icônes neutres, filet orange sur la section ouverte.
 @Composable
-fun MenuParametres(d: Donnees, choisie: String?, onChoix: (String) -> Unit, modifier: Modifier = Modifier) {
-    // Menu en cartes groupées et colorées, distinct de la navigation de l'application (comme le site)
-    LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth().clip(Formes.XGrand).background(Brush.linearGradient(listOf(Couleurs.Orange, Color(0xFFE8743B)))).padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(44.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
-                    Text(d.profil.nom.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }, fontWeight = FontWeight.Bold, color = Couleurs.Orange)
-                }
-                Column { Text(d.profil.nom, fontWeight = FontWeight.Bold, color = Color.White); Text(d.roles.firstOrNull { it.code == d.profil.role }?.nom ?: d.profil.role, fontSize = 13.sp, color = Color.White.copy(alpha = 0.9f)) }
-            }
-        }
+fun MenuParametres(d: Donnees, choisie: String?, onChoix: (String) -> Unit, modifier: Modifier = Modifier, avecTitre: Boolean = true) {
+    LazyColumn(modifier, contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (avecTitre) item { TitreParametres(d) }
         sectionsParametres(d).forEach { (groupe, sections) ->
-            val (fort, clair) = COULEURS_GROUPES[groupe] ?: (Couleurs.Orange to Couleurs.OrangeClair)
             item(key = groupe) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
-                    Text(groupe.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Couleurs.Texte2, letterSpacing = 0.8.sp, modifier = Modifier.padding(horizontal = 6.dp))
-                    Surface(shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    Text(groupe.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Couleurs.Texte2, letterSpacing = 0.8.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                    Surface(shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp) {
                         Column {
                             sections.forEachIndexed { i, sec ->
-                                if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
+                                if (i > 0) HorizontalDivider(color = Couleurs.BordDoux)
                                 val active = sec.cle == choisie
-                                Row(Modifier.fillMaxWidth().background(if (active) clair else Color.Transparent).clickable { onChoix(sec.cle) }
-                                    .drawBehind { if (active) drawRect(fort, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }
-                                    .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Box(Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(if (active) fort else clair), contentAlignment = Alignment.Center) {
-                                        Icon(sec.icone, null, tint = if (active) Color.White else fort, modifier = Modifier.size(20.dp))
-                                    }
+                                Row(Modifier.fillMaxWidth().background(if (active) Couleurs.Survol else Color.Transparent).clickable { onChoix(sec.cle) }
+                                    .drawBehind { if (active) drawRect(Couleurs.Orange, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    Icon(sec.icone, null, tint = if (active) Couleurs.Orange else Couleurs.Texte2, modifier = Modifier.size(20.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text(sec.titre, fontWeight = FontWeight.SemiBold)
-                                        Text(sec.description, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(sec.titre, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                        Text(sec.description, fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
                                 }
@@ -858,27 +845,24 @@ fun MenuParametres(d: Donnees, choisie: String?, onChoix: (String) -> Unit, modi
     }
 }
 
-// Barre propre aux Paramètres : retour au menu (téléphone, dans une section), titre, « Fermer » pour revenir à l'application
+// Titre de page, comme « Demandes » ou « Membres » : « Paramètres » puis la personne et son rôle
 @Composable
-fun BarreParametres(d: Donnees, titre: String, retour: (() -> Unit)?, onFermer: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (retour != null) IconButton(onClick = retour) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour aux paramètres") }
-            else Box(Modifier.size(40.dp).clip(Formes.Moyen).background(Couleurs.Orange), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Settings, null, tint = Color.White) }
-            Column(Modifier.weight(1f)) {
-                Text(titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(d.organisation.nom, fontSize = 12.sp, color = Couleurs.Texte2, maxLines = 1)
-            }
-            OutlinedButton(onClick = onFermer, contentPadding = PaddingValues(horizontal = 12.dp)) { Icon(Icons.Outlined.Close, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Fermer") }
-        }
+fun TitreParametres(d: Donnees) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+        Text("Paramètres", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("${d.profil.nom} · ${d.roles.firstOrNull { it.code == d.profil.role }?.nom ?: d.profil.role}", color = Couleurs.Texte2)
     }
 }
 
+// En-tête d'une section : sur téléphone « ‹ Paramètres » pour revenir au menu, puis le titre de la section comme un titre de page
 @Composable
-fun EnteteSection(s: SectionParam) {
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
-        Text(s.titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(s.description, color = Couleurs.Texte2, fontSize = 14.sp)
+fun EnteteSection(s: SectionParam, retour: (() -> Unit)? = null) {
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = if (retour != null) 4.dp else 16.dp)) {
+        if (retour != null) TextButton(onClick = retour, contentPadding = PaddingValues(horizontal = 4.dp)) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, Modifier.size(20.dp)); Text("Paramètres")
+        }
+        Text(s.titre, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(s.description, color = Couleurs.Texte2)
     }
 }
 

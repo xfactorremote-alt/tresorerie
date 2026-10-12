@@ -114,18 +114,16 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
                 when (cible) { "assistant" -> onAssistant(); "apparence", "comptes" -> section = cible; else -> onCible(cible) }
             }
         }
-        Column(Modifier.fillMaxSize().background(Color(0xFFEEF1F6))) {
-            BarreParametres(d, if (!large && choisie != null) choisie.titre else "Paramètres", if (!large && choisie != null) ({ section = null }) else null, onFermer)
-            if (large) Row(Modifier.fillMaxSize()) {
-                MenuParametres(d, choisie?.cle, { section = it }, Modifier.width(340.dp).fillMaxHeight())
-                Column(Modifier.weight(1f)) { choisie?.let { c -> EnteteSection(c); Box(Modifier.weight(1f)) { Contenu(c) } } }
-            } else androidx.compose.animation.AnimatedContent(choisie, transitionSpec = {
-                if (targetState != null) (androidx.compose.animation.slideInHorizontally { it / 2 } + androidx.compose.animation.fadeIn()) togetherWith androidx.compose.animation.fadeOut()
-                else (androidx.compose.animation.slideInHorizontally { -it / 2 } + androidx.compose.animation.fadeIn()) togetherWith androidx.compose.animation.fadeOut()
-            }) { c ->
-                if (c == null) MenuParametres(d, null, { section = it }, Modifier.fillMaxSize())
-                else Box(Modifier.fillMaxSize()) { Contenu(c) }
-            }
+        // Page ordinaire de l'application : même fond, titre « Paramètres » ; sur grand écran le menu à gauche et la section à droite
+        if (large) Row(Modifier.fillMaxSize()) {
+            MenuParametres(d, choisie?.cle, { section = it }, Modifier.width(360.dp).fillMaxHeight())
+            Column(Modifier.weight(1f)) { choisie?.let { c -> EnteteSection(c); Box(Modifier.weight(1f)) { Contenu(c) } } }
+        } else androidx.compose.animation.AnimatedContent(choisie, transitionSpec = {
+            if (targetState != null) (androidx.compose.animation.slideInHorizontally { it / 4 } + androidx.compose.animation.fadeIn()) togetherWith androidx.compose.animation.fadeOut()
+            else (androidx.compose.animation.slideInHorizontally { -it / 4 } + androidx.compose.animation.fadeIn()) togetherWith androidx.compose.animation.fadeOut()
+        }) { c ->
+            if (c == null) MenuParametres(d, null, { section = it }, Modifier.fillMaxSize())
+            else Column(Modifier.fillMaxSize()) { EnteteSection(c) { section = null }; Box(Modifier.weight(1f)) { Contenu(c) } }
         }
         RetourSysteme(!large && section != null) { section = null }
     }

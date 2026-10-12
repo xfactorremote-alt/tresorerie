@@ -70,7 +70,7 @@ Les tailles littérales d'Android (331 occurrences) suivent déjà cette échell
 1. **Liste + fiche** (Demandes, Membres, Matériel, Opérations, Tiers) : titre et résumé, recherche / filtres, une carte avec nombre et total, lignes sobres → fiche dans une feuille avec informations, historique, pièces, actions.
 2. **Tableau de bord** (Accueil) : une bannière forte (photo, soldes), puis rubriques repliables en cartes ; deux ou trois colonnes sur grand écran.
 3. **Calendrier** (Planning) : bandeau du mois, grille, « À venir » ; barres de couleur au téléphone, noms au-delà de 600 dp.
-4. **Paramètres** : espace à part, menu en cartes colorées par groupe, deux volets sur grand écran.
+4. **Paramètres** : page ordinaire (même en-tête et navigation), menu sobre en cartes par groupe (icônes neutres, filet orange sur la section ouverte), « ‹ Paramètres » au téléphone, deux volets sur grand écran.
 5. **États** : chargement sans écran blanc (on garde la page précédente), vide en carte avec icône et une phrase, erreur dans le message du bas avec le texte exact de la base.
 
 ## 6. Mouvement

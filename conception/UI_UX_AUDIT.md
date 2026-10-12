@@ -26,6 +26,7 @@ dates à taper. Ces causes racines sont corrigées au niveau du thème et des co
 | S8 | P2 | Site | Opération payant une demande dont le justificatif est sur la demande : « Sans pièce » à tort (liste et journal PDF) | Fausse alerte de contrôle | Pièce cherchée seulement par `transaction_id` | Pièce de la demande prise en compte (site et journal PDF Android) | ✅ |
 | S9 | P2 | Site, accueil | « N demandes à payer » compte celles que la personne a validées (elle ne peut pas les payer) | Tâche impossible affichée | Séparation des tâches non appliquée au compteur | Exclues, comme Android | ✅ |
 | S10 | P2 | Android | Contour des champs : avec `--bord` (#D9D3D0) le contraste serait 1,4:1 | Champs invisibles pour malvoyants | Le site compense par un trait foncé sous le champ | `outline = BordFort` (≥ 3:1) | ✅ |
+| S12 | P1 | Site et Android, Paramètres | Espace à part : en-tête et onglets cachés, fond bleuté, bannière orange en dégradé, icônes de 5 couleurs, bouton Fermer rond ; rappel « Mise en route » affiché par-dessus | Rupture avec le reste de l'application (« très disruptif », propriétaire) | Choix de conception antérieur | Page ordinaire, menu sobre, rappel jamais dans les Paramètres | ✅ 0.30.0 |
 | S11 | P3 | Android | 331 tailles de police littérales | Maintenance | Pas de rôles typographiques nommés | Déjà sur l'échelle du site (14/13/12 = 83 %) : pas de refonte mécanique ; règle documentée | Documenté |
 
 ## Navigation et structure

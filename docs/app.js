@@ -542,7 +542,7 @@ function coquille(page, contenu) {
   const onglet = ([k, l]) => `<a href="#${k}" ${k === page ? 'aria-current="page"' : ''}><span class="nav-icone">${iconeNav(k)}</span><span>${l}</span></a>`;
   const navMobile = courtes.map(onglet).join('') + (autres.length ? `<a href="#" id="b-plus" ${enPlus ? 'aria-current="page"' : ''}><span class="nav-icone">${iconeNav('plus')}</span><span>Plus</span></a>` : '');
   $('#app').innerHTML = `
-  <div class="shell ${page === 'tableau' ? 'shell-accueil' : ''} ${page === 'parametres' ? 'mode-parametres' : ''}">
+  <div class="shell ${page === 'tableau' ? 'shell-accueil' : ''}">
     <nav class="rail" aria-label="Navigation principale">
       <div class="rail-tete">
         <button class="nav-bascule" id="b-volet" type="button" aria-label="Ouvrir le menu" title="Menu">${icone('menu')}</button>
@@ -796,6 +796,10 @@ async function router() {
   if (page === 'parametres' && S.pagePrecedente !== 'parametres' && !S.sectionDemandee && !window.matchMedia('(min-width: 900px)').matches) S.ongletParam = null;
   S.sectionDemandee = false; S.pagePrecedente = page;
   if (page !== 'parametres') S.pageAvantParam = page;
+  // Un rappel discret encore affiché ne suit pas dans les Paramètres
+  else if ($('#b-toast-action')) $('#toast').hidden = true;
+  // Rappel discret repoussé parce qu'on était dans les Paramètres : proposé à la page suivante (comme Android)
+  if (page !== 'parametres' && S.rappelFait === false && S.profil) verifierRappels();
   fermerFeuille();
   coquille(page, '<p class="chargement">Chargement…</p>');
   try { await PAGES[page](); } catch (e) { erreur(e); }
@@ -2696,32 +2700,26 @@ async function pageParametres() {
   if (S.ongletParam && !toutes.some((x) => x[0] === S.ongletParam)) S.ongletParam = null;
   if (!S.ongletParam && large) S.ongletParam = 'compte';
   const choisie = toutes.find((x) => x[0] === S.ongletParam);
-  // Paramètres = un espace à part : le menu de l'application disparaît, une barre propre (Retour, titre, Fermer)
-  // et un menu en cartes groupées et colorées, qui ne ressemble pas au menu principal.
-  const COULEURS = { 'Mon compte': 'c-bleu', Association: 'c-orange', Finances: 'c-vert', Accès: 'c-violet', Données: 'c-gris' };
-  const fiche = S.profil.member_id ? (S.membres || []).find((m) => m.id === S.profil.member_id) : null;
-  const titre = choisie && !large ? choisie[1] : 'Paramètres';
+  // Paramètres = une page comme les autres (même en-tête, même navigation, même fond) : titre, puis un menu sobre
+  // en cartes par groupe (icônes neutres, filet orange sur la section ouverte) ; sur téléphone la section remplace le menu.
+  const menu = `<nav class="param-menu" aria-label="Sections des paramètres">
+    ${groupes.map(([g, l]) => `<div class="param-groupe"><span class="param-groupe-titre">${g}</span><div class="param-carte">
+      ${l.map(([k, t, ic, d]) => `<a href="#parametres" class="param-lien" data-section="${k}" ${k === S.ongletParam ? 'aria-current="page"' : ''}>
+        <span class="param-icone">${icone(ic)}</span><span class="param-texte"><b>${t}</b><small>${d}</small></span>${icone('suivant', 16)}</a>`).join('')}</div></div>`).join('')}
+  </nav>`;
+  const enSection = choisie && !large;
   rendre(`<div class="page page-param ${choisie ? 'avec-section' : ''}">
-    <header class="param-barre">
-      ${choisie && !large ? `<button class="param-barre-btn" type="button" id="b-param-retour" aria-label="Retour aux paramètres">${icone('precedent', 20)}</button>` : `<span class="param-barre-icone">${icone('parametres', 22)}</span>`}
-      <div class="param-barre-titre"><h1>${titre}</h1><span>${esc(S.org?.nom || '')}</span></div>
-      <button class="param-barre-btn param-fermer" type="button" id="b-param-fermer">${icone('fermer', 18)}<span>Fermer</span></button>
-    </header>
+    ${enSection
+      ? `<div class="param-titre-section"><button class="btn-texte btn-petit param-retour" type="button" id="b-param-retour">${icone('precedent', 16)} Paramètres</button>
+          <div class="page-titre"><h1>${choisie[1]}</h1></div><p class="muted param-sous-titre">${choisie[3]}</p></div>`
+      : `<div class="page-titre"><h1>Paramètres</h1></div><p class="muted param-sous-titre">${esc(S.profil.nom)} · ${esc(nomRole(S.profil.role))}</p>`}
     <div class="param-grille">
-      <nav class="param-menu" aria-label="Sections des paramètres">
-        <div class="param-moi">${fiche ? avatar(fiche) : `<span class="avatar" aria-hidden="true">${esc(initiales({ prenom: S.profil.nom.split(' ')[0], nom: S.profil.nom.split(' ')[1] || '' }))}</span>`}
-          <div><b>${esc(S.profil.nom)}</b><span>${esc(nomRole(S.profil.role))}</span></div></div>
-        ${groupes.map(([g, l]) => `<div class="param-groupe ${COULEURS[g] || ''}"><span class="param-groupe-titre">${g}</span><div class="param-carte">
-          ${l.map(([k, t, ic, d]) => `<a href="#parametres" class="param-lien" data-section="${k}" ${k === S.ongletParam ? 'aria-current="page"' : ''}>
-            <span class="param-icone">${icone(ic)}</span><span class="param-texte"><b>${t}</b><small>${d}</small></span>${icone('suivant', 16)}</a>`).join('')}</div></div>`).join('')}
-      </nav>
+      ${enSection ? '' : menu}
       <section class="param-contenu" aria-live="polite">
-        ${choisie ? `<div class="param-entete"><h2>${choisie[1]}</h2><p class="muted">${choisie[3]}</p></div><div id="param-corps" class="anime-entree"></div>` : ''}
+        ${choisie ? `${large ? `<div class="param-entete"><h2>${choisie[1]}</h2><p class="muted">${choisie[3]}</p></div>` : ''}<div id="param-corps" class="anime-entree"></div>` : ''}
       </section></div></div>`);
   document.querySelectorAll('.param-lien[data-section]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); S.ongletParam = a.dataset.section; pageParametres().then(() => window.scrollTo(0, 0)).catch(erreur); }));
-  const quitter = () => { location.hash = '#' + (S.pageAvantParam || 'tableau'); };
-  $('#b-param-fermer').addEventListener('click', quitter);
-  $('#b-param-retour')?.addEventListener('click', () => { S.ongletParam = null; pageParametres().catch(erreur); });
+  $('#b-param-retour')?.addEventListener('click', () => { S.ongletParam = null; pageParametres().then(() => window.scrollTo(0, 0)).catch(erreur); });
   if (choisie) await choisie[4]($('#param-corps'));
 }
 
@@ -3298,7 +3296,9 @@ async function verifierRappels() {
     if (!reste || S.ficheMontree || !discretPermis('miseenroute')) return;
     setTimeout(() => {
       // jamais par-dessus une fenêtre, ni dans une session où une fenêtre a déjà été proposée
+      // ni dans les Paramètres (règle des fenêtres dosées) : on garde le rappel pour une prochaine page
       if ($('#sheet[open]') || S.ficheMontree || S.assistantRepousse) return;
+      if ((location.hash.slice(1) || 'tableau') === 'parametres') { S.rappelFait = false; return; }  // repris par router()
       marquerDiscret('miseenroute', 7);
       toastAction(peut('administrer') ? `Mise en route : ${reste} étape${reste > 1 ? 's' : ''} restante${reste > 1 ? 's' : ''}` : 'Votre fiche de membre est à compléter',
         peut('administrer') ? 'Voir' : 'Remplir', () => (peut('administrer') ? feuilleMiseEnRoute() : feuilleMaFiche()));

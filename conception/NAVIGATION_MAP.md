@@ -32,13 +32,13 @@ Opérations ─► détail ─► contre-passation | demande liée | pièce
 Demandes ──► fiche ──► Voir l'opération (Android : par-dessus ; site : page Opérations)
 Planning ──► jour ──► rendez-vous ──► Voir le budget (Budget) | Voir les participations (Cotisations › Participations)
 Membres ───► fiche du membre ──► Lien personnel | Fonction et accès | Cotisation (Cotisations)
-Paramètres ► menu en cartes ──► sous-page ──► Fermer = retour à l'écran d'avant
+Paramètres ► menu sobre ──► section (téléphone : « ‹ Paramètres » ramène au menu) ; on en sort par les onglets
 ```
 
 ## Retour et restauration
 
 - Fermer une feuille : geste retour (Android), Échap ou clic à côté (site) ; la feuille ne garde rien en cours sans confirmation.
-- Paramètres : « Fermer » ramène à l'écran d'où l'on vient (`avantParam` / `S.avantParam`).
+- Paramètres : page ordinaire, barre d'onglets visible (aucun onglet marqué) ; retour système (Android) = écran d'avant.
 - Choix gardés pendant la session : filtres de Demandes, Membres, Matériel, Cotisations ; vue du Planning gardée sur l'appareil.
 - Liens profonds : site par ancre (`#depenses`…) et `?m=` pour le lien personnel ; Android par les notifications (ouverture de l'onglet concerné).
 
