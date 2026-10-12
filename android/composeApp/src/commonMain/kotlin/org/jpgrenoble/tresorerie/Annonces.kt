@@ -252,13 +252,17 @@ fun RubriqueCommuniques(liste: List<Communique>, onOuvrir: (Communique) -> Unit)
             val nouveau = !CommuniquesVus.vu(c.id)
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOuvrir(c) }.padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(if (c.priorite == "haute") Color(0xFFFFDBCF) else Color(0xFFCDE8F8)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.Campaign, null, tint = if (c.priorite == "haute") Color(0xFF3B0A00) else Color(0xFF00344F), modifier = Modifier.size(20.dp))
+                // Date de publication (le mégaphone n'est que dans le titre de la rubrique), comme le site
+                val encre = if (c.priorite == "haute") Color(0xFF3B0A00) else Color(0xFF00344F)
+                Column(Modifier.width(44.dp).clip(RoundedCornerShape(8.dp)).background(if (c.priorite == "haute") Color(0xFFFFDBCF) else Color(0xFFCDE8F8)).padding(vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("${c.debut.substring(8, 10).toInt()}", fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = encre)
+                    Text(MOIS_COURTS[c.debut.substring(5, 7).toInt() - 1].uppercase(), fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = encre)
                 }
                 Column(Modifier.weight(1f)) {
                     Text(c.titre, fontWeight = FontWeight.SemiBold, color = if (nouveau) Color(0xFF00344F) else Couleurs.Texte, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     c.texte?.lineSequence()?.firstOrNull()?.let { Text(it, fontSize = 14.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                    Text("Publié le ${dateFr(c.debut)}" + (c.fin?.let { " · jusqu’au ${dateFr(it)}" } ?: ""), fontSize = 12.sp, color = Couleurs.Texte2)
+                    c.fin?.let { Text("Jusqu’au ${dateFr(it)}", fontSize = 12.sp, color = Couleurs.Texte2) }
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Color(0xFF410002))

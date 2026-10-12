@@ -1154,8 +1154,8 @@ function rubriqueCommuniques(liste) {
   const nouveaux = l.some((c) => !communiqueVu(c.id));
   return rubrique('m-communiques', `<span class="statut-titre titre-communiques">${icone('communiques', 18)} Communiqués</span>`, resumeCommuniques(l),
     `<ul class="liste liste-communiques">${l.map((c) => `<li class="cliquable${c.priorite === 'haute' ? ' cq-important' : ''}${communiqueVu(c.id) ? '' : ' cq-nouveau'}" data-communique="${esc(c.id)}" tabindex="0" role="button">
-      <span class="cq-puce" aria-hidden="true">${icone('communiques', 18)}</span>
-      <div class="corps"><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}<small>Publié le ${dateFr(c.debut)}${c.fin ? ` · jusqu’au ${dateFr(c.fin)}` : ''}</small></div>
+      <span class="cq-date" aria-hidden="true"><b>${Number(c.debut.slice(8, 10))}</b>${MOIS_COURTS[Number(c.debut.slice(5, 7)) - 1]}</span>
+      <div class="corps"><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}${c.fin ? `<small>Jusqu’au ${dateFr(c.fin)}</small>` : ''}</div>
       <span class="cq-etiquettes">${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}${communiqueVu(c.id) ? '' : '<span class="puce puce-nouveau">Nouveau</span>'}</span></li>`).join('')}</ul>`,
     { classe: 'rub-communiques' + (nouveaux ? ' a-du-nouveau' : ''), forcee: nouveaux });
 }
