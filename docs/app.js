@@ -1033,30 +1033,47 @@ function banniereAnnonces(donnees) {
   S.annonces = { liste: annonces, rotation, donnees };
   if (!annonces.length) return `<div class="annonces acrylique"><div class="annonce" aria-live="polite"><span class="ann-corps"><small>Prochain rendez-vous</small><b>Rien de prévu pour l’instant</b></span></div></div>`;
   return `<div class="annonces acrylique" aria-roledescription="carrousel" aria-label="Annonces de l’association">
-    <div class="annonces-piste">${annonces.map((a, i) => `<div class="annonces-item ${i ? '' : 'actif'}" data-i="${i}" ${i ? 'aria-hidden="true"' : ''}>${htmlAnnonce(a)}</div>`).join('')}</div>
-    ${annonces.length > 1 ? `<div class="annonces-points" role="tablist">${annonces.map((a, i) => `<button type="button" role="tab" class="${i ? '' : 'actif'}" data-aller="${i}" aria-label="Annonce ${i + 1} sur ${annonces.length}"></button>`).join('')}</div>` : ''}
+    <div class="annonces-piste">${annonces.map((a, i) => `<div class="annonces-item ${i ? '' : 'actif entre'}" data-i="${i}" ${i ? 'aria-hidden="true"' : ''}>${htmlAnnonce(a)}</div>`).join('')}</div>
+    ${annonces.length > 1 ? `<div class="annonces-points" role="tablist">${annonces.map((a, i) => `<button type="button" role="tab" class="${i ? '' : 'actif'}" data-aller="${i}" aria-label="Annonce ${i + 1} sur ${annonces.length}"><i></i></button>`).join('')}</div>` : ''}
   </div>`;
 }
 function brancherAnnonces(ouvrirEvt) {
   const zone = $('.annonces'); const A = S.annonces; if (!zone || !A) return;
   clearInterval(S.minuterieAnnonces);
   let i = 0;
-  const montrer = (n) => {
-    i = (n + A.liste.length) % A.liste.length;
-    zone.querySelectorAll('.annonces-item').forEach((x, k) => { x.classList.toggle('actif', k === i); x.setAttribute('aria-hidden', k === i ? 'false' : 'true'); });
-    zone.querySelectorAll('[data-aller]').forEach((b, k) => b.classList.toggle('actif', k === i));
+  // Passage d'une annonce à l'autre, fait pour attirer l'œil : glissement avec léger rebond, icône qui saute,
+  // reflet lumineux qui balaie l'annonce, liseré qui s'illumine ; la barre du point actif annonce la suivante.
+  const doux = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const items = [...zone.querySelectorAll('.annonces-item')];
+  const montrer = (n, sens = 1) => {
+    const j = (n + A.liste.length) % A.liste.length;
+    if (j === i && items[j].classList.contains('actif')) return;
+    const ancien = items[i];
+    ancien.classList.remove('actif', 'entre', 'depuis-gauche'); ancien.setAttribute('aria-hidden', 'true');
+    ancien.classList.add('sort'); if (sens < 0) ancien.classList.add('vers-droite');
+    setTimeout(() => ancien.classList.remove('sort', 'vers-droite'), 500);
+    i = j;
+    const nouvel = items[i];
+    nouvel.classList.remove('entre', 'depuis-gauche'); void nouvel.offsetWidth;
+    nouvel.classList.add('actif', 'entre'); if (sens < 0) nouvel.classList.add('depuis-gauche'); nouvel.setAttribute('aria-hidden', 'false');
+    zone.classList.remove('eclat'); void zone.offsetWidth; zone.classList.add('eclat');
+    zone.querySelectorAll('[data-aller]').forEach((b, k) => { b.classList.remove('actif'); if (k === i) { void b.offsetWidth; b.classList.add('actif'); } });
     const a = A.liste[i]; if (a) noterVu(a.cle);
   };
   if (A.liste[0]) noterVu(A.liste[0].cle);
-  const auto = A.liste.length > 1 && A.rotation > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let pause = false;
-  if (auto) S.minuterieAnnonces = setInterval(() => { if (!pause && !document.hidden && document.body.contains(zone)) montrer(i + 1); }, A.rotation * 1000);
-  ['pointerenter', 'focusin'].forEach((ev) => zone.addEventListener(ev, () => { pause = true; }));
-  ['pointerleave', 'focusout'].forEach((ev) => zone.addEventListener(ev, () => { pause = false; }));
-  zone.querySelectorAll('[data-aller]').forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); montrer(Number(b.dataset.aller)); }));
+  const auto = A.liste.length > 1 && A.rotation > 0 && !doux;
+  zone.style.setProperty('--duree-annonce', A.rotation + 's');
+  zone.classList.toggle('defile', auto);
+  // Le temps est porté par la barre du point actif : en pause, la barre s'arrête et l'annonce reste
+  if (auto) zone.querySelectorAll('[data-aller] i').forEach((barre) => barre.addEventListener('animationend', () => montrer(i + 1)));
+  const pause = (v) => zone.classList.toggle('en-pause', v);
+  ['pointerenter', 'focusin'].forEach((ev) => zone.addEventListener(ev, () => pause(true)));
+  ['pointerleave', 'focusout'].forEach((ev) => zone.addEventListener(ev, () => pause(false)));
+  document.addEventListener('visibilitychange', () => pause(document.hidden));
+  zone.querySelectorAll('[data-aller]').forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); const n = Number(b.dataset.aller); montrer(n, n < i ? -1 : 1); }));
   let x0 = null;
-  zone.addEventListener('touchstart', (ev) => { x0 = ev.touches[0].clientX; pause = true; }, { passive: true });
-  zone.addEventListener('touchend', (ev) => { if (x0 != null) { const dx = ev.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) montrer(i + (dx < 0 ? 1 : -1)); } x0 = null; setTimeout(() => { pause = false; }, 4000); });
+  zone.addEventListener('touchstart', (ev) => { x0 = ev.touches[0].clientX; pause(true); }, { passive: true });
+  zone.addEventListener('touchend', (ev) => { if (x0 != null) { const dx = ev.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) montrer(i + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1); } x0 = null; setTimeout(() => pause(false), 4000); });
   zone.querySelectorAll('.annonce[data-type]').forEach((el) => {
     const agir = (ev) => {
       if (ev.target.closest('[data-ics]')) return;

@@ -1065,8 +1065,9 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .annonces{position:relative;margin-top:auto;border-radius:var(--r-xgrand);color:#fff;background:rgba(20,18,17,.42);border:1px solid rgba(255,255,255,.22);overflow:hidden}
 @supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.annonces{-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}}
 .annonces-piste{display:grid}
-.annonces-item{grid-area:1/1;opacity:0;visibility:hidden;transition:opacity var(--d-lent,.4s) var(--c-decel-moy,ease),visibility 0s linear var(--d-lent,.4s)}
-.annonces-item.actif{opacity:1;visibility:visible;transition:opacity var(--d-lent,.4s) var(--c-decel-moy,ease),visibility 0s}
+.annonces-item{grid-area:1/1;opacity:0;visibility:hidden;pointer-events:none}
+.annonces-item.actif,.annonces-item.sort{visibility:visible}
+.annonces-item.actif{opacity:1;pointer-events:auto}
 .annonce{display:flex;align-items:center;gap:12px;padding:10px 12px;min-height:64px;color:#fff;cursor:pointer;box-shadow:inset 3px 0 0 var(--evt-accent,rgba(255,255,255,.6))}
 .annonce:focus-visible{outline:2px solid #fff;outline-offset:-4px}
 .ann-puce{flex:none;width:44px;height:44px;border-radius:var(--r-grand);display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.18);color:#fff}
@@ -1084,8 +1085,12 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .ann-info{box-shadow:inset 3px 0 0 #8EC9F0}.ann-info .ann-puce{background:rgba(27,119,176,.8)}
 .ann-important{box-shadow:inset 3px 0 0 #fff}
 .annonces-points{position:absolute;right:10px;bottom:6px;display:flex;gap:4px}
-.annonces-points button{width:6px;height:6px;min-width:0;min-height:0;padding:0;border:0;border-radius:3px;background:rgba(255,255,255,.45);transition:width var(--d-normal,.2s) ease,background-color var(--d-normal,.2s) ease}
-.annonces-points button.actif{width:16px;background:#fff}
+.annonces-points button{position:relative;overflow:hidden;width:6px;height:6px;min-width:0;min-height:0;padding:0;border:0;border-radius:3px;background:rgba(255,255,255,.45);transition:width .3s cubic-bezier(.2,.9,.3,1.2)}
+.annonces-points button i{position:absolute;inset:0;width:0;background:#fff;border-radius:3px}
+.annonces-points button.actif{width:22px}
+.annonces-points button.actif i{width:100%}
+.annonces.defile .annonces-points button.actif i{animation:ann-progres var(--duree-annonce,8s) linear both}
+.annonces.en-pause .annonces-points button.actif i{animation-play-state:paused}
 @media (min-width:700px){.annonce{padding:12px 16px;min-height:72px}.ann-corps b{font-size:18px;line-height:24px}}
 .ligne-regle{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}
 .ligne-regle b{font-size:14px;font-weight:600}
@@ -1107,3 +1112,26 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .interrupteur input:checked{background:var(--primaire)}.interrupteur input:checked::after{transform:translateX(16px)}
 .interrupteur input:focus-visible{outline:2px solid var(--primaire);outline-offset:2px}
 .puce-bureau{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:0 6px;vertical-align:middle}
+
+/* ---------- Passage d'une annonce à l'autre : effet qui attire l'œil (sans excès) ---------- */
+@keyframes ann-entree{0%{opacity:0;transform:translateX(44px) scale(.94);filter:blur(6px)}60%{opacity:1;transform:translateX(-5px) scale(1.01);filter:blur(0)}100%{opacity:1;transform:none}}
+@keyframes ann-entree-g{0%{opacity:0;transform:translateX(-44px) scale(.94);filter:blur(6px)}60%{opacity:1;transform:translateX(5px) scale(1.01);filter:blur(0)}100%{opacity:1;transform:none}}
+@keyframes ann-sortie{to{opacity:0;transform:translateX(-36px) scale(.96);filter:blur(4px)}}
+@keyframes ann-sortie-d{to{opacity:0;transform:translateX(36px) scale(.96);filter:blur(4px)}}
+@keyframes ann-saut{0%{transform:scale(.4) rotate(-14deg)}55%{transform:scale(1.18) rotate(5deg)}80%{transform:scale(.95)}100%{transform:none}}
+@keyframes ann-reflet{from{transform:translateX(-120%) skewX(-18deg)}to{transform:translateX(320%) skewX(-18deg)}}
+@keyframes ann-eclat{0%{box-shadow:0 0 0 0 rgba(255,255,255,.55)}100%{box-shadow:0 0 0 10px rgba(255,255,255,0)}}
+@keyframes ann-progres{from{width:0}to{width:100%}}
+.annonces-item.entre{animation:ann-entree .62s cubic-bezier(.2,.9,.3,1) both}
+.annonces-item.entre.depuis-gauche{animation-name:ann-entree-g}
+.annonces-item.sort{animation:ann-sortie .38s cubic-bezier(.4,0,1,1) both}
+.annonces-item.sort.vers-droite{animation-name:ann-sortie-d}
+.annonces-item.entre .ann-puce{animation:ann-saut .7s cubic-bezier(.2,.9,.3,1.3) .12s both}
+.annonces-item.entre .annonce{position:relative;overflow:hidden}
+.annonces-item.entre .annonce::after{content:"";position:absolute;top:0;bottom:0;left:0;width:35%;pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.28),rgba(255,255,255,0));animation:ann-reflet 1s ease-out .25s both}
+.annonces.eclat{animation:ann-eclat .9s ease-out}
+@media (prefers-reduced-motion:reduce){
+  .annonces-item.entre,.annonces-item.entre.depuis-gauche{animation:fondu .3s linear both}.annonces-item.sort{animation:none;opacity:0}
+  .annonces-item.entre .ann-puce,.annonces-item.entre .annonce::after,.annonces.eclat{animation:none}
+}

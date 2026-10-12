@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -125,21 +127,49 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
         return
     }
     var i by remember(annonces.size) { mutableStateOf(0) }
+    var sens by remember { mutableStateOf(1) }
     var pause by remember { mutableStateOf(false) }
-    LaunchedEffect(annonces.getOrNull(i)?.cle) { annonces.getOrNull(i)?.let { noterAnnonceVue(it.cle) } }
-    LaunchedEffect(annonces.size, rotation, pause) {
-        if (annonces.size > 1 && rotation > 0 && !pause) while (true) { kotlinx.coroutines.delay(rotation * 1000L); i = (i + 1) % annonces.size }
+    val aller = { n: Int, s: Int -> sens = s; i = (n + annonces.size) % annonces.size }
+    // Le temps est porté par la barre du point actif (comme le site) : en pause, la barre s'arrête et l'annonce reste
+    val progres = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(annonces.getOrNull(i)?.cle) { annonces.getOrNull(i)?.let { noterAnnonceVue(it.cle) }; progres.snapTo(0f) }
+    LaunchedEffect(i, annonces.size, rotation, pause) {
+        if (annonces.size > 1 && rotation > 0 && !pause) {
+            // Pas à pas plutôt qu'une animation : « Supprimer les animations » d'Android ramènerait sa durée à zéro
+            while (progres.value < 1f) { kotlinx.coroutines.delay(50); progres.snapTo((progres.value + 50f / (rotation * 1000f)).coerceAtMost(1f)) }
+            aller(i + 1, 1)
+        }
     }
-    Box(panneau.pointerInput(annonces.size) {
+    // Liseré qui s'illumine à chaque nouvelle annonce
+    val eclat = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(i) { eclat.snapTo(1f); eclat.animateTo(0f, androidx.compose.animation.core.tween(900)) }
+    Box(panneau.drawBehind {
+        if (eclat.value > 0f) drawRoundRect(Color.White.copy(alpha = 0.55f * eclat.value), cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = (2.dp + 6.dp * (1f - eclat.value)).toPx()))
+    }.pointerInput(annonces.size) {
         var total = 0f
         detectHorizontalDragGestures(onDragStart = { pause = true; total = 0f }, onDragEnd = {
-            if (kotlin.math.abs(total) > 60) i = (i + (if (total < 0) 1 else -1) + annonces.size) % annonces.size
+            if (kotlin.math.abs(total) > 60) aller(i + (if (total < 0) 1 else -1), if (total < 0) 1 else -1)
             pause = false
         }) { _, d -> total += d }
     }) {
+        // Passage d'une annonce à l'autre, fait pour attirer l'œil : glissement avec léger rebond, icône qui saute,
+        // reflet lumineux qui balaie l'annonce (même effet que le site)
         androidx.compose.animation.AnimatedContent(i.coerceIn(0, annonces.size - 1), transitionSpec = {
-            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(400)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300))
+            val rebond = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0.9f, 0.3f, 1.15f)
+            (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(620, easing = rebond)) { it * sens / 7 } +
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(380)) +
+                androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(620, easing = rebond), initialScale = 0.94f)) togetherWith
+                (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(380)) { -it * sens / 8 } +
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)) +
+                    androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(380), targetScale = 0.96f))
         }, label = "annonce") { k ->
+            val saut = remember { androidx.compose.animation.core.Animatable(0.4f) }
+            val reflet = remember { androidx.compose.animation.core.Animatable(-0.4f) }
+            LaunchedEffect(Unit) {
+                launch { kotlinx.coroutines.delay(120); saut.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.42f, stiffness = 380f)) }
+                launch { kotlinx.coroutines.delay(250); reflet.animateTo(1.4f, androidx.compose.animation.core.tween(1000)) }
+            }
             val a = annonces[k]
             val (accent, puce) = when (a) {
                 is Annonce.Rdv -> couleurEvt(a.e.id).third to couleurEvt(a.e.id).third
@@ -147,11 +177,19 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
                 is Annonce.Participations -> Color(0xFFFFD54F) to Color(0xCCC58A00)
                 is Annonce.Info -> (if (a.c.priorite == "haute") Color.White else Color(0xFF8EC9F0)) to Color(0xCC1B77B0)
             }
-            Row(Modifier.fillMaxWidth().clickable {
+            Row(Modifier.fillMaxWidth().drawWithContent {
+                drawContent()
+                if (reflet.value in -0.4f..1.4f) {
+                    val x = size.width * reflet.value; val l = size.width * 0.35f
+                    drawRect(Brush.linearGradient(listOf(Color.White.copy(alpha = 0f), Color.White.copy(alpha = 0.26f), Color.White.copy(alpha = 0f)),
+                        start = androidx.compose.ui.geometry.Offset(x - l / 2, 0f), end = androidx.compose.ui.geometry.Offset(x + l / 2, size.height)))
+                }
+            }.clickable {
                 when (a) { is Annonce.Rdv -> onEvt(a.e); is Annonce.Cotisation, is Annonce.Participations -> onRegler(); is Annonce.Info -> onCommunique(a.c) }
             }.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }.padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(puce), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(44.dp).graphicsLayer { scaleX = saut.value; scaleY = saut.value; rotationZ = (1f - saut.value) * -24f }
+                    .clip(RoundedCornerShape(8.dp)).background(puce), contentAlignment = Alignment.Center) {
                     when (a) {
                         is Annonce.Rdv -> { val j = LocalDate.parse(a.e.debut!!.take(10))
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -182,8 +220,11 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
         }
         if (annonces.size > 1) Row(Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             annonces.indices.forEach { k ->
-                val large by androidx.compose.animation.core.animateDpAsState(if (k == i) 16.dp else 6.dp, label = "point")
-                Box(Modifier.height(6.dp).width(large).clip(RoundedCornerShape(3.dp)).background(if (k == i) Color.White else Color.White.copy(alpha = 0.45f)).clickable { i = k })
+                val large by androidx.compose.animation.core.animateDpAsState(if (k == i) 22.dp else 6.dp, label = "point")
+                Box(Modifier.height(6.dp).width(large).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.45f)).clickable { if (k != i) aller(k, if (k < i) -1 else 1) }) {
+                    // Le point actif se remplit pendant que l'annonce est affichée
+                    if (k == i) Box(Modifier.fillMaxHeight().fillMaxWidth(if (rotation > 0) progres.value.coerceAtLeast(0.01f) else 1f).background(Color.White))
+                }
             }
         }
     }
