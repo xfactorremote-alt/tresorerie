@@ -230,4 +230,14 @@ class AuditTest {
         fun dans(j: Int) = dansJours(aujourdhui().plus(kotlinx.datetime.DatePeriod(days = j)).toString())
         assertEquals("Demain", dans(1)); assertEquals("Dans 45 jours", dans(45)); assertEquals("Dans 6 mois", dans(183)); assertEquals("Dans 9 mois", dans(273))
     }
+
+    // Ce qui est envoyé à la base contient toujours les choix cochés, même égaux à la valeur par défaut
+    // (cas réel : « Visible de tous les membres » cochée mais enregistrée « non visible »)
+    @Test fun envoiDesValeursParDefaut() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }   // même réglage que le client Supabase
+        val projet = json.encodeToString(NouveauProjet.serializer(), NouveauProjet("Messe"))
+        assertTrue("\"visible_adherents\":true" in projet, projet); assertTrue("\"type\":\"activite\"" in projet, projet)
+        assertTrue("\"statut\":\"soumise\"" in json.encodeToString(NouvelleDemande.serializer(), NouvelleDemande("u", "Achat", 10.0, "c1")))
+        assertTrue("\"nature\":\"devis\"" in json.encodeToString(NouveauDevis.serializer(), NouveauDevis("r1", "x.pdf", "application/pdf", 10, "u")))
+    }
 }

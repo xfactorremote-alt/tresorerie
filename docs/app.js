@@ -3501,7 +3501,8 @@ async function detailEvenement(e, recharger) {
       <div class="ligne-detail"><span class="muted">Date</span><span>${esc(quand)}</span></div>
       ${e.heure_debut ? `<div class="ligne-detail"><span class="muted">Heure</span><span>${heure(e.heure_debut)}${e.heure_fin ? ' – ' + heure(e.heure_fin) : ''}</span></div>` : ''}
       ${e.lieu ? `<div class="ligne-detail"><span class="muted">Lieu</span><span>${esc(e.lieu)}</span></div>` : ''}
-      ${peut('gerer_activites') ? `<div class="ligne-detail"><span class="muted">Visibilité</span><span>${e.visible_adherents ? 'Tous les membres' : 'Bureau seulement'}</span></div>` : ''}
+      ${peut('gerer_activites') ? `<div class="ligne-detail"><span class="muted">Visibilité</span>
+        <label class="interrupteur"><input type="checkbox" id="c-visible" ${e.visible_adherents ? 'checked' : ''}><span id="t-visible">${e.visible_adherents ? 'Tous les membres' : 'Bureau seulement'}</span></label></div>` : ''}
     </div>
     ${e.description ? `<p>${esc(e.description)}</p>` : ''}
     ${part}
@@ -3512,6 +3513,16 @@ async function detailEvenement(e, recharger) {
       ${peut('gerer_activites') ? `<button class="btn-texte btn-texte-danger" id="b-suppr-evt">${icone('corbeille', 16)} Supprimer</button><button class="btn-tonal" id="b-modif">Modifier</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    // Visibilité changée d'un geste, sans ouvrir le formulaire
+    $('#c-visible', root)?.addEventListener('change', async (ev) => {
+      const v = ev.target.checked;
+      try {
+        await q(sb.from('projects').update({ visible_adherents: v }).eq('id', e.id));
+        e.visible_adherents = v; $('#t-visible', root).textContent = v ? 'Tous les membres' : 'Bureau seulement';
+        const pr = (S.projets || []).find((x) => x.id === e.id); if (pr) pr.visible_adherents = v;
+        toast(v ? 'Visible par tous les membres' : 'Réservé au bureau'); recharger?.();
+      } catch (err) { ev.target.checked = !v; erreur(err); }
+    });
     $('#b-suppr-evt', root)?.addEventListener('click', () => supprimerAvecConfirmation('projects', e.id, e.nom, async () => {
       S.projets = await q(sb.from('projects').select('*').order('date_debut', { ascending: false })); recharger();
     }));
@@ -3540,7 +3551,7 @@ function feuilleActivite(p, apres, pre = {}) {
     </div>
     <label class="champ">Lieu<input name="lieu" value="${esc(v.lieu || '')}" maxlength="120"></label>
     <label class="champ">Description<textarea name="description" rows="2" maxlength="500">${esc(v.description || '')}</textarea></label>
-    <label class="case"><input type="checkbox" name="visible" ${v.visible_adherents ? 'checked' : ''}> Visible de tous les membres</label>
+    <label class="case"><input type="checkbox" name="visible" ${v.visible_adherents ? 'checked' : ''}> Visible de tous les membres <span class="muted">(décochez seulement pour un rendez-vous réservé au bureau)</span></label>
     <label class="case"><input type="checkbox" name="budget" ${v.type === 'activite' ? 'checked' : ''}> Suivre le budget de cette activité <span class="muted">(ressources, emplois et résultat dans Budget ; la date peut rester à fixer)</span></label>
     ${p ? '' : `<label class="case"><input type="checkbox" name="part"> Demander une participation aux membres</label>
     <div class="champs champs-2" id="z-part" hidden>
@@ -4451,7 +4462,8 @@ async function pageActivites() {
   const annivDe = (s) => { const d = dateDe(s); return anniv.flat().filter((a) => a.mois === d.getMonth() + 1 && a.jour === d.getDate()); };
   const auj = isoLocal(new Date());
   const puce = (e) => `<button class="evt" data-evt="${e.id}" style="${styleEvt(e)}">${e.heure_debut ? `<small>${String(e.heure_debut).slice(0, 5)}</small> ` : ''}${esc(e.nom)}</button>`;
-  const ligneEvt = (e) => `<button class="agenda-evt" data-evt="${e.id}" style="${styleEvt(e)}"><b>${esc(e.nom)}</b><span>${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Toute la journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}</span>${e.participation ? `<span class="puce puce-partiel">Participation ${eur(e.participation)}</span>` : ''}</button>`;
+  // « Bureau seulement » repéré d'un coup d'œil par ceux qui gèrent le planning
+  const ligneEvt = (e) => `<button class="agenda-evt" data-evt="${e.id}" style="${styleEvt(e)}"><b>${esc(e.nom)}${!e.visible_adherents && peut('gerer_activites') ? ` <span class="puce puce-neutre puce-bureau">${icone('oeil_barre', 12)} Bureau</span>` : ''}</b><span>${[e.heure_debut ? heure(e.heure_debut) + (e.heure_fin ? ' – ' + heure(e.heure_fin) : '') : 'Toute la journée', e.lieu ? esc(e.lieu) : ''].filter(Boolean).join(' · ')}</span>${e.participation ? `<span class="puce puce-partiel">Participation ${eur(e.participation)}</span>` : ''}</button>`;
   let corps = '';
   if (P.vue === 'avenir') {
     const groupes = {};

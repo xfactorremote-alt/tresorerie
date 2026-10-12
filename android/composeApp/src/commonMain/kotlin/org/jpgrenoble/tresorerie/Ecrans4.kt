@@ -736,6 +736,7 @@ object PreferencesPlanning { var vue = "calendrier"; var affichage = "mois" }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)? = null) {
+    EtatPlanning.gere = d.peut("gerer_activites")
     var vue by remember { mutableStateOf(PreferencesPlanning.vue.takeIf { it in listOf("calendrier", "avenir") } ?: "calendrier") }
     var affichage by remember { mutableStateOf(PreferencesPlanning.affichage.takeIf { it in listOf("mois", "semaine") } ?: "mois") }
     var ref by remember { mutableStateOf(aujourdhui()) }
@@ -984,13 +985,20 @@ private fun CalendrierMois(ref: LocalDate, debut: LocalDate, fin: LocalDate, par
     } }
 }
 
+object EtatPlanning { var gere = false }
+
 @Composable
 private fun CarteEvenement(e: Projet, jourDetail: Boolean = false, onClick: () -> Unit) {
+    val gere = EtatPlanning.gere
     val (fond, texte, accent) = couleurEvt(e.id)
     Surface(onClick = onClick, color = fond, contentColor = texte, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }.padding(start = 16.dp, top = 12.dp, end = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(e.nom, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(e.nom, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+                    // « Bureau seulement » repéré d'un coup d'œil par ceux qui gèrent le planning (comme le site)
+                    if (gere && !e.visible) Puce("Bureau", Color(0xFFEFEDEC), Couleurs.Texte2)
+                }
                 val l = listOfNotNull(if (e.heureDebut != null) heureFr(e.heureDebut) + (e.heureFin?.let { " – " + heureFr(it) } ?: "") else "Journée", e.lieu)
                 Text(l.joinToString(" · "), fontSize = 13.sp)
             }
@@ -1034,7 +1042,18 @@ fun DetailEvenement(d: Donnees, e: Projet, message: (String) -> Unit, onChange: 
         LigneInfo("Date", e.debut?.let { jourLong(it) + if (e.fin != null && e.fin != e.debut) " au " + jourLong(e.fin) else "" } ?: "Date à fixer")
         LigneInfo("Heure", e.heureDebut?.let { heureFr(it) + (e.heureFin?.let { f -> " – " + heureFr(f) } ?: "") })
         LigneInfo("Lieu", e.lieu)
-        if (d.peut("gerer_activites")) LigneInfo("Visibilité", if (e.visible) "Tous les membres" else "Bureau seulement")
+        // Visibilité changée d'un geste, sans ouvrir le formulaire (comme l'interrupteur du site)
+        if (d.peut("gerer_activites")) {
+            var visible by remember(e.id) { mutableStateOf(e.visible) }
+            val portee = rememberCoroutineScope()
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Visibilité", color = Couleurs.Texte2, modifier = Modifier.width(96.dp))
+                Text(if (visible) "Tous les membres" else "Bureau seulement", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Switch(visible, { v -> visible = v; portee.launch {
+                    try { Repo.majVisibilite(e.id, v); message(if (v) "Visible par tous les membres" else "Réservé au bureau"); onChange() }
+                    catch (ex: Exception) { visible = !v; message(traduireErreur(ex)) } } })
+            }
+        }
         e.description?.let { Text(it, modifier = Modifier.padding(vertical = 4.dp)) }
         collecte?.let { c ->
             Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {

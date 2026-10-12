@@ -1100,3 +1100,10 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .mois-planning{display:flex;align-items:baseline;gap:8px;margin:14px 0 4px;font-size:15px;line-height:20px;font-weight:600;color:var(--texte-2)}
 .mois-planning:first-child{margin-top:4px}
 .mois-planning small{font-size:12px;font-weight:600;color:var(--texte-3);background:var(--surface-2);border-radius:var(--r-rond);padding:0 7px}
+/* Visibilité d'un rendez-vous : interrupteur dans le détail, repère « Bureau » dans le planning */
+.interrupteur{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600}
+.interrupteur input{appearance:none;-webkit-appearance:none;width:36px;height:20px;min-height:0;border-radius:10px;background:var(--bord);position:relative;margin:0;cursor:pointer;transition:background-color var(--d-rapide,.15s) linear}
+.interrupteur input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:var(--ombre2);transition:transform var(--d-rapide,.15s) var(--c-decel,ease)}
+.interrupteur input:checked{background:var(--primaire)}.interrupteur input:checked::after{transform:translateX(16px)}
+.interrupteur input:focus-visible{outline:2px solid var(--primaire);outline-offset:2px}
+.puce-bureau{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:0 6px;vertical-align:middle}

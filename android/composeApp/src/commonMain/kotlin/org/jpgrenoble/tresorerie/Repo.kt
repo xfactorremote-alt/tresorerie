@@ -396,6 +396,12 @@ object Repo {
         }) { filter { eq("id", id) } }
     }
 
+    // Visibilité d'un rendez-vous changée d'un geste (détail du rendez-vous)
+    suspend fun majVisibilite(id: String, visible: Boolean) {
+        if (demo) { Demo.majVisibilite(id, visible, profilDemo.value); return }
+        client.from("projects").update({ set("visible_adherents", visible) }) { filter { eq("id", id) } }
+    }
+
     suspend fun planning(debut: String? = null, fin: String? = null): List<Projet> =
         if (demo) Demo.planning(profilDemo.value, debut, fin)
         else client.postgrest.rpc("planning_activites", buildJsonObject { debut?.let { put("p_debut", it) }; fin?.let { put("p_fin", it) } }).decodeList()

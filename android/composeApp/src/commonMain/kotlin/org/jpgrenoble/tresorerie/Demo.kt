@@ -651,6 +651,11 @@ object Demo {
         val i = projets.indexOfFirst { it.id == id }; projets[i] = versProjet(id, p)
     }
 
+    fun majVisibilite(id: String, visible: Boolean, profil: Profil?) {
+        exiger(profil, "gerer_activites")
+        val i = projets.indexOfFirst { it.id == id }; if (i >= 0) projets[i] = projets[i].copy(visible = visible)
+    }
+
     // Comme planning_activites : événements datés de la période, avec la participation demandée
     fun planning(profil: Profil?, debut: String? = null, fin: String? = null): List<Projet> {
         val d0 = debut ?: ilYaPublic(30)

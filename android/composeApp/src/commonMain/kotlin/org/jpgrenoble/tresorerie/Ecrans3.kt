@@ -595,7 +595,7 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
         OutlinedTextField(lieu, { lieu = it.take(120) }, label = { Text("Lieu") }, singleLine = true)
         OutlinedTextField(description, { description = it.take(500) }, label = { Text("Description") }, minLines = 2)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { visible = !visible }) {
-            Checkbox(visible, { visible = it }); Text("Visible de tous les membres", fontSize = 14.sp)
+            Checkbox(visible, { visible = it }); Text("Visible de tous les membres (décochez seulement pour un rendez-vous réservé au bureau)", fontSize = 14.sp)
         }
         // Comme le site : une case « Suivre le budget » plutôt qu'un choix Événement / Activité
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { type = if (type == "activite") "evenement" else "activite" }) {

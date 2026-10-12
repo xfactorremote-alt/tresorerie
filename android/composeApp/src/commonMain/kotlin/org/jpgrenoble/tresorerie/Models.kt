@@ -1,5 +1,10 @@
+// Les valeurs par défaut marquées @EncodeDefault sont toujours envoyées à la base : sinon le sérialiseur les omet et la base
+// applique SA valeur par défaut (cas réel : « Visible de tous les membres » cochée mais enregistrée « non visible »).
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package org.jpgrenoble.tresorerie
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -190,7 +195,7 @@ data class NouvelleCollecte(
     @SerialName("montant_attendu") val montantAttendu: Double? = null,
     val objectif: Double? = null,
     @SerialName("date_limite") val dateLimite: String? = null,
-    @SerialName("tous_membres") val tousMembres: Boolean = true,
+    @EncodeDefault @SerialName("tous_membres") val tousMembres: Boolean = true,
 )
 
 @Serializable
@@ -237,7 +242,7 @@ data class NouvelleDemande(
     val montant: Double,
     @SerialName("category_id") val categorieId: String,
     @SerialName("project_id") val projetId: String? = null,
-    val statut: String = "soumise",
+    @EncodeDefault val statut: String = "soumise",
     val justification: String? = null,
     @SerialName("date_souhaitee") val dateSouhaitee: String? = null,
 )
@@ -341,8 +346,8 @@ data class NouveauProjet(
     @SerialName("date_debut") val debut: String? = null,
     @SerialName("date_fin") val fin: String? = null,
     val description: String? = null,
-    @SerialName("visible_adherents") val visible: Boolean = true,
-    val type: String = "activite",
+    @EncodeDefault @SerialName("visible_adherents") val visible: Boolean = true,
+    @EncodeDefault val type: String = "activite",
     @SerialName("heure_debut") val heureDebut: String? = null,
     @SerialName("heure_fin") val heureFin: String? = null,
     val lieu: String? = null,
@@ -381,7 +386,7 @@ data class NouveauDevis(
     val mime: String,
     @SerialName("taille_ko") val ko: Int,
     @SerialName("depose_par") val deposePar: String,
-    val nature: String = "devis",
+    @EncodeDefault val nature: String = "devis",
 )
 
 @Serializable
@@ -477,6 +482,6 @@ data class NouveauCommunique(
     val texte: String? = null,
     val debut: String,
     val fin: String? = null,
-    val priorite: String = "normale",
-    @SerialName("visible_adherents") val visible: Boolean = true,
+    @EncodeDefault val priorite: String = "normale",
+    @EncodeDefault @SerialName("visible_adherents") val visible: Boolean = true,
 )
