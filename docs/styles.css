@@ -782,6 +782,31 @@ p.anniv,.agenda .anniv{font-size:13px;padding:4px 8px;align-self:flex-start;bord
 @media (max-width:520px){.etapes-assistant b{display:none}.etapes-assistant li.actuelle b{display:block;position:absolute;top:34px;white-space:nowrap}.etapes-assistant{margin-bottom:14px}}
 .logo-apercu{width:72px;height:72px;border-radius:50%;object-fit:cover;background:var(--surface-2);box-shadow:var(--ombre2)}
 .choix-cartes{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+/* Cartes de choix : rond de sélection visible (comme les cartes de choix du simulateur Neopolis) */
+.choix-carte{padding-left:42px !important}
+.choix-carte::before{content:"";position:absolute;left:14px;top:14px;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--bord-fort);background:var(--surface);box-shadow:inset 0 0 0 3px var(--surface);transition:background-color var(--d-rapide) linear,border-color var(--d-rapide) linear}
+.choix-carte:has(input:checked)::before{background:var(--primaire);border-color:var(--primaire)}
+/* Annuaire public : recherche, liste, carte de confirmation */
+.annuaire{display:flex;flex-direction:column;gap:6px}
+.annuaire-res{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--bord);border-radius:var(--r-xgrand);overflow:hidden;box-shadow:var(--ombre8)}
+.annuaire-opt{display:flex;flex-direction:column;align-items:flex-start;gap:0;min-height:44px;padding:10px 14px;border:0;border-radius:0;background:none;text-align:left;font-weight:400}
+.annuaire-opt+.annuaire-opt{border-top:1px solid var(--bord-doux)}
+.annuaire-opt b{font-weight:600}.annuaire-opt span,.annuaire-vide span{font-size:12.5px;color:var(--texte-3)}
+@media (hover:hover){.annuaire-opt:hover{background:var(--survol)}}
+.annuaire-vide{display:flex;flex-direction:column;margin:0;padding:12px 14px}
+.annuaire-carte{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--r-xgrand);background:var(--bleu-clair);color:var(--sur-bleu-clair)}
+.annuaire-carte>div{display:flex;flex-direction:column;min-width:0}.annuaire-carte span{font-size:13px}
+.annuaire-trouve{display:flex;flex-direction:column;gap:6px}.annuaire-trouve p{margin:0}
+.erreur-champ{color:var(--erreur);font-size:13px;font-weight:400}
+/* Assistant au téléphone : « Étape n sur 6 · Intitulé » et une barre fine, au lieu de six ronds au libellé coupé */
+.etape-courante{display:none}
+@media (max-width:520px){
+  .etapes-assistant{display:none}
+  .etape-courante{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--texte-3)}
+  .etape-courante b{color:var(--texte)}
+  .barre-etapes{display:block;height:4px;border-radius:2px;background:var(--surface-2);overflow:hidden}
+  .barre-etapes i{display:block;height:100%;background:var(--primaire);border-radius:2px;transition:width var(--d-lent) var(--c-decel)}
+}
 .choix-carte{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--bord);border-radius:var(--r-grand);cursor:pointer;position:relative;transition:border-color var(--d-rapide) linear,box-shadow var(--d-rapide) linear}
 .choix-carte input{position:absolute;opacity:0;pointer-events:none}
 .choix-carte:has(input:checked){border-color:var(--primaire);box-shadow:0 0 0 1px var(--primaire),var(--ombre4);background:#FFF8F5}

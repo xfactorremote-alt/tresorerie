@@ -7,6 +7,12 @@ import kotlinx.datetime.plus
 // Données fictives du mode démonstration. Rien n'est enregistré : tout repart
 // à zéro à la fermeture de l'application.
 object Demo {
+    // Annuaire public en démonstration : mêmes associations que ANNUAIRE_DEMO du site
+    val annuaire = listOf(
+        AssociationAnnuaire("JEUNES DE TOUS PAYS", "12 rue Très-Cloîtres", "38000", "Grenoble", null, "W381000000", "2015-09-01"),
+        AssociationAnnuaire("CHORALE SAINT-JOSEPH DE GRENOBLE", "15 rue Joseph Chanrion", "38000", "Grenoble", "81234567800012", "W381012345", "2011-03-14"),
+    )
+
     const val MOT_DE_PASSE = "Demo2026"
 
     class CompteDemo(val email: String, val profil: Profil)

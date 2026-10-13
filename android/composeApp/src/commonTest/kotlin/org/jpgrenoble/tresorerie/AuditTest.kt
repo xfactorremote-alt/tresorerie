@@ -306,4 +306,13 @@ class AuditTest {
         val q = json.encodeToString(QuestionSondage.serializer(), QuestionSondage("q1", "Oui ?", "unique", listOf("Oui", "Non")))
         assertTrue("\"obligatoire\":true" in q, q)
     }
+
+    // Annuaire public : même mise en forme que casseTitre du site, mêmes associations de démonstration
+    @Test
+    fun annuaireCommeLeSite() {
+        assertEquals("15 Rue Joseph Chanrion", casseTitre("15 RUE JOSEPH CHANRION"))
+        assertEquals("Saint-Martin-D'Hères", casseTitre("SAINT-MARTIN-D'HÈRES"))
+        assertEquals(listOf("JEUNES DE TOUS PAYS", "CHORALE SAINT-JOSEPH DE GRENOBLE"), Demo.annuaire.map { it.nom })
+        assertTrue(Demo.annuaire.all { it.codePostal == "38000" && it.rna != null })
+    }
 }

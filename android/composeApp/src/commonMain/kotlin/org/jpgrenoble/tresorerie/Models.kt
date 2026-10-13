@@ -519,3 +519,7 @@ data class NouveauCommunique(
     @EncodeDefault val anonyme: Boolean = false,
     @EncodeDefault @SerialName("resultats_visibles") val resultatsVisibles: Boolean = true,
 )
+
+// Association trouvée dans l'annuaire public (registre SIRENE) — même forme que chercherAssociation du site
+data class AssociationAnnuaire(val nom: String, val adresse: String?, val codePostal: String?, val ville: String?,
+                               val siret: String?, val rna: String?, val dateCreation: String?)

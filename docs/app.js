@@ -394,6 +394,53 @@ function feuilleMaFiche() {
 const ETAPES_ASSISTANT = ['Association', 'Coordonnées', 'Exercice', 'Comptes', 'Cotisation', 'Terminé'];
 const exerciceDe = (debut) => { const d = new Date(debut + 'T12:00:00'); const f = new Date(d); f.setFullYear(f.getFullYear() + 1); f.setDate(f.getDate() - 1);
   return { debut, fin: isoLocal(f), libelle: d.getMonth() === 0 ? `Exercice ${d.getFullYear()}` : `Exercice ${d.getFullYear()}-${d.getFullYear() + 1}` }; };
+// Annuaire public (registre SIRENE, recherche-entreprises.api.gouv.fr) : retrouver l'association par son nom, son SIRET ou son RNA
+// pour remplir l'identité et les coordonnées (idée reprise du simulateur Neopolis). Même calcul côté Android : Repo.chercherAssociation.
+// Les associations sans SIRET (déclarées seulement en préfecture) n'y figurent souvent pas : la saisie reste possible.
+const ANNUAIRE_DEMO = [
+  { nom: 'JEUNES DE TOUS PAYS', adresse: '12 rue Très-Cloîtres', code_postal: '38000', ville: 'Grenoble', siret: null, rna: 'W381000000', date_creation: '2015-09-01' },
+  { nom: 'CHORALE SAINT-JOSEPH DE GRENOBLE', adresse: '15 rue Joseph Chanrion', code_postal: '38000', ville: 'Grenoble', siret: '81234567800012', rna: 'W381012345', date_creation: '2011-03-14' },
+];
+const casseTitre = (t) => String(t || '').toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+async function chercherAssociation(texte) {
+  const t = String(texte || '').trim();
+  if (t.replace(/\s/g, '').length < 3) return [];
+  if (demo) { const c = sansAccents(t); return ANNUAIRE_DEMO.filter((a) => sansAccents(`${a.nom} ${a.siret || ''} ${a.rna || ''} ${a.ville}`).includes(c)); }
+  const numero = /^[\dW\s]+$/i.test(t);
+  const r = await fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(t.replace(/\s/g, numero ? '' : ' '))}${numero ? '' : '&est_association=true'}&per_page=6`);
+  if (!r.ok) throw new Error('Annuaire indisponible pour le moment');
+  return ((await r.json()).results || []).map((e) => {
+    const g = e.siege || {};
+    const voie = String(g.adresse || '').split(g.code_postal || '§')[0].trim();
+    return { nom: e.nom_complet || e.nom_raison_sociale || '', adresse: casseTitre(voie) || null, code_postal: g.code_postal || null, ville: casseTitre(g.libelle_commune) || null,
+      siret: g.siret || null, rna: e.complements?.identifiant_association || null, date_creation: e.date_creation || null };
+  });
+}
+// Champ de recherche + liste + carte de confirmation ; surChoix(asso) reçoit l'association retenue
+function brancherAnnuaire(zone, surChoix) {
+  const champ = $('#annuaire-q', zone), liste = $('#annuaire-res', zone), trouve = $('#annuaire-trouve', zone);
+  let minuterie = null, derniere = [];
+  const carte = (a) => `<div class="annuaire-carte">${icone('association', 18)}<div><b>${esc(a.nom)}</b>
+    <span>${esc([a.adresse, [a.code_postal, a.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || 'Adresse non publiée')}</span>
+    <span>${[a.siret ? `SIRET ${esc(a.siret.replace(/(\d{3})(\d{3})(\d{3})(\d{5})/, '$1 $2 $3 $4'))}` : '', a.rna ? `RNA ${esc(a.rna)}` : ''].filter(Boolean).join(' · ') || 'Sans SIRET'}</span></div></div>`;
+  const montrer = (l, msg) => {
+    liste.hidden = false; derniere = l;
+    liste.innerHTML = l.length ? l.map((a, i) => `<button type="button" role="option" class="annuaire-opt" data-i="${i}"><b>${esc(a.nom)}</b><span>${esc([a.ville, a.siret ? 'SIRET ' + a.siret : a.rna ? 'RNA ' + a.rna : ''].filter(Boolean).join(' · '))}</span></button>`).join('')
+      : `<p class="annuaire-vide"><b>${msg || 'Aucune association trouvée'}</b><span>Essayez le SIRET ou le RNA, ou remplissez simplement les champs ci-dessous.</span></p>`;
+  };
+  champ.addEventListener('input', () => {
+    clearTimeout(minuterie); trouve.hidden = true;
+    if (champ.value.replace(/\s/g, '').length < 3) { liste.hidden = true; return; }
+    minuterie = setTimeout(async () => { try { montrer(await chercherAssociation(champ.value)); } catch (e) { montrer([], e.message); } }, 350);
+  });
+  liste.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-i]'); if (!b) return;
+    const a = derniere[Number(b.dataset.i)]; liste.hidden = true; champ.value = a.nom;
+    trouve.innerHTML = `${carte(a)}<p class="muted">Ces informations remplissent l’identité et les coordonnées ; vous pourrez les corriger.</p>`; trouve.hidden = false;
+    surChoix(a);
+  });
+}
+
 async function assistantConfiguration(etape = 0) {
   S.assistant = S.assistant || { etape: 0 };
   const o = S.org || {};
@@ -402,9 +449,11 @@ async function assistantConfiguration(etape = 0) {
   const an = new Date().getFullYear();
   const corps = [
     () => `<h2>Votre association</h2><p class="muted">Ces informations apparaissent sur les documents (rapports, reçus, PDF).</p>
+      <div class="annuaire"><label class="champ">Retrouver l’association (facultatif)<input id="annuaire-q" type="search" placeholder="Nom, SIRET ou RNA" autocomplete="off" aria-controls="annuaire-res"></label>
+        <div id="annuaire-res" class="annuaire-res" role="listbox" aria-label="Associations trouvées" hidden></div><div id="annuaire-trouve" class="annuaire-trouve" hidden></div></div>
       <div style="display:flex;align-items:center;gap:16px"><img id="apercu-logo" src="${esc(S.logoUrl)}" alt="Logo" class="logo-apercu">
         <label class="btn btn-tonal btn-petit">Choisir le logo<input type="file" name="logo" accept="image/*" hidden></label></div>
-      <div class="champs champs-2"><label class="champ"><span class="obligatoire">Nom de l’association</span><input name="nom" value="${esc(o.nom || '')}" required maxlength="80"></label>
+      <div class="champs champs-2"><label class="champ"><span class="obligatoire">Nom de l’association</span><input name="nom" value="${esc(o.nom || '')}" required maxlength="80" aria-describedby="err-nom"><small class="erreur-champ" id="err-nom" hidden>Indiquez le nom de l’association.</small></label>
         <label class="champ">Sigle<input name="sigle" value="${esc(o.sigle || '')}" maxlength="20" placeholder="JP"></label></div>
       <label class="champ">Objet (but de l’association)<textarea name="objet" rows="2" maxlength="300">${esc(o.objet || '')}</textarea></label>
       <label class="champ">Date de création<input type="date" name="date_creation" value="${esc(o.date_creation || '')}"></label>`,
@@ -445,12 +494,22 @@ async function assistantConfiguration(etape = 0) {
   $('#app').innerHTML = `<main class="assistant"><div class="carte assistant-carte">
     <div class="assistant-tete"><img src="${esc(S.logoUrl)}" alt=""><b>Configuration de l’association</b>
       ${etape < 5 ? '<button class="btn-texte btn-petit" id="b-assistant-plus-tard">Plus tard</button>' : ''}</div>
+    <div class="etape-courante"><span>Étape ${etape + 1} sur ${ETAPES_ASSISTANT.length} · <b>${ETAPES_ASSISTANT[etape]}</b></span><span class="barre-etapes" aria-hidden="true"><i style="width:${Math.round((etape + 1) / ETAPES_ASSISTANT.length * 100)}%"></i></span></div>
     <ol class="etapes-assistant">${ETAPES_ASSISTANT.map((e, i) => `<li class="${i < etape ? 'fait' : i === etape ? 'actuelle' : ''}" ${i === etape ? 'aria-current="step"' : ''}><span>${i < etape ? '✓' : i + 1}</span><b>${e}</b></li>`).join('')}</ol>
     <form id="f-assistant" class="champs anime-entree">${corps[etape]()}
       <div class="actions" style="justify-content:space-between">${etape > 0 ? '<button type="button" class="btn-texte" id="b-precedent">Précédent</button>' : '<span></span>'}
         <button class="btn-primaire btn-large">${etape === 5 ? 'Accéder à la trésorerie' : 'Suivant'}</button></div></form></div></main>`;
   const f = $('#f-assistant');
   let logoBlob = null;
+  if (etape === 0) {
+    brancherAnnuaire(f, (a) => { S.assistant.trouve = a; f.nom.value = a.nom; if (a.date_creation) f.date_creation.value = a.date_creation; $('#err-nom').hidden = true; f.nom.removeAttribute('aria-invalid'); majSuivant(); });
+    // « Suivant » grisé tant que le nom manque ; le message apparaît sous le champ dès qu'on l'a quitté vide
+    const btn = f.querySelector('.btn-primaire');
+    const majSuivant = () => { btn.disabled = !f.nom.value.trim(); };
+    f.nom.addEventListener('input', () => { majSuivant(); if (f.nom.value.trim()) $('#err-nom').hidden = true; });
+    f.nom.addEventListener('blur', () => { $('#err-nom').hidden = !!f.nom.value.trim(); f.nom.setAttribute('aria-invalid', String(!f.nom.value.trim())); });
+    majSuivant();
+  }
   f.logo?.addEventListener('change', async () => { const file = f.logo.files[0]; if (!file) return; logoBlob = await compresserImage(file, 512, 0.85); $('#apercu-logo').src = URL.createObjectURL(logoBlob); });
   f.querySelectorAll('[name=type_ex]').forEach((r) => r.addEventListener('change', () => {
     if (!r.dataset.debut) return;
@@ -467,6 +526,9 @@ async function assistantConfiguration(etape = 0) {
       if (etape === 0) {
         const maj = champs(['nom', 'sigle', 'objet', 'date_creation']);
         if (logoBlob) { const chemin = `logo-${Date.now()}.jpg`; await q(sb.storage.from('logos').upload(chemin, logoBlob, { contentType: 'image/jpeg' })); maj.logo_path = chemin; }
+        // Coordonnées retrouvées dans l'annuaire : déjà posées pour l'étape suivante (modifiables)
+        const t = S.assistant.trouve;
+        if (t) for (const k of ['adresse', 'code_postal', 'ville', 'siret', 'rna']) if (t[k]) maj[k] = t[k];
         await q(sb.from('organisation').update(maj).eq('id', 1));
       } else if (etape === 1) {
         await q(sb.from('organisation').update(champs(['adresse', 'code_postal', 'ville', 'email', 'telephone', 'rna', 'siret', 'site_web'])).eq('id', 1));

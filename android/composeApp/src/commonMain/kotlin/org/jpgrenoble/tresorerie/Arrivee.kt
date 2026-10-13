@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -323,6 +324,9 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
     var cotisation by remember(reglages) { mutableStateOf(montantSaisie(reglages["cotisation_montant"] ?: 0.0)) }
     var pas by remember(reglages) { mutableStateOf((reglages["cotisation_periode_mois"] ?: 1.0).toInt()) }
 
+    var trouvee by remember { mutableStateOf<AssociationAnnuaire?>(null) }
+    var nomQuitte by remember { mutableStateOf(false) }
+    var nomFocus by remember { mutableStateOf(false) }
     fun champ(k: String, l: String, clavier: KeyboardType = KeyboardType.Text, modifier: Modifier = Modifier.fillMaxWidth()) =
         @Composable { OutlinedTextField(champs[k] ?: "", { champs[k] = it }, label = { Text(l) }, singleLine = k != "objet", keyboardOptions = KeyboardOptions(keyboardType = clavier), modifier = modifier) }
 
@@ -332,7 +336,9 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
             try {
                 val v = { k: String -> champs[k]?.trim()?.ifBlank { null } }
                 when (etape) {
-                    0 -> Repo.majIdentite(mapOf("nom" to (v("nom") ?: o.nom), "sigle" to v("sigle"), "objet" to v("objet"), "date_creation" to v("date_creation")?.let { dateDepuisFr(it)?.toString() }))
+                    0 -> Repo.majIdentite(mapOf("nom" to (v("nom") ?: o.nom), "sigle" to v("sigle"), "objet" to v("objet"), "date_creation" to v("date_creation")?.let { dateDepuisFr(it)?.toString() }) +
+                        // Coordonnées retrouvées dans l'annuaire : posées pour l'étape suivante (modifiables), comme le site
+                        (trouvee?.let { a -> listOf("adresse" to a.adresse, "code_postal" to a.codePostal, "ville" to a.ville, "siret" to a.siret, "rna" to a.rna).filter { it.second != null }.toMap() } ?: emptyMap()))
                     1 -> Repo.majIdentite(listOf("adresse", "code_postal", "ville", "email", "telephone", "rna", "siret", "site_web").associateWith { v(it) })
                     2 -> Repo.enregistrerExercice(ex?.id, NouvelExercice(exLibelle.trim(), exDebut, exFin))
                     3 -> {
@@ -356,7 +362,12 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
             Text("Configuration de l’association", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
             if (etape < 5) TextButton(onClick = onPlusTard) { Text("Plus tard") }
         }
-        // Étapes : faites, en cours, à venir
+        // Étapes : au téléphone « Étape n sur 6 · Intitulé » et une barre fine (comme le site) ; au-delà, les six ronds
+        BoxWithConstraints(Modifier.fillMaxWidth()) { if (maxWidth < 520.dp) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(androidx.compose.ui.text.buildAnnotatedString { append("Étape ${etape + 1} sur ${ETAPES.size} · "); pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, color = Couleurs.Texte)); append(ETAPES[etape]); pop() }, fontSize = 13.sp, color = Couleurs.Texte2)
+            val part by animateFloatAsState((etape + 1f) / ETAPES.size)
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(Formes.Petit).background(Couleurs.Surface2)) { Box(Modifier.fillMaxWidth(part).fillMaxHeight().clip(Formes.Petit).background(Couleurs.Orange)) }
+        } else
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             ETAPES.forEachIndexed { i, t ->
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -364,17 +375,22 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
                     Box(Modifier.size(28.dp).scale(echelle).clip(CircleShape).background(when { i < etape -> Couleurs.Bleu; i == etape -> Couleurs.Orange; else -> Couleurs.Surface2 }), contentAlignment = Alignment.Center) {
                         Text(if (i < etape) "✓" else "${i + 1}", color = if (i <= etape) Color.White else Couleurs.Texte2, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
-                    if (i == etape) Text(t, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(t, fontSize = 11.sp, fontWeight = if (i == etape) FontWeight.SemiBold else FontWeight.Normal, color = if (i == etape) Couleurs.Texte else Couleurs.Texte2, maxLines = 1)
                 }
             }
-        }
+        } }
         AnimatedContent(etape, transitionSpec = { (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut()) }) { e ->
             CarteBlanche {
                 when (e) {
                     0 -> {
                         Text("Votre association", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text("Ces informations apparaissent sur les documents (rapports, PDF). Le logo se change dans Paramètres, Logo et bannière.", color = Couleurs.Texte2, fontSize = 14.sp)
-                        champ("nom", "Nom de l’association *")()
+                        AnnuaireAssociation(trouvee) { a -> trouvee = a; champs["nom"] = a.nom; a.dateCreation?.let { champs["date_creation"] = dateFr(it) }; a.adresse?.let { champs["adresse"] = it }
+                            a.codePostal?.let { champs["code_postal"] = it }; a.ville?.let { champs["ville"] = it }; a.siret?.let { champs["siret"] = it }; a.rna?.let { champs["rna"] = it } }
+                        val nomVide = (champs["nom"] ?: "").isBlank()
+                        OutlinedTextField(champs["nom"] ?: "", { champs["nom"] = it.take(80) }, label = { Text("Nom de l’association *") }, singleLine = true,
+                            isError = nomQuitte && nomVide, supportingText = if (nomQuitte && nomVide) ({ Text("Indiquez le nom de l’association.") }) else null,
+                            modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) nomFocus = true else if (nomFocus && (champs["nom"] ?: "").isBlank()) nomQuitte = true })
                         champ("sigle", "Sigle")()
                         champ("objet", "Objet (but de l’association)")()
                         champ("date_creation", "Date de création (JJ/MM/AAAA)", KeyboardType.Number)()
@@ -395,7 +411,10 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
                             val choisi = exDebut == deb
                             Surface(onClick = { val x = exerciceDe(deb); exDebut = x.debut; exFin = x.fin; exLibelle = x.libelle }, shape = Formes.Moyen,
                                 color = if (choisi) Couleurs.OrangeClair else MaterialTheme.colorScheme.surface, border = androidx.compose.foundation.BorderStroke(if (choisi) 2.dp else 1.dp, if (choisi) Couleurs.Orange else Couleurs.Bord)) {
-                                Column(Modifier.fillMaxWidth().padding(12.dp)) { Text(t, fontWeight = FontWeight.Bold); Text(s, fontSize = 13.sp, color = Couleurs.Texte2) }
+                                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    RadioButton(selected = choisi, onClick = null, modifier = Modifier.size(20.dp), colors = RadioButtonDefaults.colors(selectedColor = Couleurs.Orange))
+                                    Column { Text(t, fontWeight = FontWeight.Bold); Text(s, fontSize = 13.sp, color = Couleurs.Texte2) }
+                                }
                             }
                         }
                         var debutSaisi by remember(exDebut) { mutableStateOf(dateFr(exDebut)) }
@@ -450,6 +469,51 @@ fun AssistantConfiguration(d: Donnees, onFini: () -> Unit, onPlusTard: () -> Uni
         }
     }
     SnackbarHost(messages, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
+    }
+}
+
+// Recherche dans l'annuaire public + carte de confirmation (même rendu que .annuaire du site)
+@Composable
+fun AnnuaireAssociation(trouvee: AssociationAnnuaire?, onChoix: (AssociationAnnuaire) -> Unit) {
+    var q by remember { mutableStateOf("") }
+    var res by remember { mutableStateOf<List<AssociationAnnuaire>?>(null) }
+    var erreur by remember { mutableStateOf<String?>(null) }
+    var montre by remember { mutableStateOf(false) }
+    LaunchedEffect(q) {
+        if (q.replace(" ", "").length < 3) { res = null; return@LaunchedEffect }
+        kotlinx.coroutines.delay(350)
+        try { res = Repo.chercherAssociation(q); erreur = null } catch (e: Exception) { res = emptyList(); erreur = e.message ?: "Annuaire indisponible pour le moment" }
+    }
+    OutlinedTextField(q, { q = it; montre = true }, label = { Text("Retrouver l’association (facultatif)") }, placeholder = { Text("Nom, SIRET ou RNA") }, singleLine = true,
+        leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.fillMaxWidth())
+    val l = res
+    if (montre && l != null) Surface(shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface, border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Bord), shadowElevation = 4.dp) {
+        Column {
+            if (l.isEmpty()) Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+                Text(if (erreur != null) erreur!! else "Aucune association trouvée", fontWeight = FontWeight.Bold)
+                Text("Essayez le SIRET ou le RNA, ou remplissez simplement les champs ci-dessous.", fontSize = 12.5.sp, color = Couleurs.Texte2)
+            }
+            l.forEachIndexed { i, a ->
+                if (i > 0) HorizontalDivider(color = Couleurs.BordDoux)
+                Column(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { montre = false; q = a.nom; onChoix(a) }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Text(a.nom, fontWeight = FontWeight.SemiBold)
+                    Text(listOfNotNull(a.ville, a.siret?.let { "SIRET $it" } ?: a.rna?.let { "RNA $it" }).joinToString(" · "), fontSize = 12.5.sp, color = Couleurs.Texte2)
+                }
+            }
+        }
+    }
+    if (trouvee != null && !montre) {
+        Surface(shape = Formes.XGrand, color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Outlined.Business, null, Modifier.size(18.dp))
+                Column {
+                    Text(trouvee.nom, fontWeight = FontWeight.Bold)
+                    Text(listOfNotNull(trouvee.adresse, listOfNotNull(trouvee.codePostal, trouvee.ville).joinToString(" ").ifBlank { null }).joinToString(", ").ifBlank { "Adresse non publiée" }, fontSize = 13.sp)
+                    Text(listOfNotNull(trouvee.siret?.let { s -> "SIRET " + s.chunked(3).let { c -> if (s.length == 14) "${s.take(3)} ${s.substring(3, 6)} ${s.substring(6, 9)} ${s.substring(9)}" else s } }, trouvee.rna?.let { "RNA $it" }).joinToString(" · ").ifBlank { "Sans SIRET" }, fontSize = 13.sp)
+                }
+            }
+        }
+        Text("Ces informations remplissent l’identité et les coordonnées ; vous pourrez les corriger.", fontSize = 13.sp, color = Couleurs.Texte2)
     }
 }
 

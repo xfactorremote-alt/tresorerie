@@ -15,6 +15,11 @@ import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.storage
 import io.ktor.http.ContentType
+import io.ktor.http.encodeURLParameter
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import io.ktor.client.statement.bodyAsText
+import io.ktor.client.request.get
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -690,6 +695,30 @@ object Repo {
     }
 
     // ---------- Association : identité, coordonnées, première configuration ----------
+    // Annuaire public (recherche-entreprises.api.gouv.fr, registre SIRENE) : même appel et même lecture que chercherAssociation du site
+    suspend fun chercherAssociation(texte: String): List<AssociationAnnuaire> {
+        val t = texte.trim()
+        if (t.replace(" ", "").length < 3) return emptyList()
+        if (demo) { val c = sansAccentsRepo(t); return Demo.annuaire.filter { sansAccentsRepo("${it.nom} ${it.siret ?: ""} ${it.rna ?: ""} ${it.ville}").contains(c) } }
+        val numero = Regex("^[\\dWw\\s]+$").matches(t)
+        val q = (if (numero) t.replace(" ", "") else t)
+        val url = "https://recherche-entreprises.api.gouv.fr/search?q=" + q.encodeURLParameter() + (if (numero) "" else "&est_association=true") + "&per_page=6"
+        val http = io.ktor.client.HttpClient()
+        try {
+            val r = http.get(url)
+            if (r.status.value !in 200..299) throw IllegalStateException("Annuaire indisponible pour le moment")
+            val racine = Json.parseToJsonElement(r.bodyAsText()).jsonObject
+            return (racine["results"]?.jsonArray ?: return emptyList()).map { e ->
+                val o = e.jsonObject; val g = o["siege"]?.jsonObject
+                fun txt(x: kotlinx.serialization.json.JsonObject?, k: String) = (x?.get(k) as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+                val cp = txt(g, "code_postal")
+                val voie = txt(g, "adresse")?.let { a -> if (cp != null && a.contains(cp)) a.substringBefore(cp) else a }?.trim()
+                AssociationAnnuaire(txt(o, "nom_complet") ?: txt(o, "nom_raison_sociale") ?: "", voie?.let(::casseTitre)?.ifBlank { null }, cp,
+                    txt(g, "libelle_commune")?.let(::casseTitre), txt(g, "siret"), txt(o["complements"]?.jsonObject, "identifiant_association"), txt(o, "date_creation"))
+            }
+        } finally { http.close() }
+    }
+
     suspend fun majIdentite(champs: Map<String, String?>) {
         if (demo) { Demo.majIdentite(champs, profilDemo.value); return }
         client.from("organisation").update(buildJsonObject { champs.forEach { (k, v) -> put(k, v) } }) { filter { eq("id", 1) } }
@@ -809,3 +838,7 @@ fun slugPrenom(p: String?): String {
 /** Nom de l'association lisible dans un message (« JEUNES DE TOUS PAYS » → « Jeunes de Tous Pays »), comme nomAssoLisible du site. */
 fun nomAssoLisible(n: String): String = if (n.isNotEmpty() && n == n.uppercase())
     n.lowercase().split(' ').mapIndexed { i, x -> if (i > 0 && x in listOf("de", "des", "du", "la", "le", "les", "et")) x else x.replaceFirstChar { it.uppercase() } }.joinToString(" ") else n
+
+private fun sansAccentsRepo(s: String) = s.lowercase().map { c -> "àâäáãåçéèêëíìîïñóòôöõúùûüýÿ".indexOf(c).let { i -> if (i < 0) c else "aaaaaaceeeeiiiinooooouuuuyy"[i] } }.joinToString("").trim()
+// « RUE JOSEPH CHANRION » → « Rue Joseph Chanrion » (comme casseTitre du site)
+fun casseTitre(t: String): String = t.lowercase().split(Regex("(?<=[\\s'’-])")).joinToString("") { it.replaceFirstChar { c -> c.titlecase() } }
