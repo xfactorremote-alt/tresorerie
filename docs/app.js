@@ -5105,7 +5105,7 @@ async function pageActivites() {
         ${annivDe(s).map((a) => `<span class="anniv">Anniversaire de ${esc(a.prenom)} ${esc(a.nom)}</span>`).join('')}
         ${!(parJour[s] || []).length && !annivDe(s).length ? '<span class="muted">–</span>' : ''}</div></li>`).join('')}</ul></section>`;
   }
-  rendre(`<div class="page">
+  rendre(`<div class="page page-planning">
     <div class="page-titre"><h1>Planning</h1></div>
     <div class="onglets" role="tablist">${[['calendrier', 'Calendrier'], ['avenir', 'À venir']].map(([k, l]) => `<button role="tab" aria-selected="${P.vue === k}" data-vue="${k}">${l}</button>`).join('')}</div>
     ${P.vue === 'calendrier' ? `<div class="cal-bandeau" style="--mois:${EVT_PALETTE[ref.getMonth() % EVT_PALETTE.length][2]}">

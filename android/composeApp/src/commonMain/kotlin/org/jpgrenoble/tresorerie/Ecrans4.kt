@@ -914,7 +914,7 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 600.dp          // site : @media (max-width:600px)
         val enTete = maxWidth >= 640.dp          // site : le bouton principal est dans l'en-tête au-delà de 639 px
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 104.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, if (compact) 8.dp else 16.dp, 16.dp, 104.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)) {
             item {
                 val actionTitre: (@Composable () -> Unit)? = if (gere && enTete) { {
                     Button(onClick = { nouveau = dateNouveau() }, shape = FormeP4) {
@@ -938,11 +938,8 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
                             Text("Aujourd’hui", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    // Téléphone : Mois / Semaine sur toute la largeur, Aujourd'hui dessous à droite (comme le site)
-                    if (compact) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        GroupeAffichage(affichage, plein = true, onChoix = choix)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { boutonAuj() }
-                    } else Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Mois / Semaine et Aujourd'hui sur une seule ligne, téléphone compris (tout le mois tient dans l'écran)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         GroupeAffichage(affichage, plein = false, onChoix = choix)
                         Spacer(Modifier.weight(1f))
                         boutonAuj()
@@ -1076,10 +1073,11 @@ private fun OngletsPlanning(vue: String, onChoix: (String) -> Unit) {
         Row {
             listOf("calendrier" to "Calendrier", "avenir" to "À venir").forEach { (k, l) ->
                 val choisi = vue == k
-                Box(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                    .clickable(role = androidx.compose.ui.semantics.Role.Tab) { onChoix(k) }.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-                    Text(l, fontSize = 14.sp, fontWeight = if (choisi) FontWeight.SemiBold else FontWeight.Normal, color = if (choisi) Couleurs.Texte else CouleursPlanning.Texte2)
-                    if (choisi) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp).background(Couleurs.Orange, RoundedCornerShape(50)))
+                // Largeur = celle du texte (IntrinsicSize) : avant, le trait « fillMaxWidth » prenait toute la ligne et chassait « À venir »
+                Column(Modifier.width(IntrinsicSize.Max).clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                    .clickable(role = androidx.compose.ui.semantics.Role.Tab) { onChoix(k) }.padding(horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(l, Modifier.padding(vertical = 11.dp), fontSize = 14.sp, maxLines = 1, fontWeight = if (choisi) FontWeight.SemiBold else FontWeight.Normal, color = if (choisi) Couleurs.Texte else CouleursPlanning.Texte2)
+                    Box(Modifier.fillMaxWidth().height(3.dp).background(if (choisi) Couleurs.Orange else Color.Transparent, RoundedCornerShape(50)))
                 }
             }
         }
@@ -1114,15 +1112,15 @@ private fun BandeauMois(titre: String, couleur: Color, compact: Boolean, onPrec:
             drawCircle(Color.White.copy(alpha = 0.1f), radius = 100.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width - 40.dp.toPx(), 10.dp.toPx()))
             drawCircle(Color.White.copy(alpha = 0.1f), radius = 60.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.3f + 60.dp.toPx(), size.height + 20.dp.toPx()))
         }
-        .padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Précédent", if (compact) 40.dp else 44.dp, onPrec)
+        .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Précédent", if (compact) 36.dp else 44.dp, onPrec)
         AnimatedContent(titre, Modifier.weight(1f), transitionSpec = {
             (fadeIn(androidx.compose.animation.core.tween(250)) + slideInVertically(androidx.compose.animation.core.tween(250)) { it / 4 }) togetherWith fadeOut(androidx.compose.animation.core.tween(90))
         }, label = "titre-mois") { t ->
             Text(t, Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold,
-                fontSize = if (compact) 20.sp else 24.sp, lineHeight = if (compact) 28.sp else 32.sp, color = Color.White)
+                fontSize = if (compact) 18.sp else 24.sp, lineHeight = if (compact) 24.sp else 32.sp, color = Color.White)
         }
-        FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Suivant", if (compact) 40.dp else 44.dp, onSuiv)
+        FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Suivant", if (compact) 36.dp else 44.dp, onSuiv)
     }
 }
 
@@ -1225,7 +1223,7 @@ private fun CaseJour(j: LocalDate, rang: Int, cle: Int, hors: Boolean, weekEnd: 
     LaunchedEffect(cle) { kotlinx.coroutines.delay(rang * 6L); entree.animateTo(1f, androidx.compose.animation.core.tween(250)) }
     val fond = when { estAuj -> CouleursPlanning.JourAuj; e.isNotEmpty() -> Color.White; weekEnd -> CouleursPlanning.JourWe; else -> CouleursPlanning.JourFond }
     val degradeAnniv = androidx.compose.ui.graphics.Brush.verticalGradient(0.7f to Color.Transparent, 1f to Couleurs.Jaune.copy(alpha = 0.18f))
-    Column(modifier.heightIn(min = if (compact) 58.dp else 88.dp)
+    Column(modifier.heightIn(min = if (compact) 48.dp else 88.dp)
         .graphicsLayer { alpha = entree.value; val sc = 0.96f + 0.04f * entree.value; scaleX = sc; scaleY = sc }
         .clip(FormeP4).background(fond)
         .then(if (a.isNotEmpty()) Modifier.drawBehind { drawRect(degradeAnniv) } else Modifier)

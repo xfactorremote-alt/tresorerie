@@ -24,3 +24,13 @@
 
 - `Boutons.kt` repose sur la priorité des déclarations du paquet sur l'import `androidx.compose.material3.*` : un import explicite de `androidx.compose.material3.Button` dans un fichier contournerait la règle (signalé dans le fichier et dans DESIGN_SYSTEM.md).
 - 82 couleurs restent écrites en dur (couleurs de rendez-vous calculées, voiles de la bannière) : exceptions documentées.
+
+## 0.32.0 — Planning compact et balayage iPhone / iPad (14 octobre 2026)
+
+| Vérification | Résultat |
+|---|---|
+| Planning (site) : mois entier visible sans défiler | ✅ Pixel 7, iPhone 13, iPhone 14 Pro Max, Galaxy S9+, iPad, ordinateur 1280×800 ; ⚠️ iPhone SE 1re génération (320×568) : la dernière semaine demande un petit défilement |
+| Balayage responsive `a7.mjs` : 6 tailles iPhone/iPad × 4 rôles × 13 pages = 312 vues | ✅ 0 débordement, 0 élément coupé, 0 champ < 16 px, 0 erreur JS |
+| Page du lien personnel aux tailles iPhone/iPad/PC | ✅ 0 débordement, 0 erreur |
+| Android : onglets Calendrier / À venir, compilation, 25 tests | ✅ compilé et testé ; **rendu à vérifier sur téléphone** (pas d'émulateur) |
+| Safari réel (WebKit) | ❌ non disponible ici : à essayer sur un iPhone |
