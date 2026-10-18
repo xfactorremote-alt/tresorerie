@@ -2135,7 +2135,7 @@ async function pageMembres() {
   $('#b-actions')?.addEventListener('click', (e) => menuActions(e.currentTarget, actions));
   $('#b-filtres-membres')?.addEventListener('click', () => feuilleFiltresMembres(v));
   // L'export suit ce qui est affiché : filtres, regroupement, tri
-  $('#b-export-membres')?.addEventListener('click', () => choisirFormat(`Exporter ${vus.length} membre${vus.length > 1 ? 's' : ''}${libelleVue(v) ? ` (${libelleVue(v)})` : ''}`, () => pdfMembres(v), () => csvMembres(v)));
+  $('#b-export-membres')?.addEventListener('click', () => feuilleExportMembres(v, vus.length));
   $('#f-raz')?.addEventListener('click', () => { S.vueMembres = { ...VUE_MEMBRES_DEFAUT }; pageMembres(); });
   document.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', () => {
     const [k, x] = b.dataset.retirer.split(':'), n = { ...v };
@@ -2254,14 +2254,14 @@ function libelleVue(v) {
   const f = [v.etat !== 'tous' ? v.etat : null, ...Object.keys(CRITERES_MEMBRES).flatMap((k) => v[k].map((x) => groupesMembres(S.membres, k).find((g) => g.cle === x)?.libelle || 'Non renseigné'))].filter(Boolean);
   return [f.length ? `Filtres : ${f.join(', ')}` : '', v.groupe !== 'fonction' ? `regroupés par ${CRITERES_MEMBRES[v.groupe][0].toLowerCase()}` : '', v.tri === 'prenom' ? 'triés par prénom' : ''].filter(Boolean).join(' · ');
 }
-// Mêmes premières colonnes que le modèle d'import (le fichier exporté se réimporte tel quel), puis fonction et actif ;
+// Colonnes du fichier : celles choisies (en-têtes du modèle d'import, le fichier se réimporte tel quel) ;
 // regroupé : une première colonne avec le groupe ; lignes dans l'ordre de l'écran
-const csvMembres = (v = { ...VUE_MEMBRES_DEFAUT }) => {
+const csvMembres = (v = { ...VUE_MEMBRES_DEFAUT }, choix = colonnesMembresChoisies()) => {
   const groupe = v.groupe !== 'fonction' ? CRITERES_MEMBRES[v.groupe][0] : null;
+  const cols = colonnesExport(choix);
   telechargerCsv('membres.csv',
-    [...(groupe ? [`Groupe (${groupe.toLowerCase()})`] : []), 'Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Accord', 'Nationalité', 'Pupitre', 'Statut', 'Fonction', 'Actif'],
-    sectionsMembres(v).flatMap((sct) => sct.membres.map((m) => [...(groupe ? [sct.titre] : []), m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email,
-      m.consent_anniversaire ? 'Oui' : 'Non', m.nationalite, m.pupitre, m.statut, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.actif ? 'Oui' : 'Non'])));
+    [...(groupe ? [`Groupe (${groupe.toLowerCase()})`] : []), ...cols.flatMap((c) => c[3])],
+    sectionsMembres(v).flatMap((sct) => sct.membres.map((m) => [...(groupe ? [sct.titre] : []), ...cols.flatMap((c) => valeursCsvMembre(m, c[0]))])));
 };
 
 // Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
@@ -4887,13 +4887,14 @@ ${materiel.length ? `<tr><td>Matériel de l’association (hors prêts de tiers)
 
 // Aperçu plein écran d'un document A4, puis « Enregistrer en PDF » par l'impression du navigateur.
 // Pied de page de chaque feuille : association, titre, numéro de page.
-function afficherDocument(titre, html) {
+// paysage : A4 à l'italienne (tableaux larges, ex. liste des membres au-delà de 6 colonnes)
+function afficherDocument(titre, html, paysage = false) {
   let v = $('#rapport');
   if (!v) { v = document.createElement('div'); v.id = 'rapport'; document.body.appendChild(v); }
   const pied = (t) => String(t).replace(/["\\]/g, ' ');
-  v.innerHTML = `<style>@page{size:A4;margin:14mm 12mm 16mm;@bottom-left{content:"${pied(S.org?.nom || '')} · ${pied(titre)}";font:9px system-ui;color:#5A5350}@bottom-right{content:"Page " counter(page) " sur " counter(pages);font:9px system-ui;color:#5A5350}}</style>
+  v.innerHTML = `<style>@page{size:A4${paysage ? ' landscape' : ''};margin:14mm 12mm 16mm;@bottom-left{content:"${pied(S.org?.nom || '')} · ${pied(titre)}";font:9px system-ui;color:#5A5350}@bottom-right{content:"Page " counter(page) " sur " counter(pages);font:9px system-ui;color:#5A5350}}</style>
     <div class="rapport-barre"><b>${esc(titre)}</b><span><button class="btn-primaire btn-petit" id="rp-imprimer">Enregistrer en PDF</button> <button class="btn-tonal btn-petit" id="rp-fermer">Fermer</button></span></div>
-    <div class="rapport-page">${html}</div>`;
+    <div class="rapport-page${paysage ? ' paysage' : ''}">${html}</div>`;
   v.hidden = false; v.scrollTop = 0; document.body.classList.add('avec-rapport');
   brancherInfobulles(v);
   const ancienTitre = document.title;
@@ -4983,7 +4984,7 @@ function enteteDocument(titre, periode) {
 function tableDocument(colonnes, lignes, totaux, largeurs = null) {
   if (!lignes.length) return '<p class="muted">Aucune ligne.</p>';
   const cl = (i) => (colonnes[i][1] ? ` class="${colonnes[i][1]}"` : '');
-  return `<table class="doc-table"${largeurs ? ' style="table-layout:fixed;overflow-wrap:anywhere"' : ''}>${largeurs ? `<colgroup>${largeurs.map((l) => `<col style="width:${l}%">`).join('')}</colgroup>` : ''}<thead><tr>${colonnes.map(([l], i) => `<th${cl(i)}>${l}</th>`).join('')}</tr></thead>
+  return `<table class="doc-table"${largeurs ? ' style="table-layout:fixed;overflow-wrap:break-word"' : ''}>${largeurs ? `<colgroup>${largeurs.map((l) => `<col style="width:${l}%">`).join('')}</colgroup>` : ''}<thead><tr>${colonnes.map(([l], i) => `<th${cl(i)}>${l}</th>`).join('')}</tr></thead>
     <tbody>${lignes.map((l) => `<tr>${l.map((v, i) => `<td${cl(i)}>${v ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
     ${totaux ? `<tfoot><tr>${totaux.map((v, i) => `<td${cl(i)}>${v ?? ''}</td>`).join('')}</tr></tfoot>` : ''}</table>`;
 }
@@ -5032,26 +5033,73 @@ async function pdfCotisations(an) {
   afficherDocument(`État des cotisations ${an}`, html);
 }
 
-// Colonnes de la liste imprimable : titre, largeur (%), donnée (même liste que COLONNES_DOC_MEMBRES d'Android)
-const COLONNES_DOC_MEMBRES = [['Membre', 19, 'nom'], ['Fonction', 10, 'fonction'], ['Pupitre', 9, 'pupitre'], ['Nationalité', 14, 'nationalite'], ['Anniversaire', 10, 'anniversaire'],
-  ['WhatsApp', 13, 'whatsapp'], ['E-mail', 16, 'email'], ['Adhésion', 9, 'adhesion']];
+// Colonnes proposées à l'export des membres (même liste que COLONNES_EXPORT_MEMBRES d'Android) :
+// donnée, titre du PDF, largeur relative, en-têtes du fichier Excel (ceux du modèle d'import), cochée par défaut.
+// Le membre (prénom et nom) sort toujours ; le reste, c'est l'utilisateur qui décide (choix gardé sur l'appareil).
+const COLONNES_EXPORT_MEMBRES = [
+  ['nom', 'Membre', 18, ['Prénom', 'Nom'], true], ['fonction', 'Fonction', 10, ['Fonction'], true], ['pupitre', 'Pupitre', 9, ['Pupitre'], true],
+  ['nationalite', 'Nationalité', 13, ['Nationalité'], true], ['statut', 'Statut', 9, ['Statut'], true], ['anniversaire', 'Anniversaire', 10, ['Jour', 'Mois'], true],
+  ['profession', 'Profession', 12, ['Profession'], true], ['whatsapp', 'WhatsApp', 13, ['WhatsApp'], true], ['email', 'E-mail', 16, ['E-mail'], true],
+  ['adhesion', 'Adhésion', 9, ['Adhésion'], true], ['accord', 'Accord anniversaire', 9, ['Accord'], false], ['actif', 'Actif', 7, ['Actif'], false]];
+const COLONNES_MEMBRES_DEFAUT = COLONNES_EXPORT_MEMBRES.filter((c) => c[4]).map((c) => c[0]);
+// Colonnes retenues dans l'ordre de la liste, le membre toujours en premier
+const colonnesExport = (choix) => COLONNES_EXPORT_MEMBRES.filter((c) => c[0] === 'nom' || choix.includes(c[0]));
+const colonnesMembresChoisies = () => {
+  try { const l = JSON.parse(localStorage.getItem('membres.colonnes') || 'null'); if (Array.isArray(l)) return l.filter((k) => COLONNES_EXPORT_MEMBRES.some((c) => c[0] === k)); } catch { /* stockage indisponible */ }
+  return [...COLONNES_MEMBRES_DEFAUT];
+};
+const garderColonnesMembres = (l) => { try { localStorage.setItem('membres.colonnes', JSON.stringify(l)); } catch { /* stockage indisponible */ } };
+// Largeurs en % : les colonnes retenues se partagent toute la page (mêmes positions d'une section à l'autre)
+// Au-delà de 6 colonnes, la liste passe à l'italienne pour que les mots ne soient pas coupés (comme paysageMembres d'Android)
+const paysageMembres = (cols) => cols.length > 6;
+const largeursExport = (cols) => { const t = cols.reduce((x, c) => x + c[2], 0); return cols.map((c) => Math.round(100 * c[2] / t)); };
 function celluleDocMembre(m, k) {
   const f = fonctionMembre(m);
   return { nom: esc(nomComplet(m)) + (m.actif ? '' : ' <span class="muted">(inactif)</span>'), fonction: f && f.etat !== 'invite' ? esc(nomRole(f.role)) : '', pupitre: esc(m.pupitre || ''),
-    nationalite: esc(m.nationalite || ''), anniversaire: `${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}`, whatsapp: esc(m.whatsapp || ''), email: esc(m.email || ''),
-    adhesion: m.date_adhesion ? dateFr(m.date_adhesion) : '' }[k];
+    nationalite: esc(m.nationalite || ''), statut: esc(m.statut || ''), anniversaire: `${m.naissance_jour}&nbsp;${MOIS[m.naissance_mois - 1]}`, profession: esc(m.profession || ''),
+    whatsapp: esc(m.whatsapp || ''), email: esc(m.email || ''), adhesion: m.date_adhesion ? `<span class="nw">${dateFr(m.date_adhesion)}</span>` : '',
+    accord: m.consent_anniversaire ? 'Oui' : 'Non', actif: m.actif ? 'Oui' : 'Non' }[k];
 }
-// Liste imprimable : ce que montre l'écran (filtres, regroupement avec effectif et part, tri)
-async function pdfMembres(v = { ...VUE_MEMBRES_DEFAUT }) {
+function valeursCsvMembre(m, k) {
+  const f = fonctionMembre(m);
+  return { nom: [m.prenom, m.nom], fonction: [f ? nomRole(f.role) : ''], pupitre: [m.pupitre], nationalite: [m.nationalite], statut: [m.statut],
+    anniversaire: [m.naissance_jour, m.naissance_mois], profession: [m.profession], whatsapp: [m.whatsapp], email: [m.email],
+    adhesion: [String(m.date_adhesion || '').slice(0, 10)], accord: [m.consent_anniversaire ? 'Oui' : 'Non'], actif: [m.actif ? 'Oui' : 'Non'] }[k];
+}
+// Liste imprimable : ce que montre l'écran (filtres, regroupement avec effectif et part, tri) avec les colonnes choisies
+async function pdfMembres(v = { ...VUE_MEMBRES_DEFAUT }, choix = colonnesMembresChoisies()) {
   await chargerAcces();
   const sections = sectionsMembres(v), n = sections.reduce((t, x) => t + x.membres.length, 0), lib = libelleVue(v);
-  // Colonnes à largeur fixe (mêmes positions d'une section à l'autre) ; la colonne du regroupement est retirée (elle est le titre de la section)
-  const cols = COLONNES_DOC_MEMBRES.filter(([, , k]) => k !== v.groupe);
-  const table = (l) => tableDocument(cols.map(([t]) => [t]), l.map((m) => cols.map(([, , k]) => celluleDocMembre(m, k))), null, cols.map(([, w]) => w));
+  const cols = colonnesExport(choix), largeurs = largeursExport(cols);
+  const table = (l) => tableDocument(cols.map((c) => [c[1]]), l.map((m) => cols.map((c) => celluleDocMembre(m, c[0]))), null, largeurs);
   const html = `${enteteDocument('Liste des membres', `${n} membre${n > 1 ? 's' : ''}${lib ? ` · ${esc(lib)}` : ''} · au ${dateFr(aujourdhui())}`)}
     ${sections.map((x) => `<h2>${esc(x.titre)} <span class="muted">— ${x.membres.length}${x.part != null ? ` · ${pourcent(x.part)}` : ''}</span></h2>${table(x.membres)}`).join('') || '<p class="muted">Aucun membre.</p>'}
     <p class="muted">Document interne : données personnelles à ne pas diffuser en dehors du bureau.</p>`;
-  afficherDocument('Liste des membres', html);
+  afficherDocument('Liste des membres', html, paysageMembres(cols));
+}
+// Exporter les membres : rappel de la vue, choix des colonnes (puces, gardé sur l'appareil), puis PDF ou Excel
+function feuilleExportMembres(v, n) {
+  let choix = colonnesMembresChoisies();
+  const lib = libelleVue(v);
+  const rendu = () => `<h2>Exporter ${n} membre${n > 1 ? 's' : ''}</h2>
+    ${lib ? `<p class="muted">${esc(lib)}</p>` : ''}
+    <h3>Colonnes</h3>
+    <p class="muted">Prénom et nom sortent toujours. Touchez une colonne pour l’ajouter ou la retirer.</p>
+    <div class="filtres">${COLONNES_EXPORT_MEMBRES.filter((c) => c[0] !== 'nom').map((c) => `<button type="button" class="puce-filtre" data-col="${c[0]}" aria-pressed="${choix.includes(c[0])}">${c[1]}</button>`).join('')}</div>
+    <div class="raccourcis"><button type="button" class="btn-texte btn-petit" id="ce-tout">Tout</button><button type="button" class="btn-texte btn-petit" id="ce-defaut">Par défaut</button></div>
+    <div class="choix-format">
+      <button class="carte choix" id="cf-pdf"><b>PDF</b><span class="muted">Mise en page pour imprimer, archiver ou transmettre</span></button>
+      <button class="carte choix" id="cf-csv"><b>Excel</b><span class="muted">Tableau modifiable (CSV), réimportable</span></button>
+    </div>`;
+  const brancher = (root) => {
+    const redessiner = () => { garderColonnesMembres(choix); root.innerHTML = rendu(); brancher(root); };
+    root.querySelectorAll('[data-col]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.col; choix = choix.includes(k) ? choix.filter((x) => x !== k) : [...choix, k]; redessiner(); }));
+    $('#ce-tout', root).addEventListener('click', () => { choix = COLONNES_EXPORT_MEMBRES.map((c) => c[0]); redessiner(); });
+    $('#ce-defaut', root).addEventListener('click', () => { choix = [...COLONNES_MEMBRES_DEFAUT]; redessiner(); });
+    $('#cf-pdf', root).addEventListener('click', () => { fermerFeuille(); pdfMembres(v, choix).catch(erreur); });
+    $('#cf-csv', root).addEventListener('click', () => { fermerFeuille(); csvMembres(v, choix); });
+  };
+  ouvrirFeuille(rendu(), brancher);
 }
 
 // Répartition imprimable et en tableau (nationalités, pupitres, statuts des membres actifs)

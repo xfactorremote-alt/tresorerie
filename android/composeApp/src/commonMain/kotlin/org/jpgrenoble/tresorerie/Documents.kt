@@ -18,8 +18,8 @@ private fun logoDataUri(): String {
     return "data:$mime;base64," + Base64.encode(o)
 }
 
-private fun cssDocument(nom: String, titre: String) = """
-@page{size:A4;margin:14mm 12mm 16mm;@bottom-left{content:"${nom.replace("\"", " ")} · ${titre.replace("\"", " ")}";font:9px sans-serif;color:#5A5350}@bottom-right{content:"Page " counter(page) " sur " counter(pages);font:9px sans-serif;color:#5A5350}}
+private fun cssDocument(nom: String, titre: String, paysage: Boolean = false) = """
+@page{size:A4${if (paysage) " landscape" else ""};margin:14mm 12mm 16mm;@bottom-left{content:"${nom.replace("\"", " ")} · ${titre.replace("\"", " ")}";font:9px sans-serif;color:#5A5350}@bottom-right{content:"Page " counter(page) " sur " counter(pages);font:9px sans-serif;color:#5A5350}}
 body{font-family:sans-serif;color:#1C1B1A;font-size:11px;margin:0}
 .doc-entete{display:flex;gap:16px;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:3px solid #C23E10}
 .doc-entete img{width:58px;height:58px;border-radius:50%;object-fit:cover}
@@ -38,9 +38,9 @@ tr{break-inside:avoid}tfoot{display:table-row-group}tfoot td{border-top:2px soli
 .sig{display:flex;gap:40px;margin-top:40px;break-inside:avoid}.sig div{flex:1;border-top:1px solid #1C1B1A;padding-top:6px;height:70px}
 """
 
-private fun page(d: Donnees, titre: String, periode: String, corps: String): String {
+private fun page(d: Donnees, titre: String, periode: String, corps: String, paysage: Boolean = false): String {
     val logo = logoDataUri()
-    return """<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${e(d.organisation.nom)} - ${e(titre)}</title><style>${cssDocument(d.organisation.nom, titre)}</style></head><body>
+    return """<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${e(d.organisation.nom)} - ${e(titre)}</title><style>${cssDocument(d.organisation.nom, titre, paysage)}</style></head><body>
 <header class="doc-entete">${if (logo.isNotEmpty()) "<img src=\"$logo\" alt=\"\">" else ""}<div class="t"><span class="doc-asso">${e(d.organisation.nom)}</span><h1>${e(titre)}</h1><span class="doc-periode">$periode</span></div>
 <div class="doc-edition">Édité le ${dateFr(aujourdhui().toString())}<br>par ${e(d.profil.nom)}</div></header>
 $corps</body></html>"""
@@ -54,13 +54,14 @@ private fun synthese(vararg tuiles: Triple<String, String, String?>) =
 private fun table(colonnes: List<Pair<String, String>>, lignes: List<List<String>>, totaux: List<String>? = null, largeurs: List<Int>? = null): String {
     if (lignes.isEmpty()) return "<p class=\"m\">Aucune ligne.</p>"
     fun cl(i: Int) = colonnes[i].second.let { if (it.isEmpty()) "" else " class=\"$it\"" }
-    return (if (largeurs != null) "<table style=\"table-layout:fixed;overflow-wrap:anywhere\"><colgroup>" + largeurs.joinToString("") { "<col style=\"width:$it%\">" } + "</colgroup>" else "<table>") + "<thead><tr>" + colonnes.mapIndexed { i, c -> "<th${cl(i)}>${c.first}</th>" }.joinToString("") + "</tr></thead><tbody>" +
+    return (if (largeurs != null) "<table style=\"table-layout:fixed;overflow-wrap:break-word\"><colgroup>" + largeurs.joinToString("") { "<col style=\"width:$it%\">" } + "</colgroup>" else "<table>") + "<thead><tr>" + colonnes.mapIndexed { i, c -> "<th${cl(i)}>${c.first}</th>" }.joinToString("") + "</tr></thead><tbody>" +
         lignes.joinToString("") { l -> "<tr>" + l.mapIndexed { i, v -> "<td${cl(i)}>$v</td>" }.joinToString("") + "</tr>" } + "</tbody>" +
         (totaux?.let { t -> "<tfoot><tr>" + t.mapIndexed { i, v -> "<td${cl(i)}>$v</td>" }.joinToString("") + "</tr></tfoot>" } ?: "") + "</table>"
 }
 
 // Accès depuis les autres fichiers (listes affichées : membres, répartition)
-internal fun pageHtml(d: Donnees, titre: String, periode: String, corps: String) = page(d, titre, periode, corps)
+/** paysage : A4 à l'italienne (tableaux larges), comme afficherDocument du site. */
+internal fun pageHtml(d: Donnees, titre: String, periode: String, corps: String, paysage: Boolean = false) = page(d, titre, periode, corps, paysage)
 internal fun tableHtml(colonnes: List<Pair<String, String>>, lignes: List<List<String>>, largeurs: List<Int>? = null) = table(colonnes, lignes, null, largeurs)
 internal fun eHtml(s: String?) = e(s)
 

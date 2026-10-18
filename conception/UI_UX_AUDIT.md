@@ -46,6 +46,14 @@ dates à taper. Ces causes racines sont corrigées au niveau du thème et des co
 - Rendu Android sur un appareil réel ou un émulateur (aucun dans l'environnement) : formes, boutons et calendrier vérifiés à la compilation et dans le bytecode seulement.
 - Lecteurs d'écran (TalkBack, NVDA), mode sombre (le produit est en thème clair uniquement : `color-scheme: light`).
 
+## Choix des colonnes exportées — 18 octobre 2026 (version 0.39.0)
+
+| Constat (retour utilisateur) | Correction |
+|---|---|
+| Nationalité absente du PDF regroupé par nationalité (colonne retirée d'office) | Plus aucune colonne retirée d'office ; l'utilisateur coche les colonnes |
+| Colonnes fixées par le programme | Feuille d'export avec puces de colonnes, Tout / Par défaut, choix gardé sur l'appareil |
+| Mots coupés au milieu (« Présiden-t », « 01/09/20-25 ») avec 10 colonnes en A4 portrait | À l'italienne au-delà de 6 colonnes, coupure aux espaces seulement, dates insécables |
+
 ## Contrôle des en-têtes et exports — 18 octobre 2026 (version 0.38.0)
 
 | Constat | Correction |

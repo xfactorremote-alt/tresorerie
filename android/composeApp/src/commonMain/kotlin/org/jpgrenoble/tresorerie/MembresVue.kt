@@ -169,16 +169,45 @@ private suspend fun fonctionsMembres(d: Donnees): (Membre) -> Pair<String, Strin
     return { m -> profils.firstOrNull { it.memberId == m.id }?.let { it.role to "compte" } ?: invitations.firstOrNull { it.membreId == m.id }?.let { it.role to "invite" } }
 }
 
-/** CSV de ce qui est affiché (comme csvMembres du site) : colonnes du modèle d'import, fonction, actif ; regroupé : le groupe en première colonne. */
-suspend fun csvMembres(d: Donnees, membres: List<Membre>, v: VueMembres): String {
+/** Colonnes proposées à l'export des membres (même liste que COLONNES_EXPORT_MEMBRES du site) : donnée, titre du PDF,
+ *  largeur relative, en-têtes du fichier Excel (ceux du modèle d'import), cochée par défaut. Le membre sort toujours. */
+data class ColonneExport(val cle: String, val titre: String, val largeur: Int, val enTetes: List<String>, val defaut: Boolean)
+val COLONNES_EXPORT_MEMBRES = listOf(
+    ColonneExport("nom", "Membre", 18, listOf("Prénom", "Nom"), true), ColonneExport("fonction", "Fonction", 10, listOf("Fonction"), true),
+    ColonneExport("pupitre", "Pupitre", 9, listOf("Pupitre"), true), ColonneExport("nationalite", "Nationalité", 13, listOf("Nationalité"), true),
+    ColonneExport("statut", "Statut", 9, listOf("Statut"), true), ColonneExport("anniversaire", "Anniversaire", 10, listOf("Jour", "Mois"), true),
+    ColonneExport("profession", "Profession", 12, listOf("Profession"), true), ColonneExport("whatsapp", "WhatsApp", 13, listOf("WhatsApp"), true),
+    ColonneExport("email", "E-mail", 16, listOf("E-mail"), true), ColonneExport("adhesion", "Adhésion", 9, listOf("Adhésion"), true),
+    ColonneExport("accord", "Accord anniversaire", 9, listOf("Accord"), false), ColonneExport("actif", "Actif", 7, listOf("Actif"), false))
+val COLONNES_MEMBRES_DEFAUT = COLONNES_EXPORT_MEMBRES.filter { it.defaut }.map { it.cle }
+/** Colonnes retenues dans l'ordre de la liste, le membre toujours en premier (comme colonnesExport du site). */
+fun colonnesExport(choix: Collection<String>) = COLONNES_EXPORT_MEMBRES.filter { it.cle == "nom" || it.cle in choix }
+/** Au-delà de 6 colonnes, la liste passe à l'italienne pour que les mots ne soient pas coupés (comme paysageMembres du site). */
+fun paysageMembres(cols: List<ColonneExport>) = cols.size > 6
+/** Largeurs en % : les colonnes retenues se partagent toute la page (comme largeursExport du site). */
+fun largeursExport(cols: List<ColonneExport>): List<Int> { val t = cols.sumOf { it.largeur }; return cols.map { (100.0 * it.largeur / t).roundToInt() } }
+/** Choix gardé sur l'appareil (« membres.colonnes », comme le site). */
+fun colonnesMembresChoisies(): List<String> =
+    lirePreference("membres.colonnes")?.let { t -> t.split(",").filter { k -> COLONNES_EXPORT_MEMBRES.any { it.cle == k } } } ?: COLONNES_MEMBRES_DEFAUT
+fun garderColonnesMembres(l: List<String>) = garderPreference("membres.colonnes", l.joinToString(","))
+/** En-têtes du fichier Excel : le groupe d'abord si la liste est regroupée, puis les colonnes choisies. */
+fun enTetesCsvMembres(v: VueMembres, choix: Collection<String>) =
+    (if (v.groupe != "fonction") listOf("Groupe (${CRITERES_MEMBRES[v.groupe]!!.first.lowercase()})") else emptyList()) + colonnesExport(choix).flatMap { it.enTetes }
+
+/** CSV de ce qui est affiché, avec les colonnes choisies (comme csvMembres du site) ; le fichier se réimporte tel quel. */
+suspend fun csvMembres(d: Donnees, membres: List<Membre>, v: VueMembres, choix: Collection<String> = colonnesMembresChoisies()): String {
     val fonction = fonctionsMembres(d)
-    val groupe = if (v.groupe != "fonction") CRITERES_MEMBRES[v.groupe]!!.first else null
+    val groupe = v.groupe != "fonction"
     val rang = { m: Membre -> fonction(m)?.first?.takeIf { it != "adherent" }?.let { rangRole(it) } }
-    return csv((if (groupe != null) listOf("Groupe (${groupe.lowercase()})") else emptyList()) +
-        listOf("Prénom", "Nom", "Jour", "Mois", "Profession", "WhatsApp", "E-mail", "Accord", "Nationalité", "Pupitre", "Statut", "Fonction", "Actif"),
+    val cols = colonnesExport(choix)
+    return csv(enTetesCsvMembres(v, choix),
         sectionsMembres(membres, v, rang).flatMap { s -> s.membres.map { m ->
-            (if (groupe != null) listOf<Any?>(s.titre) else emptyList()) + listOf<Any?>(m.prenom, m.nom, m.jour, m.mois, m.profession, m.whatsapp, m.email,
-                if (m.consentement) "Oui" else "Non", m.nationalite, m.pupitre, m.statut, fonction(m)?.first?.let { d.nomRole(it) } ?: "", if (m.actif) "Oui" else "Non")
+            (if (groupe) listOf<Any?>(s.titre) else emptyList()) + cols.flatMap { c -> when (c.cle) {
+                "nom" -> listOf<Any?>(m.prenom, m.nom); "fonction" -> listOf(fonction(m)?.first?.let { d.nomRole(it) } ?: "")
+                "pupitre" -> listOf(m.pupitre); "nationalite" -> listOf(m.nationalite); "statut" -> listOf(m.statut)
+                "anniversaire" -> listOf(m.jour, m.mois); "profession" -> listOf(m.profession); "whatsapp" -> listOf(m.whatsapp)
+                "email" -> listOf(m.email); "adhesion" -> listOf(m.adhesion?.take(10) ?: "")
+                "accord" -> listOf(if (m.consentement) "Oui" else "Non"); else -> listOf(if (m.actif) "Oui" else "Non") } }
         } })
 }
 
@@ -189,27 +218,25 @@ fun csvRepartition(membres: List<Membre>): String {
         listOf("nationalite", "pupitre", "statut").flatMap { k -> repartition(actifs, k).map { listOf<Any?>(CRITERES_MEMBRES[k]!!.first, it.libelle, it.n, it.part) } })
 }
 
-/** Colonnes de la liste imprimable : titre, largeur (%), donnée (même liste que COLONNES_DOC_MEMBRES du site). */
-val COLONNES_DOC_MEMBRES = listOf(Triple("Membre", 19, "nom"), Triple("Fonction", 10, "fonction"), Triple("Pupitre", 9, "pupitre"), Triple("Nationalité", 14, "nationalite"),
-    Triple("Anniversaire", 10, "anniversaire"), Triple("WhatsApp", 13, "whatsapp"), Triple("E-mail", 16, "email"), Triple("Adhésion", 9, "adhesion"))
-
 /** Liste imprimable de ce qui est affiché (comme pdfMembres du site). */
-suspend fun documentMembres(d: Donnees, membres: List<Membre>, v: VueMembres): Pair<String, String> {
+suspend fun documentMembres(d: Donnees, membres: List<Membre>, v: VueMembres, choix: Collection<String> = colonnesMembresChoisies()): Pair<String, String> {
     val fonction = fonctionsMembres(d)
     val rang = { m: Membre -> fonction(m)?.first?.takeIf { it != "adherent" }?.let { rangRole(it) } }
     val sections = sectionsMembres(membres, v, rang); val n = sections.sumOf { it.membres.size }; val lib = libelleVue(membres, v)
-    // Colonnes à largeur fixe (mêmes positions d'une section à l'autre) ; la colonne du regroupement est retirée (elle est le titre de la section)
-    val cols = COLONNES_DOC_MEMBRES.filter { it.third != v.groupe }
+    // Colonnes choisies, largeurs fixes (mêmes positions d'une section à l'autre)
+    val cols = colonnesExport(choix); val largeurs = largeursExport(cols)
     val corps = sections.joinToString("") { s ->
         "<h2>${eHtml(s.titre)} <span class=\"m\">— ${s.membres.size}${s.part?.let { " · ${pourcent(it)}" } ?: ""}</span></h2>" +
-            tableHtml(cols.map { it.first to "" }, s.membres.map { m -> cols.map { (_, _, k) -> when (k) {
+            tableHtml(cols.map { it.titre to "" }, s.membres.map { m -> cols.map { c -> when (c.cle) {
                 "nom" -> eHtml(m.nomComplet) + if (m.actif) "" else " <span class=\"m\">(inactif)</span>"
                 "fonction" -> fonction(m)?.takeIf { it.second != "invite" }?.let { eHtml(d.nomRole(it.first)) } ?: ""
-                "pupitre" -> eHtml(m.pupitre); "nationalite" -> eHtml(m.nationalite); "anniversaire" -> "${m.jour} ${MOIS[m.mois - 1]}"
-                "whatsapp" -> eHtml(m.whatsapp); "email" -> eHtml(m.email); else -> m.adhesion?.let { dateFr(it.take(10)) } ?: "" } } }, cols.map { it.second })
+                "pupitre" -> eHtml(m.pupitre); "nationalite" -> eHtml(m.nationalite); "anniversaire" -> "${m.jour}&nbsp;${MOIS[m.mois - 1]}"
+                "statut" -> eHtml(m.statut); "profession" -> eHtml(m.profession)
+                "whatsapp" -> eHtml(m.whatsapp); "email" -> eHtml(m.email); "accord" -> if (m.consentement) "Oui" else "Non"; "actif" -> if (m.actif) "Oui" else "Non"
+                else -> m.adhesion?.let { "<span class=\"nw\">${dateFr(it.take(10))}</span>" } ?: "" } } }, largeurs)
     }.ifEmpty { "<p class=\"m\">Aucun membre.</p>" }
     return "Liste des membres" to pageHtml(d, "Liste des membres", "$n membre${if (n > 1) "s" else ""}${if (lib.isNotEmpty()) " · ${eHtml(lib)}" else ""} · au ${dateFr(aujourdhui().toString())}",
-        corps + "<p class=\"m\">Document interne : données personnelles à ne pas diffuser en dehors du bureau.</p>")
+        corps + "<p class=\"m\">Document interne : données personnelles à ne pas diffuser en dehors du bureau.</p>", paysageMembres(cols))
 }
 
 /** Répartition imprimable (comme pdfRepartition du site). */
@@ -220,4 +247,38 @@ fun documentRepartition(d: Donnees, membres: List<Membre>): Pair<String, String>
             repartition(actifs, k).map { listOf(eHtml(it.libelle), it.n.toString(), pourcent(it.part)) })
     }
     return "Répartition des membres" to pageHtml(d, "Répartition des membres", "${actifs.size} membre${if (actifs.size > 1) "s" else ""} actif${if (actifs.size > 1) "s" else ""} · au ${dateFr(aujourdhui().toString())}", corps)
+}
+
+/** Feuille « Exporter N membres » (comme feuilleExportMembres du site) : colonnes en puces, Tout / Par défaut, puis PDF ou Excel. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FeuilleExportMembres(n: Int, vue: String, onPdf: (List<String>) -> Unit, onExcel: (List<String>) -> Unit) {
+    var choix by remember { mutableStateOf(colonnesMembresChoisies()) }
+    fun changer(l: List<String>) { choix = l; garderColonnesMembres(l) }
+    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Exporter $n membre${if (n > 1) "s" else ""}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        if (vue.isNotEmpty()) Text(vue, color = Couleurs.Texte2, fontSize = 14.sp)
+        Text("Colonnes", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+        Text("Prénom et nom sortent toujours. Touchez une colonne pour l’ajouter ou la retirer.", color = Couleurs.Texte2, fontSize = 13.sp)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            COLONNES_EXPORT_MEMBRES.filter { it.cle != "nom" }.forEach { c ->
+                FilterChip(selected = c.cle in choix, onClick = { changer(if (c.cle in choix) choix - c.cle else choix + c.cle) }, label = { Text(c.titre, maxLines = 1) })
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = { changer(COLONNES_EXPORT_MEMBRES.map { it.cle }) }) { Text("Tout") }
+            TextButton(onClick = { changer(COLONNES_MEMBRES_DEFAUT) }) { Text("Par défaut") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            @Composable fun Choix(titre: String, sous: String, onClick: () -> Unit) =
+                Surface(onClick = onClick, shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Bord), modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(titre, fontWeight = FontWeight.Bold); Text(sous, fontSize = 13.sp, color = Couleurs.Texte2)
+                    }
+                }
+            Choix("PDF", "Mise en page pour imprimer, archiver ou transmettre") { onPdf(choix) }
+            Choix("Excel", "Tableau modifiable (CSV), réimportable") { onExcel(choix) }
+        }
+    }
 }

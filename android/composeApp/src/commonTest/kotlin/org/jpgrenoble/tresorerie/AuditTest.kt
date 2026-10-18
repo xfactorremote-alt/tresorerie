@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -446,5 +447,17 @@ Joël;;7;8;;;;oui;;;"""
         val f = sectionsMembres(l, VueMembres()) { if (it.id == "c") 1 else null }
         assertEquals(listOf("Bureau" to listOf("Cid"), "Membres" to listOf("Ana", "Bob", "Eve")), f.map { it.titre to it.membres.map { m -> m.prenom } })
         assertTrue(csvRepartition(l).lines().any { it.startsWith("Nationalité;Cameroun;2;66,7") || it.startsWith("Nationalité;Cameroun;2;66.7") }, csvRepartition(l))
+    }
+
+    /** Colonnes d'export choisies par l'utilisateur : mêmes en-têtes et mêmes largeurs que le site (la nationalité n'est jamais retirée d'office). */
+    @Test
+    fun colonnesExportCommeLeSite() {
+        val v = VueMembres(groupe = "nationalite")
+        assertEquals(listOf("Groupe (nationalité)", "Prénom", "Nom", "Nationalité", "Jour", "Mois"), enTetesCsvMembres(v, listOf("anniversaire", "nationalite")))
+        assertEquals(listOf("Prénom", "Nom"), enTetesCsvMembres(VueMembres(), emptyList()))
+        val cols = colonnesExport(COLONNES_MEMBRES_DEFAUT)
+        assertTrue(cols.any { it.cle == "nationalite" })
+        assertEquals(listOf(15, 8, 8, 11, 8, 8, 10, 11, 13, 8), largeursExport(cols))
+        assertTrue(paysageMembres(cols)); assertFalse(paysageMembres(colonnesExport(listOf("pupitre", "nationalite"))))
     }
 }

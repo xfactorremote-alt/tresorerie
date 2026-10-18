@@ -5,7 +5,7 @@ Grille de la page 17 de l'audit du 7 octobre 2026. Un contrôle non effectué re
 Moyens utilisés :
 - **Base** : PostgreSQL 16 local avec le `schema.sql` complet (sections 1 à 12), et les rôles réels (trésorier, président, bureau, adhérent) testés avec les règles d'accès actives.
 - **Site** : mode démonstration piloté par navigateur automatique (Chromium), sans erreur JavaScript sur tous les parcours.
-- **Application Android** : 32 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.38.0.
+- **Application Android** : 33 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.39.0.
 
 | Scénario | Résultat attendu | Résultat | Preuve |
 |---|---|---|---|
@@ -58,6 +58,8 @@ Moyens utilisés :
 ## Décision de mise en service
 
 **Scénario 0.38.0 — export selon la vue** : Membres › Filtres (Soprane, Alto, regrouper par nationalité, trier par prénom) › Exporter : le titre rappelle la vue ; le CSV suit l'ordre de l'écran avec la colonne « Groupe (nationalité) » ; le PDF a une section par pays avec effectif et part, colonnes alignées ; ⋯ › Répartition › Exporter donne le tableau des parts.
+
+**Scénario 0.39.0 — colonnes au choix** : Membres › Filtres › Regrouper par nationalité › Exporter : décocher WhatsApp et E-mail, cocher Actif ; le PDF (à l'italienne) et l'Excel n'ont que ces colonnes, la Nationalité y figure ; rouvrir Exporter : le choix est gardé ; « Par défaut » le remet.
 
 Date de revue : ___________  Participants : ___________
 

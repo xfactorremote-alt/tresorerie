@@ -78,6 +78,12 @@
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |
 
+## 0.39.0 — Colonnes d'export au choix (18 octobre 2026)
+
+- Membres › Exporter : puces de colonnes (Nationalité, Statut, Profession… ; Accord anniversaire et Actif en option), Tout / Par défaut, choix gardé sur l'appareil ; même liste `COLONNES_EXPORT_MEMBRES` des deux côtés.
+- PDF à l'italienne au-delà de 6 colonnes, mots non coupés ; Excel avec les en-têtes du modèle d'import (réimportable).
+- Contrôles : Android compilé, 32 tests d'audit (dont `colonnesExportCommeLeSite`) + VersionTest ; mêmes largeurs vérifiées sur le site (node) ; scénario `colonnes.mjs` au téléphone 320 px et à l'ordinateur sans erreur ni débordement ; a7 312 vues 0 problème ; a5 144 vues sans erreur.
+
 ## 0.38.0 — Exports selon la vue, en-têtes unifiés (18 octobre 2026)
 
 - Membres : « Exporter » dans l'en-tête ; PDF et Excel suivent filtres, regroupement et tri (titre du document qui rappelle la vue, sections « valeur — N · part % », colonne « Groupe (…) » dans le CSV) ; Répartition exportable. Mêmes calculs `sectionsMembres`, `libelleVue`, `csvMembres`, `documentMembres` (test `exportSelonLaVue`).

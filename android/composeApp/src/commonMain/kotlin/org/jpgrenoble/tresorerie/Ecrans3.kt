@@ -883,27 +883,11 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     if (tousLiens) ModalBottomSheet(onDismissRequest = { tousLiens = false }) {
         FeuilleLiens(d, membres, liens, message, onChange = { scope.launch { liens = try { Repo.liens() } catch (_: Exception) { liens } } }) { tousLiens = false }
     }
-    // Choix du format, comme choisirFormat du site : deux cartes, PDF puis Excel
+    // Exporter (comme feuilleExportMembres du site) : rappel de la vue, choix des colonnes gardé sur l'appareil, puis PDF ou Excel
     if (exporter) ModalBottomSheet(onDismissRequest = { exporter = false }) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val n = vus.size; val lib = libelleVue(membres, vue)
-            Text("Exporter $n membre${if (n > 1) "s" else ""}" + if (lib.isNotEmpty()) " ($lib)" else "", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                @Composable fun Choix(titre: String, sous: String, onClick: () -> Unit) =
-                    Surface(onClick = onClick, shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E0DE)), modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(titre, fontWeight = FontWeight.Bold); Text(sous, fontSize = 13.sp, color = Couleurs.Texte2)
-                        }
-                    }
-                Choix("PDF", "Mise en page pour imprimer, archiver ou transmettre") {
-                    exporter = false; scope.launch { try { val (t, h) = documentMembres(d, membres, vue); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } }
-                }
-                Choix("Excel", "Tableau modifiable (CSV)") {
-                    exporter = false; scope.launch { try { enregistrer("membres.csv", "text/csv", csvMembres(d, membres, vue).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } }
-                }
-            }
-        }
+        FeuilleExportMembres(vus.size, libelleVue(membres, vue),
+            onPdf = { choix -> exporter = false; scope.launch { try { val (t, h) = documentMembres(d, membres, vue, choix); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } } },
+            onExcel = { choix -> exporter = false; scope.launch { try { enregistrer("membres.csv", "text/csv", csvMembres(d, membres, vue, choix).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } } })
     }
     fonction?.let { m ->
         FeuilleFonction(d, m, profils, invitations, onFini = { msg -> fonction = null; if (msg != null) { message(msg); version++; if (profils.any { it.id == d.profil.id && it.memberId == m.id }) recharger() } }, message = message)
