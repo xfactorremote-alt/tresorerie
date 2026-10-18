@@ -51,7 +51,7 @@ Moyens utilisés :
 
 ## Points restant à valider par une personne
 
-1. **Application Android sur un vrai téléphone** : installer l’APK 0.38.0 et refaire les parcours (virement, régularisation, filtres, export).
+1. **Application Android sur un vrai téléphone** : installer l’APK 0.39.0 et refaire les parcours (virement, régularisation, filtres, export).
 2. **Export réel** depuis le site en ligne : ouvrir un PDF et un Excel du journal d'octobre et comparer les totaux à l'écran Opérations.
 3. **Restauration sur Supabase** : la commande `set local session_replication_role = replica` du script de restauration doit être acceptée par l'éditeur SQL de Supabase (à confirmer lors d'un premier essai, sur un projet de test).
 
