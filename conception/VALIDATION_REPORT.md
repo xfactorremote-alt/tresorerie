@@ -60,3 +60,12 @@
 | Site : structure comparée (individuel / groupé) par `rappel-groupe.mjs` | ✅ mêmes éléments, même ordre ; 0 erreur JS |
 | Site : `rappel.mjs`, `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 27 tests (`rappelCommeLeSite` : 4 textes identiques au site, dont `sansGras`) | ✅ ; rendu à vérifier sur téléphone |
+
+## 0.36.0 — Import des membres et scanner de documents (18 octobre 2026)
+
+| Vérification | Résultat |
+|---|---|
+| Base : colonnes nationalité, pupitre, statut (local puis production) | ✅ |
+| Site : `import.mjs` (6 cas), `scanner.mjs` (téléphone, ordinateur, iPhone SE) | ✅ 0 erreur JS |
+| Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
+| Android : compilation, 29 tests dont `importMembresDoublons` et `scannerCommeLeSite` | ✅ ; scanner à essayer sur téléphone (appareil photo réel) |

@@ -41,6 +41,8 @@ function seed() {
   const members = noms.map(([prenom, nom, j, m, profession, consent], i) => ({
     id: 'm' + i, prenom, nom, naissance_jour: j, naissance_mois: m, profession, whatsapp: i % 3 ? '06 12 34 56 7' + i : null,
     email: null, photo_path: null, consent_anniversaire: consent, date_adhesion: `${an - 1}-09-01`, actif: true, created_at: ilYa(i === 8 ? 2 : 300).toISOString(),
+    // Pupitre et statut (comme Demo.kt) : sopranes, altos, ténors, basses à tour de rôle ; Paul (trésorier) musicien
+    pupitre: i === 12 ? 'Musicien' : ['Soprane', 'Alto', 'Ténor', 'Basse'][i % 4], statut: i === 12 ? 'Musicien' : 'Choriste', nationalite: null,
   }));
   members[9].date_adhesion = `${an}-03-15`;   // adhésion en cours d'année : cotisations à partir de mars
   // Cotisation mensuelle : une ligne par membre et par mois

@@ -328,3 +328,19 @@ actual fun ouvrirWhatsApp(numero: String, texte: String, business: Boolean) {
     try { ContexteApp.contexte.startActivity(if (business) android.content.Intent(intent).setPackage("com.whatsapp.w4b") else intent) }
     catch (_: Exception) { ContexteApp.contexte.startActivity(intent) }
 }
+
+// ---------- Scanner de documents : passage image ↔ pixels ----------
+actual fun pixelsDepuisOctets(octets: ByteArray, max: Int): Pixels? = try {
+    val bornes = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(octets, 0, octets.size, bornes)
+    var pas = 1; while (maxOf(bornes.outWidth, bornes.outHeight) / (pas * 2) >= max) pas *= 2
+    var bmp = BitmapFactory.decodeByteArray(octets, 0, octets.size, BitmapFactory.Options().apply { inSampleSize = pas })
+    val k = minOf(1.0, max.toDouble() / maxOf(bmp.width, bmp.height))
+    if (k < 1.0) bmp = Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt().coerceAtLeast(1), (bmp.height * k).toInt().coerceAtLeast(1), true)
+    val px = IntArray(bmp.width * bmp.height); bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+    Pixels(bmp.width, bmp.height, px)
+} catch (_: Throwable) { null }
+
+private fun bitmapDe(p: Pixels): Bitmap = Bitmap.createBitmap(p.argb, p.w, p.h, Bitmap.Config.ARGB_8888)
+actual fun jpegDepuisPixels(p: Pixels, qualite: Int): ByteArray = ByteArrayOutputStream().use { bitmapDe(p).compress(Bitmap.CompressFormat.JPEG, qualite, it); it.toByteArray() }
+actual fun imageDepuisPixels(p: Pixels): ImageBitmap = bitmapDe(p).asImageBitmap()

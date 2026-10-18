@@ -2,6 +2,7 @@
 // Connexion, soldes, écritures, membres (fiche + import), cotisations, paramètres et accès.
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { ICONES_FLUENT } from './icones.js';
+import { scannerDocument } from './scanner.js';
 import { C, eur0, colonnesGroupees, ligne, barresH, anneau, jauge, budgetBarres, serieMensuelle, reserveEnMois, libelleMois, brancherInfobulles, CSS_GRAPHIQUES } from './graphiques.js';
 
 // Styles des graphiques (partagés par le tableau de bord et le rapport d'AG)
@@ -33,6 +34,27 @@ const signe = (t) => (t.sens === 'recette' ? 1 : -1) * Number(t.montant);
 const montantSigne = (t) => { const v = signe(t); return `<span class="num ${v >= 0 ? 'recette' : 'depense'}">${v >= 0 ? '+' : '−'} ${eur(Math.abs(v))}</span>`; };
 const nomComplet = (m) => m ? `${m.prenom} ${m.nom}` : '';
 const sansAccents = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+// Pièces jointes : chaque champ marqué data-scan reçoit « Scanner avec l'appareil photo » (comme BoutonScanner d'Android) ;
+// le document scanné (redressé, amélioré, JPEG) est placé dans le champ comme un fichier choisi.
+function brancherScanners(racine = document) {
+  racine.querySelectorAll('input[type=file][data-scan]:not([data-scan-ok])').forEach((input) => {
+    input.dataset.scanOk = '1';
+    const ligne = document.createElement('div'); ligne.className = 'scan-ligne';
+    ligne.innerHTML = `<button type="button" class="btn-tonal btn-petit b-scanner">${icone('camera', 16)} Scanner avec l’appareil photo</button><span class="muted scan-etat" aria-live="polite"></span>`;
+    (input.closest('label') || input).after(ligne);
+    ligne.querySelector('button').addEventListener('click', async () => {
+      try {
+        const f = await scannerDocument(); if (!f) return;
+        const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        ligne.querySelector('.scan-etat').textContent = `✓ Document scanné (${Math.max(1, Math.round(f.size / 1024))} Ko)`;
+      } catch (e) { erreur(e); }
+    });
+    input.addEventListener('change', (e) => { if (e.isTrusted) ligne.querySelector('.scan-etat').textContent = ''; });
+  });
+}
+new MutationObserver(() => brancherScanners()).observe(document.documentElement, { childList: true, subtree: true });
 
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -1723,7 +1745,7 @@ async function detailEcriture(t, pieces, contrepassees, recharger, toutes = []) 
     ${apercu}
     <div class="actions">
       ${demande?.signature_path ? `<button class="btn-texte" data-voir="${esc(demande.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
-      ${!piece && !correction && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">Joindre une pièce</button>` : ''}
+      ${!piece && !correction && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">Joindre une pièce</button><button class="btn-tonal" data-scanner-joindre="${t.id}">${icone('camera', 16)} Scanner</button>` : ''}
       ${!demande && !t.virement && peutCorriger && t.sens === 'depense' && t.montant > 0 ? '<button class="btn-tonal" id="b-faire-valider">Faire valider par le président</button>' : ''}
       ${t.sens === 'depense' && t.montant > 0 && /mat[ée]riel|instrument|[ée]quipement/i.test(nomCategorie(t.category_id)) && peut('gerer_materiel') ? '<button class="btn-texte" id="b-inventaire">Inscrire à l’inventaire</button>' : ''}
       ${peutCorriger && !t.virement ? `<button class="btn-texte" id="b-contre">Contre-passer</button>` : ''}
@@ -1786,7 +1808,7 @@ function feuilleEcriture(pre = {}) {
       <label class="champ"><span class="obligatoire">Compte</span><select name="compte" required>${S.comptes.map((c) => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}</select></label>
       <label class="champ">Mode de paiement<select name="mode">${Object.entries(MODES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
       <label class="champ">Activité<select name="projet"><option value="">Aucune</option>${optionsProjets()}</select></label>
-      <label class="champ" id="l-piece">Justificatif<input type="file" name="piece" accept="image/*,application/pdf"></label>
+      <label class="champ" id="l-piece">Justificatif<input type="file" name="piece" accept="image/*,application/pdf" data-scan></label>
     </div>
     <p class="info" id="i-mode" hidden></p>
     <label class="case" id="l-valid"><input type="checkbox" name="valider" checked> Faire valider par le président</label>
@@ -1919,7 +1941,7 @@ function feuilleVirement(pre = {}) {
       <label class="champ"><span class="obligatoire">Date</span><input name="date" type="date" required value="${esc(pre.date || aujourdhui())}" max="${aujourdhui()}"></label>
     </div>
     <label class="champ">Libellé<input name="libelle" maxlength="120" placeholder="Rempli selon les comptes choisis"></label>
-    <label class="champ">Bordereau ou ticket<input type="file" name="piece" accept="image/*,application/pdf"></label>
+    <label class="champ">Bordereau ou ticket<input type="file" name="piece" accept="image/*,application/pdf" data-scan></label>
     <p class="info" id="i-vir"></p>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer le virement</button></div>
   </form>`, (root) => {
@@ -2037,7 +2059,7 @@ async function pageMembres() {
         <li class="cliquable${m.actif ? '' : ' inactif'}" data-nom="${esc(sansAccents(nomComplet(m)))}" data-fiche="${m.id}" tabindex="0" role="button">
           ${avatar(m)}
           <div class="corps"><b>${esc(nomComplet(m))}${m.id === S.profil.member_id ? ' <span class="muted">(vous)</span>' : ''}</b>
-            <span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}${m.profession ? ' · ' + esc(m.profession) : ''}</span></div>
+            <span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}${m.pupitre ? ' · ' + esc(m.pupitre) : ''}${m.profession ? ' · ' + esc(m.profession) : ''}</span></div>
           <span class="membre-etats">${pucesFonction(m)}${m.actif ? '' : '<span class="puce puce-neutre">Inactif</span>'}</span>
           ${icone('suivant', 18)}
         </li>`;
@@ -2096,6 +2118,9 @@ function feuilleFicheMembre(m) {
     <div class="details">
       <div class="ligne-detail"><span class="muted">Anniversaire</span><span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}</span></div>
       ${m.profession ? `<div class="ligne-detail"><span class="muted">Profession</span><span>${esc(m.profession)}</span></div>` : ''}
+      ${m.pupitre ? `<div class="ligne-detail"><span class="muted">Pupitre</span><span>${esc(m.pupitre)}</span></div>` : ''}
+      ${m.statut ? `<div class="ligne-detail"><span class="muted">Statut</span><span>${esc(m.statut)}</span></div>` : ''}
+      ${m.nationalite ? `<div class="ligne-detail"><span class="muted">Nationalité</span><span>${esc(m.nationalite)}</span></div>` : ''}
       ${m.whatsapp ? `<div class="ligne-detail"><span class="muted">WhatsApp</span>${wa ? `<a href="https://wa.me/${wa}" target="_blank" rel="noopener">${esc(m.whatsapp)}</a>` : `<span>${esc(m.whatsapp)}</span>`}</div>` : ''}
       ${m.email ? `<div class="ligne-detail"><span class="muted">E-mail</span><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div>` : ''}
     </div>
@@ -2116,9 +2141,10 @@ function feuilleFicheMembre(m) {
     }));
   });
 }
+// Mêmes premières colonnes que le modèle d'import (le fichier exporté se réimporte tel quel), puis fonction et actif
 const csvMembres = () => telechargerCsv('membres.csv',
-  ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Fonction', 'Accord anniversaire', 'Actif'],
-  S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.consent_anniversaire ? 'Oui' : 'Non', m.actif ? 'Oui' : 'Non']));
+  ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Accord', 'Nationalité', 'Pupitre', 'Statut', 'Fonction', 'Actif'],
+  S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, m.consent_anniversaire ? 'Oui' : 'Non', m.nationalite, m.pupitre, m.statut, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.actif ? 'Oui' : 'Non']));
 
 // Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
 function feuilleAcces(m) {
@@ -2213,6 +2239,13 @@ function feuilleMembre(m = null, opts = {}) {
       </div></fieldset>
     <label class="champ">Profession (facultatif)<input name="profession" value="${esc(v.profession)}" maxlength="80"></label>
     <div class="champs champs-2">
+      <label class="champ">Pupitre (facultatif)<input name="pupitre" value="${esc(v.pupitre || '')}" maxlength="40" list="l-pupitres" autocomplete="off"></label>
+      <label class="champ">Statut (facultatif)<input name="statut" value="${esc(v.statut || '')}" maxlength="40" list="l-statuts" placeholder="Choriste, musicien…" autocomplete="off"></label>
+    </div>
+    <datalist id="l-pupitres">${PUPITRES.map((x) => `<option value="${x}">`).join('')}</datalist>
+    <datalist id="l-statuts">${['Choriste', 'Musicien', 'Sympathisant', 'Membre d’honneur'].map((x) => `<option value="${x}">`).join('')}</datalist>
+    <label class="champ">Nationalité (facultatif)<input name="nationalite" value="${esc(v.nationalite || '')}" maxlength="60" autocomplete="off"></label>
+    <div class="champs champs-2">
       <label class="champ">WhatsApp<input name="whatsapp" type="tel" value="${esc(v.whatsapp)}" placeholder="06 12 34 56 78"></label>
       <label class="champ">E-mail<input name="email" type="email" value="${esc(v.email)}"></label>
     </div>
@@ -2242,6 +2275,7 @@ function feuilleMembre(m = null, opts = {}) {
       const donnees = {
         prenom: f.prenom.value.trim(), nom: f.nom.value.trim(), naissance_jour: j, naissance_mois: mo,
         profession: f.profession.value.trim() || null, whatsapp: wa || null, email: f.email.value.trim() || null,
+        pupitre: pupitreNormal(f.pupitre.value), statut: f.statut.value.trim() || null, nationalite: f.nationalite.value.trim() || null,
         consent_anniversaire: f.consent.checked, ...(m ? { actif: f.actif.checked } : {}),
       };
       const btn = f.querySelector('button:not([type])'); btn.disabled = true;
@@ -2285,47 +2319,91 @@ function parserCsv(texte) {
   return lignes.filter((l) => l.some((x) => String(x).trim()));
 }
 
-function analyserLignes(lignes) {
+// Nouvelle structure (même ordre que le modèle) : prénom;nom;jour;mois;profession;whatsapp;email;accord;nationalité;pupitre;statut
+const COLONNES_IMPORT = ['prénom', 'nom', 'jour', 'mois', 'profession', 'whatsapp', 'email', 'accord', 'nationalité', 'pupitre', 'statut'];
+const PUPITRES = ['Soprane', 'Alto', 'Ténor', 'Basse', 'Musicien'];
+// Pupitre écrit de façon homogène (« soprano », « SOPRANE » → « Soprane »)
+function pupitreNormal(s) {
+  const t = sansAccents(s); if (!t) return null;
+  const n = { soprano: 'Soprane', soprane: 'Soprane', sopranes: 'Soprane', alto: 'Alto', altos: 'Alto', tenor: 'Ténor', tenors: 'Ténor', basse: 'Basse', basses: 'Basse', bass: 'Basse', musicien: 'Musicien', musicienne: 'Musicien', musiciens: 'Musicien' }[t];
+  return n || String(s).trim().replace(/^./, (c) => c.toUpperCase());
+}
+// Statut : « actif » / « inactif » règlent la case Membre actif ; tout autre mot (Choriste, Sympathisant…) est gardé tel quel
+function statutImport(s) {
+  const t = sansAccents(s);
+  if (/^(actif|active|actifs|oui)$/.test(t)) return { actif: true, statut: null };
+  if (/^(inactif|inactive|inactifs|ancien|ancienne|non|parti|partie)$/.test(t)) return { actif: false, statut: null };
+  return { actif: true, statut: String(s || '').trim() || null };
+}
+// Doublon : même prénom et nom (accents, majuscules, tirets et espaces ignorés, prénom et nom inversés compris), même WhatsApp ou même e-mail
+const cleNom = (p, n) => sansAccents(`${p}${n}`).replace(/[^a-z]/g, '');
+function cleDoublon(x, y) {
+  if (cleNom(x.prenom, x.nom) && (cleNom(x.prenom, x.nom) === cleNom(y.prenom, y.nom) || cleNom(x.prenom, x.nom) === cleNom(y.nom, y.prenom))) return 'même nom';
+  if (x.whatsapp && y.whatsapp && numeroWa(x.whatsapp) && numeroWa(x.whatsapp) === numeroWa(y.whatsapp)) return 'même WhatsApp';
+  if (x.email && y.email && sansAccents(x.email) === sansAccents(y.email)) return 'même e-mail';
+  return null;
+}
+// Chaque ligne : etat « nouveau », « doublon » (même nom : écarté), « verifier » (autre nom mais même WhatsApp ou e-mail,
+// souvent une même famille : importé seulement si on le demande) ou « erreur »
+function analyserLignes(lignes, existants = S.membres) {
   const entetes = lignes[0].map(sansAccents);
   const col = (...noms) => entetes.findIndex((h) => noms.some((n) => h === n || h.startsWith(n)));
   const idx = {
     prenom: col('prenom'), nom: col('nom'), jour: col('jour'), mois: col('mois'), date: col('anniversaire', 'date'),
     profession: col('profession', 'metier'), whatsapp: col('whatsapp', 'telephone', 'tel'), email: col('email', 'e-mail', 'mail'), consent: col('accord', 'consent'),
+    nationalite: col('nationalite', 'pays'), pupitre: col('pupitre', 'voix'), statut: col('statut'),
   };
   if (idx.prenom < 0 || idx.nom < 0 || ((idx.jour < 0 || idx.mois < 0) && idx.date < 0)) {
     throw new Error('Colonnes attendues : prénom, nom, jour, mois (ou anniversaire au format jj/mm)');
   }
   const moisTexte = (s) => { const n = Number(s); if (n) return n; const i = MOIS.findIndex((x) => sansAccents(x) === sansAccents(s)); return i + 1; };
+  const retenues = [];
   return lignes.slice(1).map((l, i) => {
     const g = (k) => (idx[k] >= 0 ? String(l[idx[k]] ?? '').trim() : '');
     let jour = Number(g('jour')), mois = moisTexte(g('mois'));
     const dateTexte = g('date') || (/[\/\-.]/.test(g('jour')) ? g('jour') : '');
     if ((!jour || !mois) && dateTexte) { const p = dateTexte.split(/[\/\-. ]/); jour = Number(p[0]); mois = moisTexte(p[1]); }
+    const st = statutImport(g('statut'));
     const r = {
       ligne: i + 2, prenom: g('prenom'), nom: g('nom'), naissance_jour: jour, naissance_mois: mois,
       profession: g('profession') || null, whatsapp: g('whatsapp') || null, email: g('email') || null,
-      consent_anniversaire: /^(oui|o|yes|1|x|vrai)$/i.test(g('consent')), erreurs: [],
+      consent_anniversaire: /^(oui|o|yes|1|x|vrai)$/i.test(g('consent')),
+      nationalite: g('nationalite') || null, pupitre: pupitreNormal(g('pupitre')), statut: st.statut, actif: st.actif,
+      erreurs: [], etat: 'nouveau', doublon: null, existant: null,
     };
     if (!r.prenom) r.erreurs.push('prénom manquant');
     if (!r.nom) r.erreurs.push('nom manquant');
     if (!(mois >= 1 && mois <= 12)) r.erreurs.push('mois invalide');
     else if (!(jour >= 1 && jour <= new Date(2024, mois, 0).getDate())) r.erreurs.push('jour invalide');
     if (r.whatsapp && !numeroWa(r.whatsapp)) r.erreurs.push('WhatsApp invalide');
-    if (S.membres.some((x) => sansAccents(nomComplet(x)) === sansAccents(`${r.prenom} ${r.nom}`))) r.erreurs.push('déjà enregistré');
+    if (r.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email)) r.erreurs.push('e-mail invalide');
+    if (r.erreurs.length) { r.etat = 'erreur'; return r; }
+    const ex = existants.find((m) => cleDoublon(r, m) === 'même nom') || existants.find((m) => cleDoublon(r, m));
+    const avant = retenues.find((x) => cleDoublon(r, x) === 'même nom') || retenues.find((x) => cleDoublon(r, x));
+    if (ex) { const motif = cleDoublon(r, ex); r.etat = motif === 'même nom' ? 'doublon' : 'verifier'; r.existant = motif === 'même nom' ? ex : null; r.doublon = `${motif === 'même nom' ? 'déjà membre' : `${motif} que`} : ${nomComplet(ex)}`; }
+    else if (avant) { const motif = cleDoublon(r, avant); r.etat = motif === 'même nom' ? 'doublon' : 'verifier'; r.doublon = `${motif === 'même nom' ? 'doublon de la ligne' : `${motif} que la ligne`} ${avant.ligne}`; }
+    if (r.etat !== 'doublon') retenues.push(r);
     return r;
   });
+}
+// Ce qu'un doublon peut ajouter à la fiche existante : seulement les cases vides de la fiche (rien n'est écrasé)
+const CHAMPS_COMPLETABLES = ['profession', 'whatsapp', 'email', 'nationalite', 'pupitre', 'statut'];
+function complementFiche(r) {
+  if (!r.existant) return null;
+  const c = Object.fromEntries(CHAMPS_COMPLETABLES.filter((k) => r[k] && !r.existant[k]).map((k) => [k, r[k]]));
+  return Object.keys(c).length ? c : null;
 }
 
 function feuilleImport() {
   ouvrirFeuille(`<h2>Importer des membres</h2>
-    <p class="muted">Fichier CSV ou Excel avec une ligne d’en-têtes : <b>prénom, nom, jour, mois</b> (obligatoires), profession, whatsapp, email, accord (oui ou non). Les lignes incomplètes sont refusées.</p>
+    <p class="muted">Fichier CSV ou Excel avec une ligne d’en-têtes : <b>prénom, nom, jour, mois</b> (obligatoires), profession, whatsapp, email, accord (oui ou non), nationalité, pupitre, statut. Les doublons (même nom, même WhatsApp ou même e-mail, dans le fichier ou parmi les membres) sont signalés et écartés.</p>
     <div class="actions" style="justify-content:flex-start">
       <label class="btn btn-tonal">Choisir le fichier<input type="file" id="fichier" accept=".csv,.xlsx,.xls,text/csv" hidden></label>
       <button class="btn-texte" id="b-modele">Télécharger le modèle</button>
     </div>
     <div id="resultat"></div>`, (root) => {
-    $('#b-modele', root).addEventListener('click', () => telechargerCsv('modele-membres.csv',
-      ['prénom', 'nom', 'jour', 'mois', 'profession', 'whatsapp', 'email', 'accord'], [['Marie', 'Exemple', 14, 3, 'Infirmière', '06 12 34 56 78', '', 'oui']]));
+    $('#b-modele', root).addEventListener('click', () => telechargerCsv('modele-membres.csv', COLONNES_IMPORT,
+      [['Marie', 'Exemple', 14, 3, 'Infirmière', '06 12 34 56 78', 'marie@exemple.fr', 'oui', 'Française', 'Alto', 'Choriste']]));
     $('#fichier', root).addEventListener('change', async (e) => {
       const file = e.target.files[0]; if (!file) return;
       try {
@@ -2336,24 +2414,41 @@ function feuilleImport() {
           lignes = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false }).filter((l) => l.some((x) => String(x ?? '').trim()));
         } else {
           let txt = await file.text();
-          if (txt.includes('\ufffd')) txt = new TextDecoder('windows-1252').decode(await file.arrayBuffer()); // CSV Excel ancien
+          if (txt.includes('�')) txt = new TextDecoder('windows-1252').decode(await file.arrayBuffer()); // CSV Excel ancien
           lignes = parserCsv(txt.replace(/^﻿/, ''));
         }
+        if (lignes.length < 2) throw new Error('Fichier vide ou sans ligne d’en-têtes');
         const res = analyserLignes(lignes);
-        const ok = res.filter((r) => !r.erreurs.length), ko = res.filter((r) => r.erreurs.length);
+        const nouveaux = res.filter((r) => r.etat === 'nouveau'), dbl = res.filter((r) => r.etat === 'doublon'), ko = res.filter((r) => r.etat === 'erreur'), averifier = res.filter((r) => r.etat === 'verifier');
+        let ok = nouveaux;
+        const aCompleter = dbl.filter(complementFiche);
+        const PUCE = { nouveau: ['puce-ok', 'Nouveau'], doublon: ['puce-neutre', 'Doublon écarté'], verifier: ['puce-partiel', 'À vérifier'], erreur: ['puce-ko', 'Refusée'] };
         $('#resultat', root).innerHTML = `
-          <p><b>${ok.length}</b> ligne${ok.length > 1 ? 's' : ''} prête${ok.length > 1 ? 's' : ''}, <b>${ko.length}</b> refusée${ko.length > 1 ? 's' : ''}.</p>
-          ${ko.length ? `<div class="alerte" style="max-height:180px;overflow:auto">${ko.map((r) => `Ligne ${r.ligne} (${esc(r.prenom)} ${esc(r.nom)}) : ${r.erreurs.join(', ')}`).join('<br>')}</div>` : ''}
-          <div class="actions"><button class="btn-texte" id="b-fermer">Annuler</button><button class="btn-primaire" id="b-importer" ${ok.length ? '' : 'disabled'}>Importer ${ok.length} membre${ok.length > 1 ? 's' : ''}</button></div>`;
+          <p class="resume-import"><span><b>${nouveaux.length}</b> nouveau${nouveaux.length > 1 ? 'x' : ''}</span><span><b>${dbl.length}</b> doublon${dbl.length > 1 ? 's' : ''} écarté${dbl.length > 1 ? 's' : ''}</span>${averifier.length ? `<span><b>${averifier.length}</b> à vérifier</span>` : ''}<span><b>${ko.length}</b> refusée${ko.length > 1 ? 's' : ''}</span></p>
+          <ul class="liste liste-import">${res.map((r) => `<li><div class="corps"><b>Ligne ${r.ligne} · ${esc(`${r.prenom} ${r.nom}`.trim() || '(sans nom)')}</b>
+            <span>${r.etat === 'erreur' ? esc(r.erreurs.join(', ')) : r.doublon ? esc(r.doublon) : esc([r.pupitre, r.statut, r.nationalite].filter(Boolean).join(' · ') || `${r.naissance_jour} ${MOIS[r.naissance_mois - 1]}`)}</span></div>
+            <span class="puce ${PUCE[r.etat][0]}">${PUCE[r.etat][1]}</span></li>`).join('')}</ul>
+          ${averifier.length ? `<label class="case"><input type="checkbox" id="c-verifier"> Importer aussi ${averifier.length > 1 ? `les ${averifier.length} lignes` : 'la ligne'} « À vérifier » (autre nom, même WhatsApp ou e-mail : par exemple une même famille)</label>` : ''}
+          ${aCompleter.length ? `<label class="case"><input type="checkbox" id="c-completer"> Compléter ${aCompleter.length > 1 ? `les ${aCompleter.length} fiches existantes` : 'la fiche existante'} avec les informations du fichier (seulement les cases vides, rien n’est remplacé)</label>` : ''}
+          <div class="actions"><button class="btn-texte" id="b-fermer">Annuler</button><button class="btn-primaire" id="b-importer" ${ok.length || aCompleter.length ? '' : 'disabled'}>Importer ${ok.length} membre${ok.length > 1 ? 's' : ''}</button></div>`;
         $('#b-fermer', root).addEventListener('click', fermerFeuille);
         $('#b-importer', root).addEventListener('click', async (ev) => {
           ev.target.disabled = true;
+          const completer = $('#c-completer', root)?.checked;
           try {
-            await q(sb.from('members').insert(ok.map(({ ligne, erreurs, ...r }) => ({ ...r, date_adhesion: aujourdhui() }))));
+            if (ok.length) await q(sb.from('members').insert(ok.map(({ ligne, erreurs, etat, doublon, existant, ...r }) => ({ ...r, date_adhesion: aujourdhui() }))));
+            let n = 0;
+            if (completer) for (const r of aCompleter) { await q(sb.from('members').update(complementFiche(r)).eq('id', r.existant.id)); n++; }
             S.membres = await q(sb.from('members').select('*').order('nom'));
-            fermerFeuille(); toast(`${ok.length} membres importés`); pageMembres();
+            fermerFeuille(); toast([ok.length ? `${ok.length} membre${ok.length > 1 ? 's' : ''} importé${ok.length > 1 ? 's' : ''}` : '', n ? `${n} fiche${n > 1 ? 's' : ''} complétée${n > 1 ? 's' : ''}` : '', dbl.length ? `${dbl.length} doublon${dbl.length > 1 ? 's' : ''} écarté${dbl.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ') || 'Rien à importer'); pageMembres();
           } catch (err) { ev.target.disabled = false; erreur(err); }
         });
+        const maj = () => {
+          const c = $('#c-completer', root)?.checked; ok = $('#c-verifier', root)?.checked ? [...nouveaux, ...averifier] : nouveaux;
+          const b = $('#b-importer', root); b.disabled = !(ok.length || (c && aCompleter.length));
+          b.textContent = ok.length || !c ? `Importer ${ok.length} membre${ok.length > 1 ? 's' : ''}` : 'Compléter les fiches';
+        };
+        $('#c-completer', root)?.addEventListener('change', maj); $('#c-verifier', root)?.addEventListener('change', maj); maj();
       } catch (err) { $('#resultat', root).innerHTML = `<div class="alerte">${esc(err.message)}</div>`; }
     });
   });
@@ -3834,6 +3929,10 @@ function choisirFichier(accept = 'image/*,application/pdf') {
 
 function brancherPieces(rafraichir) {
   document.querySelectorAll('[data-voir]').forEach((b) => b.addEventListener('click', () => ouvrirFichier(b.dataset.bucket || 'justificatifs', b.dataset.voir, b.dataset.titre)));
+  document.querySelectorAll('[data-scanner-joindre]').forEach((b) => b.addEventListener('click', async () => {
+    try { const file = await scannerDocument(); if (!file) return; b.disabled = true; await deposerPiece(file, { transaction_id: b.dataset.scannerJoindre }); toast('Justificatif joint'); rafraichir(); }
+    catch (e) { b.disabled = false; erreur(e); }
+  }));
   document.querySelectorAll('[data-joindre]').forEach((b) => b.addEventListener('click', async () => {
     const file = await choisirFichier(); if (!file) return;
     try { b.disabled = true; await deposerPiece(file, { transaction_id: b.dataset.joindre }); toast('Justificatif joint'); rafraichir(); }
@@ -4034,7 +4133,7 @@ function feuilleDemande(apres) {
     <label class="champ">Pourquoi cette dépense<textarea name="justification" rows="2" maxlength="500" placeholder="À quoi elle sert, pourquoi ce fournisseur, ce qui se passe si on ne la fait pas"></textarea></label>
     <div class="champs champs-2">
       <label class="champ">Pour le<input type="date" name="date_souhaitee" min="${aujourdhui()}"></label>
-      <label class="champ">Devis (facultatif)<input type="file" name="devis" accept="image/*,application/pdf"></label>
+      <label class="champ">Devis (facultatif)<input type="file" name="devis" accept="image/*,application/pdf" data-scan></label>
     </div>
     <p class="muted" id="i-dem">La demande part au président, qui la valide en signant. Le trésorier paie ensuite, puis le justificatif est à déposer dans les ${S.settings.delai_justificatif_jours ?? 7}&nbsp;jours.</p>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Envoyer</button></div>
@@ -4134,7 +4233,7 @@ function feuillePayer(d, apres) {
 function feuilleJustifier(d, apres) {
   ouvrirFeuille(`<form id="f-just" class="champs"><h2>Joindre le justificatif</h2>
     <p><b>${esc(d.objet)}</b>, ${eur(d.montant)}</p>
-    <label class="champ"><span class="obligatoire">Facture ou ticket</span><input type="file" name="piece" accept="image/*,application/pdf" capture="environment" required></label>
+    <label class="champ"><span class="obligatoire">Facture ou ticket</span><input type="file" name="piece" accept="image/*,application/pdf" required data-scan></label>
     <p class="muted">Photo ou PDF de 3&nbsp;Mo maximum.</p>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Joindre</button></div></form>`, (root) => {
     const f = $('#f-just', root);
@@ -4329,7 +4428,7 @@ async function pageRapprochement() {
         <label class="champ">Fin<input id="r-fin" type="date" value="${S.rapp.fin}"></label>
       </div>
       <label class="champ"><span class="obligatoire">${S.comptes.find((c) => c.id === compte)?.type === 'caisse' ? 'Procès-verbal de comptage' : 'Relevé de la période'}</span>
-        <input id="r-releve" type="file" accept="application/pdf,image/*"></label>
+        <input id="r-releve" type="file" accept="application/pdf,image/*" data-scan></label>
       ${S.rapp.fichier ? `<span class="puce puce-ok" style="align-self:flex-start">${esc(S.rapp.fichier.name)}</span>` : ''}
     </section>
     <section class="carte">
@@ -4791,8 +4890,8 @@ async function pdfMembres() {
   await chargerAcces();
   const liste = [...S.membres].filter((m) => m.actif).sort((a, b) => rangRole(fonctionMembre(a)?.role || 'adherent') - rangRole(fonctionMembre(b)?.role || 'adherent') || nomComplet(a).localeCompare(nomComplet(b), 'fr'));
   const html = `${enteteDocument('Liste des membres', `${liste.length} membre${liste.length > 1 ? 's' : ''} actif${liste.length > 1 ? 's' : ''} au ${dateFr(aujourdhui())}`)}
-    ${tableDocument([['Membre'], ['Fonction'], ['Anniversaire'], ['Profession'], ['WhatsApp'], ['E-mail'], ['Adhésion']],
-      liste.map((m) => { const f = fonctionMembre(m); return [esc(nomComplet(m)), f && f.etat !== 'invite' ? esc(nomRole(f.role)) : '', `${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}`, esc(m.profession || ''), esc(m.whatsapp || ''), esc(m.email || ''), m.date_adhesion ? dateFr(m.date_adhesion) : '']; }))}
+    ${tableDocument([['Membre'], ['Fonction'], ['Pupitre'], ['Anniversaire'], ['Profession'], ['WhatsApp'], ['E-mail'], ['Adhésion']],
+      liste.map((m) => { const f = fonctionMembre(m); return [esc(nomComplet(m)), f && f.etat !== 'invite' ? esc(nomRole(f.role)) : '', esc(m.pupitre || ''), `${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}`, esc(m.profession || ''), esc(m.whatsapp || ''), esc(m.email || ''), m.date_adhesion ? dateFr(m.date_adhesion) : '']; }))}
     <p class="muted">Document interne : données personnelles à ne pas diffuser en dehors du bureau.</p>`;
   afficherDocument('Liste des membres', html);
 }

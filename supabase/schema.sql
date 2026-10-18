@@ -139,6 +139,9 @@ create table members (
   consent_anniversaire boolean not null default false,
   date_adhesion date,
   actif boolean not null default true,
+  nationalite text check (length(nationalite) <= 60),   -- ajouté le 18 octobre 2026 (nouvelle structure d'import)
+  pupitre text check (length(pupitre) <= 40),           -- Soprane, Alto, Ténor, Basse, Musicien…
+  statut text check (length(statut) <= 40),             -- Choriste, Musicien, Sympathisant…
   created_at timestamptz not null default now()
 );
 alter table profiles add constraint fk_profiles_member foreign key (member_id) references members(id);

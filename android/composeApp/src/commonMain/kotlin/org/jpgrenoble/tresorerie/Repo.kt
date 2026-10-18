@@ -434,6 +434,7 @@ object Repo {
         client.from("members").update({
             set("prenom", m.prenom); set("nom", m.nom); set("naissance_jour", m.jour); set("naissance_mois", m.mois)
             set("profession", m.profession); set("whatsapp", m.whatsapp); set("email", m.email)
+            set("nationalite", m.nationalite); set("pupitre", m.pupitre); set("statut", m.statut)
             set("consent_anniversaire", m.consentement); set("actif", actif)
             if (chemin != null) set("photo_path", chemin)
         }) { filter { eq("id", id) } }
@@ -442,6 +443,12 @@ object Repo {
     suspend fun importerMembres(liste: List<NouveauMembre>) {
         if (demo) { liste.forEach { Demo.ajouterMembre(it, profilDemo.value) }; return }
         client.from("members").insert(liste)
+    }
+
+    /** Import : complète une fiche existante (seulement ses cases vides, voir complementFiche). */
+    suspend fun completerMembre(id: String, champs: Map<String, String>) {
+        if (demo) { Demo.completerMembre(id, champs, profilDemo.value); return }
+        client.from("members").update(buildJsonObject { champs.forEach { (k, v) -> put(k, v) } }) { filter { eq("id", id) } }
     }
 
     // ---------- Adhérent ----------

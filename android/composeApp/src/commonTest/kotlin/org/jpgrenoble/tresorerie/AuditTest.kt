@@ -344,4 +344,51 @@ class AuditTest {
         assertTrue(e.getValue("m1").dernier != null && e.getValue("m7").dernier == null && e.getValue("m2").dernier != null)
         assertTrue(Demo.etatRappels("autre-collecte", tresorier).all { it.dernier == null })
     }
+
+    // Import des membres : même fichier que import.mjs (site) → mêmes états et mêmes motifs
+    @Test
+    fun importMembresDoublons() {
+        val csv = """prénom;nom;jour;mois;profession;whatsapp;email;accord;nationalité;pupitre;statut
+Marie;Exemple;14;3;Infirmière;06 11 22 33 44;marie@exemple.fr;oui;Française;soprano;Choriste
+Kouassi;Daniel;12;10;;;daniel@ex.fr;oui;Ivoirienne;tenor;Choriste
+Jean;Nouveau;5;6;;06 12 34 56 71;;non;;Basse;
+Marie;EXEMPLE;14;3;;;;oui;;;
+Lucie;Sans-Mois;4;;;;;oui;;;
+Pierre;Ancien;2;2;;;;oui;Camerounaise;ALTO;inactif"""
+        val existants = listOf(Membre("m1", "Daniel", "Kouassi", 12, 10, "Électricien", "06 12 34 56 71", pupitre = "Alto", statut = "Choriste"))
+        val r = analyserCsvMembres(csv, existants)
+        assertEquals(listOf("nouveau", "doublon", "verifier", "doublon", "erreur", "nouveau"), r.map { it.etat })
+        assertEquals(listOf(null, "déjà membre : Daniel Kouassi", "même WhatsApp que : Daniel Kouassi", "doublon de la ligne 2", null, null), r.map { it.motif })
+        assertEquals(listOf("mois invalide"), r[4].erreurs)
+        assertEquals("Soprane", r[0].membre?.pupitre); assertEquals("Choriste", r[0].membre?.statut); assertEquals("Française", r[0].membre?.nationalite)
+        assertEquals("Alto", r[5].membre?.pupitre); assertEquals(false, r[5].membre?.actif); assertEquals(null, r[5].membre?.statut)
+        // Compléter la fiche existante : seulement les cases vides (le pupitre Alto n'est pas remplacé par Ténor)
+        assertEquals(mapOf("email" to "daniel@ex.fr", "nationalite" to "Ivoirienne"), complementFiche(r[1]))
+    }
+
+    // Scanner : même image de synthèse que scan-algo.mjs (site) → mêmes coins, même taille, mêmes proportions de noir et de blanc
+    @Test
+    fun scannerCommeLeSite() {
+        val w = 400; val h = 300; val px = IntArray(w * h)
+        val q = listOf(80.0 to 40.0, 330.0 to 60.0, 310.0 to 270.0, 60.0 to 250.0)
+        fun dedans(x: Double, y: Double): Boolean { var c = false; var j = 3; for (i in 0 until 4) { val (xi, yi) = q[i]; val (xj, yj) = q[j]; if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; j = i }; return c }
+        for (y in 0 until h) for (x in 0 until w) {
+            var v = 70
+            if (dedans(x + 0.5, y + 0.5)) { v = 225 - kotlin.math.round(x / 8.0).toInt(); if (y % 20 < 3 && x in 111..279 && y in 71..229) v = 40 }
+            px[y * w + x] = (255 shl 24) or (v shl 16) or (v shl 8) or minOf(255, v + 5)
+        }
+        val img = Pixels(w, h, px)
+        val d = detecterDocument(img)
+        assertTrue(d.trouve)
+        assertEquals(listOf(82 to 41, 326 to 60, 309 to 268, 60 to 248), d.coins.map { kotlin.math.round(it.x).toInt() to kotlin.math.round(it.y).toInt() })
+        val r = redresser(img, d.coins)
+        assertEquals(249 to 209, r.w to r.h)
+        fun part(p: Pixels, f: (Int) -> Boolean) = 1000 * p.argb.count { f((it shr 16) and 255) } / p.argb.size
+        // Site : magique noirs 6,7 % blancs 90,3 % ; nb noirs 8,1 % blancs 91,9 % (écart toléré : 0,3 point)
+        val m = ameliorer(r, "magique"); val nb = ameliorer(r, "nb")
+        assertTrue(part(m) { it < 100 } in 64..70 && part(m) { it > 240 } in 900..906, "magique ${part(m) { it < 100 }} ${part(m) { it > 240 }}")
+        assertTrue(part(nb) { it < 100 } in 78..84 && part(nb) { it > 240 } in 916..922, "nb ${part(nb) { it < 100 }} ${part(nb) { it > 240 }}")
+        assertEquals(209 to 249, tourner(r).let { it.w to it.h })
+        assertTrue(!detecterDocument(Pixels(50, 40, IntArray(2000) { (255 shl 24) or 0x808080 })).trouve)
+    }
 }

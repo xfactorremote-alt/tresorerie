@@ -211,7 +211,9 @@ object Demo {
         // Date d'arrivée : Naomie vient d'arriver (apparaît dans « Nouveautés »)
         for (i in membres.indices) membres[i] = membres[i].copy(consentement = membres[i].id !in sansAccord,
             adhesion = if (membres[i].id == "m9") "${aujourdhui().year}-03-15" else "${aujourdhui().year - 1}-09-01",
-            creeLe = aujourdhui().minus(DatePeriod(days = if (membres[i].id == "m8") 2 else 300)).toString() + "T10:00:00Z")
+            creeLe = aujourdhui().minus(DatePeriod(days = if (membres[i].id == "m8") 2 else 300)).toString() + "T10:00:00Z",
+            // Pupitre et statut (comme mock.js) : sopranes, altos, ténors, basses à tour de rôle ; Paul (trésorier) musicien
+            pupitre = if (i == 12) "Musicien" else listOf("Soprane", "Alto", "Ténor", "Basse")[i % 4], statut = if (i == 12) "Musicien" else "Choriste")
     }
 
     private class Ligne(var e: Ecriture)
@@ -770,7 +772,8 @@ object Demo {
     // ---------- Membres ----------
     fun ajouterMembre(n: NouveauMembre, profil: Profil?): String {
         exiger(profil, "gerer_membres")
-        val m = Membre("m${compteur++}", n.prenom, n.nom, n.jour, n.mois, n.profession, n.whatsapp, consentement = n.consentement, email = n.email, creeLe = maintenant(), adhesion = n.adhesion)
+        val m = Membre("m${compteur++}", n.prenom, n.nom, n.jour, n.mois, n.profession, n.whatsapp, actif = n.actif, consentement = n.consentement, email = n.email, creeLe = maintenant(), adhesion = n.adhesion,
+            nationalite = n.nationalite, pupitre = n.pupitre, statut = n.statut)
         membres += m
         val auj = aujourdhui()
         for (mo in auj.monthNumber..12) cotisationsDues[m.id to "${auj.year}-${p2(mo)}-01"] = reglages["cotisation_montant"] ?: 20.0
@@ -782,7 +785,15 @@ object Demo {
         val i = membres.indexOfFirst { it.id == id }
         val m = membres[i]
         membres[i] = m.copy(prenom = n.prenom, nom = n.nom, jour = n.jour, mois = n.mois, profession = n.profession, whatsapp = n.whatsapp,
-            email = n.email, consentement = n.consentement, actif = actif, photo = photo ?: m.photo)
+            email = n.email, consentement = n.consentement, actif = actif, photo = photo ?: m.photo, nationalite = n.nationalite, pupitre = n.pupitre, statut = n.statut)
+    }
+
+    fun completerMembre(id: String, champs: Map<String, String>, profil: Profil?) {
+        exiger(profil, "gerer_membres")
+        val i = membres.indexOfFirst { it.id == id }; var m = membres[i]
+        champs.forEach { (k, v) -> m = when (k) { "profession" -> m.copy(profession = v); "whatsapp" -> m.copy(whatsapp = v); "email" -> m.copy(email = v)
+            "nationalite" -> m.copy(nationalite = v); "pupitre" -> m.copy(pupitre = v); "statut" -> m.copy(statut = v); else -> m } }
+        membres[i] = m
     }
 
     // ---------- Rapprochement ----------

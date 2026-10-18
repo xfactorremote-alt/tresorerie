@@ -854,12 +854,13 @@ internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pi
     val supprimerLocal = rememberSuppression(message) { onFini(true) }
     val supprimer = supprimerOp ?: supprimerLocal
     fun auteur(id: String?) = when (id) { null -> ""; d.profil.id -> "vous"; else -> profils.firstOrNull { it.id == id }?.nom ?: "une personne du bureau" }
+    fun joindre(f: Fichier) = scope.launch {
+        try { Repo.joindrePiece(e.id, f, d.profil.id); message("Pièce jointe (${f.ko}$NBSP" + "Ko)"); onFini(true) }
+        catch (x: Exception) { message(traduireErreur(x)) }
+    }
     val choix = rememberChoixFichier { f, err ->
         if (err != null) message(err)
-        if (f != null) scope.launch {
-            try { Repo.joindrePiece(e.id, f, d.profil.id); message("Pièce jointe (${f.ko}$NBSP" + "Ko)"); onFini(true) }
-            catch (x: Exception) { message(traduireErreur(x)) }
-        }
+        if (f != null) joindre(f)
     }
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -911,6 +912,8 @@ internal fun DetailOperation(d: Donnees, e: Ecriture, toutes: List<Ecriture>, pi
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (siennes.none { it.transactionId == e.id } && correction == null && e.sens == "depense" && e.montant > 0 && d.peut("saisir_ecritures"))
                 FilledTonalButton(onClick = choix) { Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Joindre une pièce") }
+            if (siennes.none { it.transactionId == e.id } && correction == null && e.sens == "depense" && e.montant > 0 && d.peut("saisir_ecritures"))
+                BoutonScanner(message, libelle = "Scanner") { joindre(it) }
             if (demande == null && e.virement == null && peutCorriger && e.sens == "depense" && e.montant > 0)
                 FilledTonalButton(onClick = {
                     scope.launch { try { Repo.demanderValidation(e.id); message("Dépense envoyée au président pour validation"); onFini(true) } catch (x: Exception) { message(traduireErreur(x)) } }
@@ -1006,6 +1009,7 @@ fun FormulaireVirement(d: Donnees, message: (String) -> Unit, onFini: (Boolean) 
         OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.AttachFile, null); Spacer(Modifier.width(8.dp)); Text(bordereau?.let { "Bordereau joint (${it.ko}$NBSP" + "Ko)" } ?: "Bordereau ou ticket")
         }
+        BoutonScanner(message, Modifier.fillMaxWidth()) { bordereau = it }
         Surface(color = Couleurs.Surface2, shape = Formes.Moyen) {
             Text(if (source == dest) "Choisissez deux comptes différents." else "$nature$NBSP: −${euros(m ?: 0.0)} sur « ${s.nom} », +${euros(m ?: 0.0)} sur « ${dd.nom} ».",
                 Modifier.padding(12.dp), fontSize = 14.sp, color = if (source == dest) Couleurs.Erreur else Couleurs.Texte)

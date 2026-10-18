@@ -76,6 +76,9 @@ data class Membre(
     @SerialName("photo_path") val photo: String? = null,
     @SerialName("created_at") val creeLe: String? = null,
     @SerialName("date_adhesion") val adhesion: String? = null,
+    val nationalite: String? = null,
+    val pupitre: String? = null,
+    val statut: String? = null,
 ) { val nomComplet get() = "$prenom $nom" }
 
 @Serializable
@@ -301,6 +304,10 @@ data class NouveauMembre(
     @SerialName("consent_anniversaire") val consentement: Boolean = false,
     @SerialName("date_adhesion") val adhesion: String? = null,
     val email: String? = null,
+    val nationalite: String? = null,
+    val pupitre: String? = null,
+    val statut: String? = null,
+    val actif: Boolean = true,
 )
 
 @Serializable

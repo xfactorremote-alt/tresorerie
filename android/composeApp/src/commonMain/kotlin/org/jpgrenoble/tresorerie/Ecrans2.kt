@@ -573,6 +573,7 @@ private fun FeuilleJustifier(x: Demande, message: (String) -> Unit, onFini: (Boo
             Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
             Text(fichier?.let { it.nom ?: "Fichier choisi (${it.ko}$NBSP" + "Ko)" } ?: "Choisir une photo ou un PDF", maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        BoutonScanner(message, Modifier.fillMaxWidth()) { fichier = it }
         Text("Photo ou PDF de 3$NBSP" + "Mo maximum.", fontSize = 13.sp, color = Couleurs.Texte2)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             TextButton(onClick = { onFini(false) }) { Text("Annuler") }
@@ -679,6 +680,7 @@ private fun FormulaireDemande(d: Donnees, onFini: (Boolean) -> Unit, message: (S
             Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
             Text(devis?.let { it.nom ?: "Devis joint (${it.ko}$NBSP" + "Ko)" } ?: "Choisir une photo ou un PDF", maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        BoutonScanner(message, Modifier.fillMaxWidth()) { devis = it }
         Text("La demande part au président, qui la valide en signant. Le trésorier paie ensuite, puis le justificatif est à déposer dans les $delai$NBSP" + "jours.",
             fontSize = 13.sp, color = Couleurs.Texte2)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.align(Alignment.End)) {
@@ -838,6 +840,7 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
                         Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
                         Text("Choisir une photo ou un PDF", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    BoutonScanner(message, Modifier.fillMaxWidth()) { releve = it }
                     // Nom d'origine du fichier choisi, en puce bleue (puce-ok) comme le site
                     releve?.let { Puce(it.nom ?: "Fichier joint (${it.ko}$NBSP" + "Ko)", Couleurs.BleuClair, Couleurs.SurBleuClair, Couleurs.BleuTrait) }
                 }

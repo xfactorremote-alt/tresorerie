@@ -165,9 +165,9 @@ suspend fun documentHtml(d: Donnees, type: String, an: Int, du: String? = null, 
         val titre = "Liste des membres"
         // Même document que pdfMembres du site : bureau d'abord (ordre des fonctions), puis par nom ; date d'adhésion
         titre to page(d, titre, "${ms.size} membre${if (ms.size > 1) "s" else ""} actif${if (ms.size > 1) "s" else ""} au ${dateFr(aujourdhui().toString())}",
-            table(listOf("Membre" to "", "Fonction" to "", "Anniversaire" to "", "Profession" to "", "WhatsApp" to "", "E-mail" to "", "Adhésion" to ""),
+            table(listOf("Membre" to "", "Fonction" to "", "Pupitre" to "", "Anniversaire" to "", "Profession" to "", "WhatsApp" to "", "E-mail" to "", "Adhésion" to ""),
                 ms.sortedWith(compareBy<Membre>({ rangRole(role(it) ?: "adherent") }, { sansAccentsCode(it.nomComplet) })).map {
-                    listOf(e(it.nomComplet), e(fonction(it)), "${it.jour} ${MOIS[it.mois - 1]}", e(it.profession), e(it.whatsapp), e(it.email), it.adhesion?.let { a -> dateFr(a.take(10)) } ?: "")
+                    listOf(e(it.nomComplet), e(fonction(it)), e(it.pupitre), "${it.jour} ${MOIS[it.mois - 1]}", e(it.profession), e(it.whatsapp), e(it.email), it.adhesion?.let { a -> dateFr(a.take(10)) } ?: "")
                 }) + "<p class=\"m\">Document interne : données personnelles à ne pas diffuser en dehors du bureau.</p>")
     }
 }

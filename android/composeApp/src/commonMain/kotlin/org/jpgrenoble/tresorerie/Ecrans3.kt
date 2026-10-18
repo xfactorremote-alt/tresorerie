@@ -81,7 +81,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 
-private val JOURS_MOIS = listOf(31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+internal val JOURS_MOIS = listOf(31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 private fun nombre(s: String) = s.replace(',', '.').replace(" ", "").replace(NBSP.toString(), "").toDoubleOrNull()
 
 // =====================================================================
@@ -668,7 +668,7 @@ fun FormulaireActivite(p: Projet?, onFini: (Boolean) -> Unit, message: (String) 
 // =====================================================================
 // Membres : liste, fiche (ajout et modification), photo, import CSV
 // =====================================================================
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = {}) {
     var membres by remember { mutableStateOf(d.membres.sortedBy { sansAccentsCode(it.nom) }) }
@@ -684,7 +684,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     var menuActions by remember { mutableStateOf(false) }
     var ajout by remember { mutableStateOf(false) }
     var version by remember { mutableStateOf(0) }
-    var aImporter by remember { mutableStateOf<Pair<List<NouveauMembre>, List<String>>?>(null) }
+    var aImporter by remember { mutableStateOf<List<LigneImport>?>(null) }
     var photos by remember { mutableStateOf<Map<String, androidx.compose.ui.graphics.ImageBitmap>>(emptyMap()) }
     var liens by remember { mutableStateOf<List<LienMembre>>(emptyList()) }
     var lienDe by remember { mutableStateOf<Membre?>(null) }
@@ -748,7 +748,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                     Text(m.nomComplet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (m.id == d.profil.memberId) Text(" (vous)", fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1)
                 }
-                Text("${m.jour} ${MOIS[m.mois - 1]}" + (m.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${m.jour} ${MOIS[m.mois - 1]}" + (m.pupitre?.let { " · $it" } ?: "") + (m.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 PuceFonction(m)
@@ -830,7 +830,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     detail?.let { m -> FicheDetailMembre(d, m, { AvatarMembre(m, 64) }, { PuceFonction(m) }, gereLiens, message,
         onLien = { detail = null; lienDe = m }, onFonction = { detail = null; fonction = m }, onModifier = { detail = null; fiche = m },
         onActif = { detail = null; scope.launch {
-            try { Repo.majMembre(m.id, NouveauMembre(m.prenom, m.nom, m.jour, m.mois, m.profession, m.whatsapp, m.consentement, null, m.email), !m.actif, null)
+            try { Repo.majMembre(m.id, NouveauMembre(m.prenom, m.nom, m.jour, m.mois, m.profession, m.whatsapp, m.consentement, null, m.email, m.nationalite, m.pupitre, m.statut), !m.actif, null)
                 message(if (m.actif) "${m.prenom} est inactif" else "${m.prenom} est réactivé"); version++; recharger() } catch (e: Exception) { message(traduireErreur(e)) } } },
         onSupprimer = if (d.peut("gerer_membres")) ({ detail = null; supprimerMembre("members", m.id, m.nomComplet) }) else null) { detail = null } }
     lienDe?.let { m ->
@@ -873,32 +873,75 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             Text(buildAnnotatedString {
                 append("Fichier CSV (depuis Excel : Enregistrer sous › CSV) avec une ligne d’en-têtes : ")
                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("prénom, nom, jour, mois") }
-                append(" (obligatoires), profession, whatsapp, email, accord (oui ou non). Les lignes incomplètes sont refusées.")
+                append(" (obligatoires), profession, whatsapp, email, accord (oui ou non), nationalité, pupitre, statut. Les doublons (même nom, même WhatsApp ou même e-mail, dans le fichier ou parmi les membres) sont signalés et écartés.")
             }, fontSize = 14.sp, color = Couleurs.Texte2)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalButton(onClick = choixCsv) { Text("Choisir le fichier") }
-                TextButton(onClick = { enregistrer("modele-membres.csv", "text/csv", csv(listOf("prénom", "nom", "jour", "mois", "profession", "whatsapp", "email", "accord"),
-                    listOf(listOf("Marie", "Exemple", 14, 3, "Infirmière", "06 12 34 56 78", "", "oui"))).encodeToByteArray()) }) { Text("Télécharger le modèle") }
+                TextButton(onClick = { enregistrer("modele-membres.csv", "text/csv", csv(COLONNES_IMPORT,
+                    listOf(listOf("Marie", "Exemple", 14, 3, "Infirmière", "06 12 34 56 78", "marie@exemple.fr", "oui", "Française", "Alto", "Choriste"))).encodeToByteArray()) }) { Text("Télécharger le modèle") }
             }
             erreurImport?.let { Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.SurErreurClair, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) { Text(it, Modifier.padding(12.dp), fontSize = 14.sp) } }
-            aImporter?.let { (ok, erreurs) ->
-                Text(buildAnnotatedString {
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("${ok.size}") }; append(" ligne${if (ok.size > 1) "s" else ""} prête${if (ok.size > 1) "s" else ""}, ")
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("${erreurs.size}") }; append(" refusée${if (erreurs.size > 1) "s" else ""}.")
-                })
-                if (erreurs.isNotEmpty()) Surface(color = Couleurs.ErreurClair, contentColor = Couleurs.SurErreurClair, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)) {
-                    Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) { erreurs.forEach { Text(it, fontSize = 13.sp) } }
+            aImporter?.let { res ->
+                val nouveaux = res.filter { it.etat == "nouveau" }; val dbl = res.filter { it.etat == "doublon" }
+                val averifier = res.filter { it.etat == "verifier" }; val ko = res.filter { it.etat == "erreur" }
+                val aCompleter = dbl.filter { complementFiche(it) != null }
+                var avecVerifier by remember(res) { mutableStateOf(false) }
+                var completer by remember(res) { mutableStateOf(false) }
+                val ok = if (avecVerifier) nouveaux + averifier else nouveaux
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    @Composable fun Chiffre(n: Int, l: String) = Text(buildAnnotatedString { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("$n") }; append(" $l") })
+                    Chiffre(nouveaux.size, if (nouveaux.size > 1) "nouveaux" else "nouveau")
+                    Chiffre(dbl.size, if (dbl.size > 1) "doublons écartés" else "doublon écarté")
+                    if (averifier.isNotEmpty()) Chiffre(averifier.size, "à vérifier")
+                    Chiffre(ko.size, if (ko.size > 1) "refusées" else "refusée")
+                }
+                Surface(shape = Formes.Moyen, border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Bord), modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        res.forEachIndexed { i, r ->
+                            if (i > 0) HorizontalDivider(color = Couleurs.BordDoux)
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Ligne ${r.ligne} · ${"${r.prenom} ${r.nom}".trim().ifBlank { "(sans nom)" }}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(when { r.etat == "erreur" -> r.erreurs.joinToString(", "); r.motif != null -> r.motif
+                                        else -> listOfNotNull(r.membre?.pupitre, r.membre?.statut, r.membre?.nationalite).joinToString(" · ").ifBlank { "${r.membre?.jour} ${r.membre?.mois?.let { MOIS[it - 1] }}" } },
+                                        fontSize = 12.sp, color = Couleurs.Texte2)
+                                }
+                                when (r.etat) {
+                                    "nouveau" -> Puce("Nouveau", Couleurs.BleuClair, Couleurs.SurBleuClair)
+                                    "doublon" -> Puce("Doublon écarté", Couleurs.Surface2, Couleurs.Texte2)
+                                    "verifier" -> Puce("À vérifier", Couleurs.JauneClair, Couleurs.SurJaune)
+                                    else -> Puce("Refusée", Couleurs.ErreurClair, Couleurs.SurErreurClair)
+                                }
+                            }
+                        }
+                    }
+                }
+                if (averifier.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { avecVerifier = !avecVerifier }) {
+                    Checkbox(avecVerifier, { avecVerifier = it })
+                    Text("Importer aussi ${if (averifier.size > 1) "les ${averifier.size} lignes" else "la ligne"} « À vérifier » (autre nom, même WhatsApp ou e-mail : par exemple une même famille)", fontSize = 14.sp)
+                }
+                if (aCompleter.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { completer = !completer }) {
+                    Checkbox(completer, { completer = it })
+                    Text("Compléter ${if (aCompleter.size > 1) "les ${aCompleter.size} fiches existantes" else "la fiche existante"} avec les informations du fichier (seulement les cases vides, rien n’est remplacé)", fontSize = 14.sp)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     TextButton(onClick = { importer = false; aImporter = null }) { Text("Annuler") }
-                    Button(enabled = ok.isNotEmpty() && !enCours, onClick = {
+                    Button(enabled = (ok.isNotEmpty() || (completer && aCompleter.isNotEmpty())) && !enCours, onClick = {
                         enCours = true
                         scope.launch {
-                            try { Repo.importerMembres(ok); importer = false; aImporter = null; message("${ok.size} membres importés"); version++; recharger() }
-                            catch (e: Exception) { message(traduireErreur(e)) }
+                            try {
+                                if (ok.isNotEmpty()) Repo.importerMembres(ok.mapNotNull { it.membre })
+                                var n = 0
+                                if (completer) aCompleter.forEach { r -> Repo.completerMembre(r.existant!!.id, complementFiche(r)!!); n++ }
+                                importer = false; aImporter = null
+                                message(listOfNotNull(if (ok.isNotEmpty()) "${ok.size} membre${if (ok.size > 1) "s" else ""} importé${if (ok.size > 1) "s" else ""}" else null,
+                                    if (n > 0) "$n fiche${if (n > 1) "s" else ""} complétée${if (n > 1) "s" else ""}" else null,
+                                    if (dbl.isNotEmpty()) "${dbl.size} doublon${if (dbl.size > 1) "s" else ""} écarté${if (dbl.size > 1) "s" else ""}" else null).joinToString(" · ").ifBlank { "Rien à importer" })
+                                version++; recharger()
+                            } catch (e: Exception) { message(traduireErreur(e)) }
                             enCours = false
                         }
-                    }) { Text("Importer ${ok.size} membre${if (ok.size > 1) "s" else ""}") }
+                    }) { Text(if (ok.isNotEmpty() || !completer) "Importer ${ok.size} membre${if (ok.size > 1) "s" else ""}" else "Compléter les fiches") }
                 }
             }
         }
@@ -935,6 +978,9 @@ private fun FicheDetailMembre(d: Donnees, m: Membre, avatar: @Composable () -> U
             }
             Info("Anniversaire", "${m.jour} ${MOIS[m.mois - 1]}")
             m.profession?.let { Info("Profession", it) }
+            m.pupitre?.let { Info("Pupitre", it) }
+            m.statut?.let { Info("Statut", it) }
+            m.nationalite?.let { Info("Nationalité", it) }
             m.whatsapp?.let { w -> Info("WhatsApp", w, numeroWa(w)?.let { "https://wa.me/$it" }) }
             m.email?.let { Info("E-mail", it, "mailto:$it") }
             @Composable fun Action(icone: androidx.compose.ui.graphics.vector.ImageVector, titre: String, sous: String, onClick: () -> Unit) {
@@ -1054,6 +1100,9 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
     var profession by remember { mutableStateOf(m?.profession ?: "") }
     var whatsapp by remember { mutableStateOf(m?.whatsapp ?: "") }
     var email by remember { mutableStateOf(m?.email ?: "") }
+    var pupitre by remember { mutableStateOf(m?.pupitre ?: "") }
+    var statut by remember { mutableStateOf(m?.statut ?: "") }
+    var nationalite by remember { mutableStateOf(m?.nationalite ?: "") }
     var accord by remember { mutableStateOf(m?.consentement ?: false) }
     var actif by remember { mutableStateOf(m?.actif ?: true) }
     var photo by remember { mutableStateOf<Fichier?>(null) }
@@ -1080,6 +1129,10 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
             Box(Modifier.weight(1f)) { ChoixListe("Mois", mois?.let { MOIS[it - 1] } ?: "–", MOIS) { mois = it + 1; if ((jour ?: 0) > JOURS_MOIS[it]) jour = null } }
         }
         OutlinedTextField(profession, { profession = it.take(80) }, label = { Text("Profession (facultatif)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        // Pupitre et statut : saisie libre avec propositions (comme les listes datalist du site)
+        ChampPropositions(pupitre, { pupitre = it.take(40) }, "Pupitre (facultatif)", PUPITRES)
+        ChampPropositions(statut, { statut = it.take(40) }, "Statut (facultatif)", STATUTS_MEMBRE, "Choriste, musicien…")
+        OutlinedTextField(nationalite, { nationalite = it.take(60) }, label = { Text("Nationalité (facultatif)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(whatsapp, { whatsapp = it }, label = { Text("WhatsApp") }, placeholder = { Text("06 12 34 56 78") }, singleLine = true,
             isError = whatsapp.isNotBlank() && numeroWa(whatsapp) == null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
@@ -1104,7 +1157,8 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
                 scope.launch {
                     try {
                         val n = NouveauMembre(prenom.trim(), nom.trim(), jour!!, mois!!, profession.trim().ifBlank { null }, whatsapp.trim().ifBlank { null },
-                            accord, if (m == null) aujourdhui().toString() else null, email.trim().ifBlank { null })
+                            accord, if (m == null) aujourdhui().toString() else null, email.trim().ifBlank { null },
+                            nationalite.trim().ifBlank { null }, pupitreNormal(pupitre), statut.trim().ifBlank { null })
                         if (m == null) {
                             val id = Repo.ajouterMembre(n)
                             if (photo != null) Repo.majMembre(id, n, true, photo)
@@ -1118,12 +1172,12 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
     }
 }
 
-private fun sansAccents(s: String): String {
+internal fun sansAccents(s: String): String {
     val de = "àâäáãåçéèêëíìîïñóòôöõúùûüýÿœæ"; val vers = "aaaaaaceeeeiiiinooooouuuuyyoa"
     return s.lowercase().trim().map { c -> val i = de.indexOf(c); if (i >= 0) vers[i] else c }.joinToString("")
 }
 
-private fun lignesCsv(texte: String): List<List<String>> {
+internal fun lignesCsv(texte: String): List<List<String>> {
     val premiere = texte.lineSequence().firstOrNull() ?: ""
     val sep = if (premiere.count { it == ';' } >= premiere.count { it == ',' }) ';' else ','
     val lignes = mutableListOf<List<String>>(); var ligne = mutableListOf<String>(); val cell = StringBuilder(); var guill = false
@@ -1146,42 +1200,6 @@ private fun lignesCsv(texte: String): List<List<String>> {
     }
     if (cell.isNotEmpty() || ligne.isNotEmpty()) { ligne.add(cell.toString()); lignes.add(ligne) }
     return lignes.filter { l -> l.any { it.isNotBlank() } }
-}
-
-// Analyse un CSV de membres : renvoie les lignes valides et les motifs de refus
-fun analyserCsvMembres(texte: String, existants: List<Membre>): Pair<List<NouveauMembre>, List<String>> {
-    val lignes = lignesCsv(texte)
-    if (lignes.size < 2) throw IllegalArgumentException("Fichier vide ou sans ligne d’en-têtes")
-    val entetes = lignes[0].map { sansAccents(it) }
-    fun col(vararg noms: String) = entetes.indexOfFirst { h -> noms.any { h == it || h.startsWith(it) } }
-    val iPrenom = col("prenom"); val iNom = col("nom"); val iJour = col("jour"); val iMois = col("mois"); val iDate = col("anniversaire", "date")
-    val iProf = col("profession", "metier"); val iWa = col("whatsapp", "telephone", "tel"); val iMail = col("email", "e-mail", "mail"); val iAccord = col("accord", "consent")
-    if (iPrenom < 0 || iNom < 0 || ((iJour < 0 || iMois < 0) && iDate < 0))
-        throw IllegalArgumentException("Colonnes attendues : prénom, nom, jour, mois (ou anniversaire au format jj/mm)")
-    fun moisDe(s: String): Int? = s.trim().toIntOrNull() ?: MOIS.indexOfFirst { sansAccents(it) == sansAccents(s) }.takeIf { it >= 0 }?.plus(1)
-    val ok = mutableListOf<NouveauMembre>(); val ko = mutableListOf<String>()
-    lignes.drop(1).forEachIndexed { k, l ->
-        fun g(i: Int) = if (i >= 0) l.getOrNull(i)?.trim() ?: "" else ""
-        var jour = g(iJour).toIntOrNull(); var mois = moisDe(g(iMois))
-        val dateTexte = g(iDate).ifBlank { if (g(iJour).contains('/')) g(iJour) else "" }
-        if ((jour == null || mois == null) && dateTexte.isNotBlank()) {
-            val p = dateTexte.split('/', '-', '.', ' ').filter { it.isNotBlank() }
-            jour = p.getOrNull(0)?.toIntOrNull(); mois = p.getOrNull(1)?.let { moisDe(it) }
-        }
-        val erreurs = mutableListOf<String>()
-        val prenom = g(iPrenom); val nom = g(iNom)
-        if (prenom.isBlank()) erreurs += "prénom manquant"
-        if (nom.isBlank()) erreurs += "nom manquant"
-        if (mois == null || mois !in 1..12) erreurs += "mois invalide"
-        else if (jour == null || jour !in 1..JOURS_MOIS[mois - 1]) erreurs += "jour invalide"
-        val wa = g(iWa)
-        if (wa.isNotBlank() && numeroWa(wa) == null) erreurs += "WhatsApp invalide"
-        if (existants.any { sansAccents(it.nomComplet) == sansAccents("$prenom $nom") }) erreurs += "déjà enregistré"
-        if (erreurs.isEmpty()) ok += NouveauMembre(prenom, nom, jour!!, mois!!, g(iProf).ifBlank { null }, wa.ifBlank { null },
-            Regex("^(oui|o|yes|1|x|vrai)$", RegexOption.IGNORE_CASE).matches(g(iAccord)), aujourdhui().toString(), g(iMail).ifBlank { null })
-        else ko += "Ligne ${k + 2} ($prenom $nom)$NBSP: ${erreurs.joinToString(", ")}"
-    }
-    return ok to ko
 }
 
 // =====================================================================
@@ -1314,8 +1332,9 @@ internal suspend fun exportCsv(d: Donnees, type: String, an: Int, du: String = "
             val profils = try { Repo.profilsComplets() } catch (_: Exception) { emptyList() }
             val invitations = try { Repo.invitations() } catch (_: Exception) { emptyList() }
             fun fonction(m: Membre) = (profils.firstOrNull { it.memberId == m.id }?.role ?: invitations.firstOrNull { it.membreId == m.id }?.role)?.let { d.nomRole(it) } ?: ""
-            csv(listOf("Prénom", "Nom", "Jour", "Mois", "Profession", "WhatsApp", "E-mail", "Fonction", "Accord anniversaire", "Actif"),
-                Repo.membres().map { listOf(it.prenom, it.nom, it.jour, it.mois, it.profession, it.whatsapp, it.email, fonction(it), if (it.consentement) "Oui" else "Non", if (it.actif) "Oui" else "Non") })
+            // Mêmes premières colonnes que le modèle d'import (le fichier exporté se réimporte tel quel)
+            csv(listOf("Prénom", "Nom", "Jour", "Mois", "Profession", "WhatsApp", "E-mail", "Accord", "Nationalité", "Pupitre", "Statut", "Fonction", "Actif"),
+                Repo.membres().map { listOf(it.prenom, it.nom, it.jour, it.mois, it.profession, it.whatsapp, it.email, if (it.consentement) "Oui" else "Non", it.nationalite, it.pupitre, it.statut, fonction(it), if (it.actif) "Oui" else "Non") })
         }
         // Registre des demandes (mêmes colonnes que exporter('demandes') du site)
         "demandes" -> {

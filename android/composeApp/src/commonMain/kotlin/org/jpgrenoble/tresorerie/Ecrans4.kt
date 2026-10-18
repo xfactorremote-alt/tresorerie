@@ -297,6 +297,7 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
             Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
             Text(piece?.let { "Pièce jointe (${it.ko}$NBSP" + "Ko)" } ?: "Joindre une pièce")
         }
+        if (sens == "depense") BoutonScanner(message, Modifier.fillMaxWidth()) { piece = it }
         if (sens == "depense") Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { faireValider = !faireValider }) {
             Checkbox(faireValider, { faireValider = it }); Text("Faire valider par le président", fontSize = 15.sp)
         }
