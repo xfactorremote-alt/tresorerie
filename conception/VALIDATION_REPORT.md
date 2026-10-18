@@ -77,3 +77,12 @@
 | Site : `import.mjs`, `import2.mjs` (sans nom, doublons par prénom + anniversaire, « Corriger ») | ✅ 0 erreur JS |
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |
+
+## 0.37.0 — Membres : liste sobre, filtres, regroupement, répartition ; composant pièce jointe (18 octobre 2026)
+
+| Vérification | Résultat |
+|---|---|
+| `a7.mjs` avec le nouveau contrôle « texte hors de sa carte » : ancienne version / nouvelle | ❌ signalé sur toutes les tailles d'iPhone / ✅ 312 vues, 0 problème |
+| `membres2.mjs` (Pixel 7, iPhone SE, ordinateur) : liste, fiche, filtres, regroupement par nationalité, pastilles, répartition | ✅ largeur de page = écran, 0 erreur JS |
+| `scanner.mjs`, `import2.mjs`, `rappel.mjs`, `rappel-groupe.mjs`, `a5.mjs` | ✅ |
+| Android : compilation, 31 tests dont `groupesEtRepartitionCommeLeSite` | ✅ ; rendu à vérifier sur téléphone |

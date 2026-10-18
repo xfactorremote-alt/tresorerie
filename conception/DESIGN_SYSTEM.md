@@ -63,6 +63,9 @@ Les tailles littérales d'Android (331 occurrences) suivent déjà cette échell
 | Champ de date | `<input type="date">` | `ChampDate(valeur, onValeur, label, isError)` | Saisie JJ/MM/AAAA possible **et** calendrier ; valeur lue par `dateDepuisFr`. |
 | Confirmation de suppression | `supprimerAvecConfirmation(table, id, libellé, après, note)` | `rememberSuppression(message, note) { après }` | Motif facultatif, corbeille, « Annuler » aussitôt ; tourne dans une portée d'application (`Annulation.portee`) pour survivre à la fermeture de la fiche. |
 | Feuille | `ouvrirFeuille` / `fermerFeuille` | `ModalBottomSheet` | Monte du bas au téléphone, fenêtre centrée sur grand écran ; titre, contenu, actions en bas (principale à droite). |
+| Pièce jointe | `.choix-piece` (le vrai `<input type=file>` posé, invisible, sur le premier bouton) | `ChoixPiece(fichier, message, onChoisir) { scanné }` | Titre du champ, puis « Choisir un fichier » et « Scanner » côte à côte (même forme, même largeur), puis le fichier retenu ; jamais le champ natif du navigateur ni un bouton d'un autre style dessous. |
+| Filtres et regroupement | bouton `Filtres (n)` + `.pastilles` + feuille | `OutlinedButton` « Filtres (n) » + `InputChip` + `ModalBottomSheet` | Comme Opérations : les choix actifs en pastilles retirables, « Tout effacer » ; dans la feuille, contrôle segmenté pour un choix unique, puces de filtre avec leur nombre pour un choix multiple, bouton principal « Voir N … ». |
+| Répartition | `.liste-repartition` + `.barre` | lignes + barre 4 dp | Libellé, barre (bleu), « effectif · part » à droite, puce jaune « Peu représenté » ; jamais de camembert sur téléphone. |
 | Ligne de liste | `li.ligne-…` | `Row … clickable` dans une carte | Sobre : titre, une ligne d'infos, montant/état, chevron ; **jamais de boutons empilés sur la ligne** ; la fiche porte les actions. |
 
 ## 5. Modèles d'écran

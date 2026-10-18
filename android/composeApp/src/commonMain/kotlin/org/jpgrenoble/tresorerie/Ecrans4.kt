@@ -293,11 +293,10 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
             Text(alerteMode, Modifier.padding(12.dp), fontSize = 14.sp)
         }
         ChoixListe("Activité", projet?.nom ?: "Aucune", listOf("Aucune") + projets.map { it.nom }) { i -> projet = if (i == 0) null else projets[i - 1] }
-        if (sens == "depense") OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-            Text(piece?.let { "Pièce jointe (${it.ko}$NBSP" + "Ko)" } ?: "Joindre une pièce")
+        if (sens == "depense") {
+            Text("Justificatif", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            ChoixPiece(piece, message, choix) { piece = it }
         }
-        if (sens == "depense") BoutonScanner(message, Modifier.fillMaxWidth()) { piece = it }
         if (sens == "depense") Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { faireValider = !faireValider }) {
             Checkbox(faireValider, { faireValider = it }); Text("Faire valider par le président", fontSize = 15.sp)
         }

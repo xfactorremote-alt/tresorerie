@@ -44,7 +44,11 @@ function seed() {
     // Pupitre et statut (comme Demo.kt) : sopranes, altos, ténors, basses à tour de rôle ; Paul (trésorier) musicien
     pupitre: i === 12 ? 'Musicien' : ['Soprane', 'Alto', 'Ténor', 'Basse'][i % 4], statut: i === 12 ? 'Musicien' : 'Choriste', nationalite: null,
   }));
-  members[9].date_adhesion = `${an}-03-15`;   // adhésion en cours d'année : cotisations à partir de mars
+  members[9].date_adhesion = `${an}-03-15`;
+  // Valeurs longues et origines variées (comme Demo.kt) : la démonstration doit révéler les débordements et servir la répartition
+  members[4].profession = 'Instrumentation scientifique - Développement logiciel'; members[4].email = 'ruth.diallo.instrumentation@exemple-association.fr';
+  ['Côte d’Ivoire', 'Cameroun', 'Burundi', 'Nigeria', 'Guinée', 'République démocratique du Congo', 'République démocratique du Congo', 'Côte d’Ivoire', 'République démocratique du Congo', 'Ghana', 'République démocratique du Congo', 'République démocratique du Congo', 'Cameroun']
+    .forEach((n, i) => { members[i].nationalite = n; });   // adhésion en cours d'année : cotisations à partir de mars
   // Cotisation mensuelle : une ligne par membre et par mois
   const cotisations = [];
   members.forEach((m) => {

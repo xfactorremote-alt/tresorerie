@@ -205,6 +205,8 @@ object Demo {
         Membre("m11", "Marthe", "Kalala", 9, 12, "Secrétaire médicale", "06 12 34 56 711"),
         Membre("m12", "Paul", "Ndongo", 25, 5, "Gestionnaire de paie"),
     )
+    private val NATIONALITES_DEMO = listOf("Côte d’Ivoire", "Cameroun", "Burundi", "Nigeria", "Guinée", "République démocratique du Congo", "République démocratique du Congo",
+        "Côte d’Ivoire", "République démocratique du Congo", "Ghana", "République démocratique du Congo", "République démocratique du Congo", "Cameroun")
     // Accord pour afficher l'anniversaire aux adhérents (tous sauf Esther et Élie, comme mock.js)
     init {
         val sansAccord = setOf("m2", "m7")
@@ -213,7 +215,11 @@ object Demo {
             adhesion = if (membres[i].id == "m9") "${aujourdhui().year}-03-15" else "${aujourdhui().year - 1}-09-01",
             creeLe = aujourdhui().minus(DatePeriod(days = if (membres[i].id == "m8") 2 else 300)).toString() + "T10:00:00Z",
             // Pupitre et statut (comme mock.js) : sopranes, altos, ténors, basses à tour de rôle ; Paul (trésorier) musicien
-            pupitre = if (i == 12) "Musicien" else listOf("Soprane", "Alto", "Ténor", "Basse")[i % 4], statut = if (i == 12) "Musicien" else "Choriste")
+            pupitre = if (i == 12) "Musicien" else listOf("Soprane", "Alto", "Ténor", "Basse")[i % 4], statut = if (i == 12) "Musicien" else "Choriste",
+            // Origines variées (comme mock.js) : la démonstration sert la répartition
+            nationalite = NATIONALITES_DEMO[i])
+        // Valeurs longues (comme mock.js) : la démonstration doit révéler les débordements
+        membres[4] = membres[4].copy(profession = "Instrumentation scientifique - Développement logiciel", email = "ruth.diallo.instrumentation@exemple-association.fr")
     }
 
     private class Ligne(var e: Ecriture)

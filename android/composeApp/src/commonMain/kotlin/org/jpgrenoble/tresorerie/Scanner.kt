@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -360,3 +361,18 @@ private fun Cadrage(photo: Pixels, apercu: androidx.compose.ui.graphics.ImageBit
 expect fun pixelsDepuisOctets(octets: ByteArray, max: Int): Pixels?
 expect fun jpegDepuisPixels(p: Pixels, qualite: Int): ByteArray
 expect fun imageDepuisPixels(p: Pixels): androidx.compose.ui.graphics.ImageBitmap
+
+/** Pièce jointe (comme .choix-piece du site) : « Choisir un fichier » et « Scanner » côte à côte, de même forme, puis le fichier retenu. */
+@Composable
+fun ChoixPiece(fichier: Fichier?, message: (String) -> Unit, onChoisir: () -> Unit, quandScanne: (Fichier) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = onChoisir, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Outlined.AttachFile, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Choisir un fichier", maxLines = 1)
+            }
+            BoutonScanner(message, Modifier.weight(1f), libelle = "Scanner", quandScanne = quandScanne)
+        }
+        Text(fichier?.let { "✓ ${it.nom ?: "Fichier choisi"} (${it.ko}$NBSP" + "Ko)" } ?: "Aucun fichier · photo ou PDF, 3$NBSP" + "Mo au plus",
+            fontSize = 13.sp, color = if (fichier != null) Couleurs.Texte else Couleurs.Texte2)
+    }
+}

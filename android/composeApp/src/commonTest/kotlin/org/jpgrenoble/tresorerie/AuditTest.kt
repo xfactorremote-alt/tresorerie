@@ -414,4 +414,22 @@ Joël;;7;8;;;;oui;;;"""
         assertEquals("nouveau", c[4].etat); assertEquals(9, c[4].membre?.mois)
         assertEquals("Joël", Membre("x", "Joël", "", 5, 6).nomComplet)
     }
+
+    // Membres : regrouper, répartition, filtrer, trier — mêmes résultats que le site (même jeu de membres)
+    @Test
+    fun groupesEtRepartitionCommeLeSite() {
+        val l = listOf(listOf("Ana", "A", "Cameroun", "Alto", "Choriste", true), listOf("Bob", "B", "cameroun ", "Basse", "Choriste", true),
+            listOf("Cid", "C", "Côte d’Ivoire", "Soprane", "", true), listOf("Dan", "", "Cameroun", "Basse", "Musicien", false),
+            listOf("Eve", "E", "", "Ténor", "Choriste", true), listOf("Fay", "F", "Côte d’Ivoire", "Alto", null, true), listOf("Gil", "G", "Ghana", "Musicien", "Musicien", true))
+            .mapIndexed { i, x -> Membre("m$i", x[0] as String, x[1] as String, 1, 1, nationalite = x[2] as String?, pupitre = x[3] as String?, statut = x[4] as String?, actif = x[5] as Boolean) }
+        fun g(c: String) = groupesMembres(l, c).joinToString(" | ") { it.libelle + ":" + it.membres.joinToString("+") { m -> m.prenom } }
+        assertEquals("Cameroun:Ana+Bob+Dan | Côte d’Ivoire:Cid+Fay | Ghana:Gil | Non renseigné:Eve", g("nationalite"))
+        assertEquals("Soprane:Cid | Alto:Ana+Fay | Ténor:Eve | Basse:Bob+Dan | Musicien:Gil", g("pupitre"))
+        assertEquals("Choriste:Ana+Bob+Eve | Musicien:Dan+Gil | Non renseigné:Cid+Fay", g("statut"))
+        assertEquals("Cameroun 2 33.3 | Côte d’Ivoire 2 33.3 | Ghana 1 16.7 | Non renseigné 1 16.7",
+            repartition(l.filter { it.actif }, "nationalite").joinToString(" | ") { "${it.libelle} ${it.n} ${it.part}" })
+        assertEquals("Ana,Bob,Fay", trierMembres(filtrerMembres(l, VueMembres(etat = "actifs", valeurs = mapOf("pupitre" to setOf("alto", "basse")))), "prenom").joinToString(",") { it.prenom })
+        assertEquals("Ana,Bob,Cid,Dan,Eve,Fay,Gil", trierMembres(l, "nom").joinToString(",") { it.prenom })
+        assertEquals("33,3\u00A0%", pourcent(33.3)); assertEquals("50\u00A0%", pourcent(50.0))
+    }
 }

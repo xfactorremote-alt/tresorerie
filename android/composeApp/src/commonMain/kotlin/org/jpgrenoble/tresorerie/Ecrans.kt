@@ -1006,10 +1006,8 @@ fun FormulaireVirement(d: Donnees, message: (String) -> Unit, onFini: (Boolean) 
             ChampDate(date, { date = it }, label = { Text("Date") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dt == null || dt > aujourdhui(), modifier = Modifier.weight(1f))
         }
         OutlinedTextField(libelle, { libelle = it.take(120) }, label = { Text("Libellé") }, placeholder = { Text(nature) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Outlined.AttachFile, null); Spacer(Modifier.width(8.dp)); Text(bordereau?.let { "Bordereau joint (${it.ko}$NBSP" + "Ko)" } ?: "Bordereau ou ticket")
-        }
-        BoutonScanner(message, Modifier.fillMaxWidth()) { bordereau = it }
+        Text("Bordereau ou ticket", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        ChoixPiece(bordereau, message, choix) { bordereau = it }
         Surface(color = Couleurs.Surface2, shape = Formes.Moyen) {
             Text(if (source == dest) "Choisissez deux comptes différents." else "$nature$NBSP: −${euros(m ?: 0.0)} sur « ${s.nom} », +${euros(m ?: 0.0)} sur « ${dd.nom} ».",
                 Modifier.padding(12.dp), fontSize = 14.sp, color = if (source == dest) Couleurs.Erreur else Couleurs.Texte)

@@ -35,23 +35,30 @@ const montantSigne = (t) => { const v = signe(t); return `<span class="num ${v >
 const nomComplet = (m) => m ? `${m.prenom || ''} ${m.nom || ''}`.trim() : '';   // le nom de famille peut manquer
 const sansAccents = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-// Pièces jointes : chaque champ marqué data-scan reçoit « Scanner avec l'appareil photo » (comme BoutonScanner d'Android) ;
-// le document scanné (redressé, amélioré, JPEG) est placé dans le champ comme un fichier choisi.
+// Pièces jointes (comme ChoixPiece d'Android) : chaque champ marqué data-scan devient deux boutons de même forme sur une ligne,
+// « Choisir un fichier » et « Scanner », puis le nom du fichier retenu dessous. Le vrai champ reste dans le formulaire
+// (posé, invisible, sur le premier bouton) : « obligatoire » et l'envoi du formulaire ne changent pas.
 function brancherScanners(racine = document) {
   racine.querySelectorAll('input[type=file][data-scan]:not([data-scan-ok])').forEach((input) => {
     input.dataset.scanOk = '1';
-    const ligne = document.createElement('div'); ligne.className = 'scan-ligne';
-    ligne.innerHTML = `<button type="button" class="btn-tonal btn-petit b-scanner">${icone('camera', 16)} Scanner avec l’appareil photo</button><span class="muted scan-etat" aria-live="polite"></span>`;
-    (input.closest('label') || input).after(ligne);
-    ligne.querySelector('button').addEventListener('click', async () => {
+    const bloc = document.createElement('div'); bloc.className = 'choix-piece';
+    bloc.innerHTML = `<div class="choix-piece-boutons"><span class="btn btn-tonal choix-piece-fichier">${icone('trombone', 16)} Choisir un fichier</span>
+      <button type="button" class="btn-tonal b-scanner">${icone('camera', 16)} Scanner</button></div>
+      <span class="muted piece-nom" aria-live="polite">Aucun fichier · photo ou PDF, 3 Mo au plus</span>`;
+    input.after(bloc); bloc.querySelector('.choix-piece-fichier').append(input);
+    const nom = bloc.querySelector('.piece-nom');
+    // data-nom-actuel : fichier déjà retenu avant que la page soit redessinée (rapprochement)
+    const montrer = () => { const f = input.files[0], deja = input.dataset.nomActuel; nom.textContent = f ? `✓ ${f.name} (${Math.max(1, Math.round(f.size / 1024))} Ko)` : deja ? `✓ ${deja}` : 'Aucun fichier · photo ou PDF, 3 Mo au plus'; nom.classList.toggle('piece-choisie', !!(f || deja)); };
+    montrer();
+    input.addEventListener('change', montrer);
+    bloc.querySelector('.b-scanner').addEventListener('click', async (e) => {
+      e.preventDefault();
       try {
         const f = await scannerDocument(); if (!f) return;
         const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files;
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        ligne.querySelector('.scan-etat').textContent = `✓ Document scanné (${Math.max(1, Math.round(f.size / 1024))} Ko)`;
-      } catch (e) { erreur(e); }
+      } catch (err) { erreur(err); }
     });
-    input.addEventListener('change', (e) => { if (e.isTrusted) ligne.querySelector('.scan-etat').textContent = ''; });
   });
 }
 new MutationObserver(() => brancherScanners()).observe(document.documentElement, { childList: true, subtree: true });
@@ -1745,7 +1752,7 @@ async function detailEcriture(t, pieces, contrepassees, recharger, toutes = []) 
     ${apercu}
     <div class="actions">
       ${demande?.signature_path ? `<button class="btn-texte" data-voir="${esc(demande.signature_path)}" data-bucket="signatures">Signature</button>` : ''}
-      ${!piece && !correction && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">Joindre une pièce</button><button class="btn-tonal" data-scanner-joindre="${t.id}">${icone('camera', 16)} Scanner</button>` : ''}
+      ${!piece && !correction && t.sens === 'depense' && t.montant > 0 && peut('saisir_ecritures') ? `<button class="btn-tonal" data-joindre="${t.id}">${icone('trombone', 16)} Joindre une pièce</button><button class="btn-tonal" data-scanner-joindre="${t.id}">${icone('camera', 16)} Scanner</button>` : ''}
       ${!demande && !t.virement && peutCorriger && t.sens === 'depense' && t.montant > 0 ? '<button class="btn-tonal" id="b-faire-valider">Faire valider par le président</button>' : ''}
       ${t.sens === 'depense' && t.montant > 0 && /mat[ée]riel|instrument|[ée]quipement/i.test(nomCategorie(t.category_id)) && peut('gerer_materiel') ? '<button class="btn-texte" id="b-inventaire">Inscrire à l’inventaire</button>' : ''}
       ${peutCorriger && !t.virement ? `<button class="btn-texte" id="b-contre">Contre-passer</button>` : ''}
@@ -2047,52 +2054,144 @@ function menuActions(bouton, actions) {
 
 // Membres : en-tête, recherche avec le menu « ⋯ » (liens, import, export), filtre Tous / Actifs / Inactifs,
 // lignes sobres qui ouvrent la fiche du membre (coordonnées et toutes les actions, dont Supprimer)
+// ---------- Membres : filtrer, regrouper, répartition (comme MembresVue.kt, mêmes noms) ----------
+// Origines, pupitres, statuts : regroupés sans tenir compte des majuscules ni des accents ; le libellé affiché est l'écriture la plus fréquente
+const CRITERES_MEMBRES = { pupitre: ['Pupitre', 'Pupitres'], nationalite: ['Nationalité', 'Nationalités'], statut: ['Statut', 'Statuts'] };
+const cleValeur = (s) => sansAccents(s).replace(/\s+/g, ' ');
+// Comparaison caractère par caractère (identique à Kotlin) : même ordre des deux côtés
+const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const VUE_MEMBRES_DEFAUT = { etat: 'tous', groupe: 'fonction', tri: 'nom', pupitre: [], nationalite: [], statut: [] };
+function filtrerMembres(membres, v) {
+  return membres.filter((m) => (v.etat === 'tous' || (v.etat === 'actifs') === m.actif)
+    && Object.keys(CRITERES_MEMBRES).every((k) => !v[k].length || v[k].includes(cleValeur(m[k]))));
+}
+const trierMembres = (l, tri) => [...l].sort((a, b) => (tri === 'prenom'
+  ? cmp(sansAccents(a.prenom), sansAccents(b.prenom)) || cmp(sansAccents(a.nom), sansAccents(b.nom))
+  : cmp(sansAccents(a.nom || a.prenom), sansAccents(b.nom || b.prenom)) || cmp(sansAccents(a.prenom), sansAccents(b.prenom))));
+// Groupes d'un critère : les pupitres dans l'ordre du chœur, les autres du plus nombreux au moins nombreux ; « Non renseigné » en dernier
+function groupesMembres(membres, critere) {
+  const g = new Map();
+  for (const m of membres) { const k = cleValeur(m[critere]); if (!g.has(k)) g.set(k, []); g.get(k).push(m); }
+  const libelle = (k, l) => { if (!k) return 'Non renseigné'; const n = {}; l.forEach((m) => { const v = String(m[critere]).trim(); n[v] = (n[v] || 0) + 1; }); const maj = (x) => (x[0] === x[0].toLowerCase() ? 1 : 0); return Object.entries(n).sort((a, b) => b[1] - a[1] || maj(a[0]) - maj(b[0]) || cmp(a[0], b[0]))[0][0]; };
+  const ordre = (k) => (critere === 'pupitre' ? PUPITRES.findIndex((p) => cleValeur(p) === k) : -1);
+  return [...g.entries()].map(([k, l]) => ({ cle: k, libelle: libelle(k, l), membres: l }))
+    .sort((a, b) => (!a.cle) - (!b.cle) || ((ordre(a.cle) < 0) - (ordre(b.cle) < 0)) || (ordre(a.cle) - ordre(b.cle)) || b.membres.length - a.membres.length || cmp(sansAccents(a.libelle), sansAccents(b.libelle)));
+}
+// Répartition : effectif et part de chaque valeur (« Non renseigné » compté à part)
+function repartition(membres, critere) {
+  const total = membres.length || 1;
+  return groupesMembres(membres, critere).map((g) => ({ cle: g.cle, libelle: g.libelle, n: g.membres.length, part: Math.round(1000 * g.membres.length / total) / 10 }));
+}
+const pourcent = (p) => `${String(p).replace('.', ',')} %`;
+
 async function pageMembres() {
+  const v = { ...VUE_MEMBRES_DEFAUT, ...(S.vueMembres || {}) };
   const actifs = S.membres.filter((m) => m.actif);
   const inactifs = S.membres.length - actifs.length;
-  const filtre = ['tous', 'actifs', 'inactifs'].includes(S.filtreMembres) ? S.filtreMembres : 'tous';
-  const vus = S.membres.filter((m) => filtre === 'tous' || (filtre === 'actifs' ? m.actif : !m.actif));
-  const bureau = vus.filter((m) => { const f = fonctionMembre(m); return f && f.role !== 'adherent'; })
-    .sort((x, y) => rangRole(fonctionMembre(x).role) - rangRole(fonctionMembre(y).role));
-  const autres = vus.filter((m) => !bureau.includes(m));
+  const vus = trierMembres(filtrerMembres(S.membres, v), v.tri);
+  // Ligne sobre : photo, nom, pupitre ; tout le reste est dans la fiche
   const ligne = (m) => `
         <li class="cliquable${m.actif ? '' : ' inactif'}" data-nom="${esc(sansAccents(nomComplet(m)))}" data-fiche="${m.id}" tabindex="0" role="button">
           ${avatar(m)}
           <div class="corps"><b>${esc(nomComplet(m))}${m.id === S.profil.member_id ? ' <span class="muted">(vous)</span>' : ''}</b>
-            <span>${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}${m.pupitre ? ' · ' + esc(m.pupitre) : ''}${m.profession ? ' · ' + esc(m.profession) : ''}</span></div>
-          <span class="membre-etats">${pucesFonction(m)}${m.actif ? '' : '<span class="puce puce-neutre">Inactif</span>'}</span>
+            ${m.pupitre ? `<span>${esc(m.pupitre)}</span>` : ''}</div>
+          <span class="membre-etats">${v.groupe === 'fonction' ? pucesFonction(m) : ''}${m.actif ? '' : '<span class="puce puce-neutre">Inactif</span>'}</span>
           ${icone('suivant', 18)}
         </li>`;
+  const carte = (titre, l, total) => `<section class="carte section-membres">${titre ? `<div class="tete-groupe"><h2>${esc(titre)}</h2>${total ? `<span class="muted">${l.length} · ${pourcent(Math.round(1000 * l.length / total) / 10)}</span>` : ''}</div>` : ''}
+      <ul class="liste liste-membres">${l.map(ligne).join('')}</ul></section>`;
+  let sections;
+  if (v.groupe === 'fonction') {
+    const bureau = vus.filter((m) => { const f = fonctionMembre(m); return f && f.role !== 'adherent'; }).sort((x, y) => rangRole(fonctionMembre(x).role) - rangRole(fonctionMembre(y).role));
+    const autres = vus.filter((m) => !bureau.includes(m));
+    sections = (bureau.length ? carte('Bureau', bureau) : '') + (autres.length ? carte(bureau.length ? 'Membres' : '', autres) : '');
+  } else sections = groupesMembres(vus, v.groupe).map((g) => carte(g.libelle, g.membres, vus.length)).join('');
+  const pastilles = [
+    v.etat !== 'tous' && ['etat', v.etat === 'actifs' ? 'Actifs' : 'Inactifs'],
+    ...Object.keys(CRITERES_MEMBRES).flatMap((k) => v[k].map((x) => [`${k}:${x}`, groupesMembres(S.membres, k).find((g) => g.cle === x)?.libelle || 'Non renseigné'])),
+    v.groupe !== 'fonction' && ['groupe', `Par ${CRITERES_MEMBRES[v.groupe][0].toLowerCase()}`],
+    v.tri !== 'nom' && ['tri', 'Triés par prénom'],
+  ].filter(Boolean);
   const actions = [
     ...(peut('gerer_membres', 'gerer_cotisations') && S.membres.length ? [['Liens personnels', 'lien', feuilleLiens]] : []),
+    ['Répartition', 'rapports', feuilleRepartition],
     ...(peut('gerer_membres') ? [['Importer (CSV, Excel)', 'ajout', feuilleImport]] : []),
     ['Exporter la liste', 'telecharger', () => choisirFormat('Exporter la liste des membres', () => pdfMembres(), csvMembres)],
   ];
-  const segment = (k, l, n) => `<button type="button" role="tab" data-filtre="${k}" aria-selected="${filtre === k}">${l} <small>${n}</small></button>`;
   rendre(`<div class="page">
     <div class="page-titre"><h1>Membres</h1><span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? ` · ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
       ${peut('gerer_membres') ? '<button class="fab" id="b-ajout" aria-label="Ajouter un membre" title="Ajouter un membre"></button>' : ''}</div>
-    ${S.membres.length ? `<div class="barre-recherche"><input type="search" id="recherche" placeholder="Rechercher un membre" aria-label="Rechercher un membre">
+    ${S.membres.length ? `<div class="barre-recherche"><input type="search" id="recherche" placeholder="Rechercher" aria-label="Rechercher un membre">
+      <button type="button" class="btn-tonal" id="b-filtres-membres" aria-haspopup="dialog">${icone('filtre', 16)} Filtres${pastilles.length ? ` (${pastilles.length})` : ''}</button>
       <button type="button" class="btn-tonal btn-icone-carre" id="b-actions" aria-haspopup="menu" aria-expanded="false" aria-label="Autres actions" title="Autres actions">⋯</button></div>
-      ${inactifs ? `<div class="segmente" role="tablist" aria-label="Filtrer les membres">${segment('tous', 'Tous', S.membres.length)}${segment('actifs', 'Actifs', actifs.length)}${segment('inactifs', 'Inactifs', inactifs)}</div>` : ''}` : ''}
-    ${bureau.length ? `<section class="carte"><h2>Bureau</h2><ul class="liste liste-membres">${bureau.map(ligne).join('')}</ul></section>` : ''}
-    <section class="carte">
-      ${bureau.length ? '<h2>Membres</h2>' : ''}
-      ${autres.length ? `<ul class="liste liste-membres">${autres.map(ligne).join('')}</ul>`
-      : S.membres.length ? `<div class="vide">${filtre === 'inactifs' ? 'Aucun membre inactif.' : 'Tous ces membres font partie du bureau.'}</div>`
-      : `<div class="vide">Aucun membre.${peut('gerer_membres') ? '<span>Ajoutez-les avec le bouton +, ou importez votre liste avec ⋯.</span>' : ''}</div>`}
-    </section>
+      ${pastilles.length ? `<div class="pastilles" aria-label="Filtres actifs">${pastilles.map(([cle, l]) => `<button type="button" class="pastille" data-retirer="${esc(cle)}" aria-label="Retirer ${esc(l)}">${esc(l)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="btn-texte btn-petit" id="f-raz">Tout effacer</button></div>` : ''}` : ''}
+    ${vus.length ? sections : `<section class="carte"><div class="vide">${S.membres.length ? 'Aucun membre ne correspond à ces filtres.' : `Aucun membre.${peut('gerer_membres') ? '<span>Ajoutez-les avec le bouton +, ou importez votre liste avec ⋯.</span>' : ''}`}</div></section>`}
   </div>`);
   $('#recherche')?.addEventListener('input', (e) => {
-    const v = sansAccents(e.target.value);
-    document.querySelectorAll('.liste-membres li').forEach((li) => { li.hidden = v && !li.dataset.nom.includes(v); });
+    const t = sansAccents(e.target.value);
+    document.querySelectorAll('.liste-membres li').forEach((li) => { li.hidden = t && !li.dataset.nom.includes(t); });
+    document.querySelectorAll('.section-membres').forEach((sct) => { sct.hidden = !sct.querySelector('li:not([hidden])'); });
   });
   $('#b-ajout')?.addEventListener('click', () => feuilleMembre());
   $('#b-actions')?.addEventListener('click', (e) => menuActions(e.currentTarget, actions));
-  document.querySelectorAll('[data-filtre]').forEach((b) => b.addEventListener('click', () => { S.filtreMembres = b.dataset.filtre; pageMembres(); }));
+  $('#b-filtres-membres')?.addEventListener('click', () => feuilleFiltresMembres(v));
+  $('#f-raz')?.addEventListener('click', () => { S.vueMembres = { ...VUE_MEMBRES_DEFAUT }; pageMembres(); });
+  document.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', () => {
+    const [k, x] = b.dataset.retirer.split(':'), n = { ...v };
+    if (k === 'etat') n.etat = 'tous'; else if (k === 'groupe') n.groupe = 'fonction'; else if (k === 'tri') n.tri = 'nom'; else n[k] = n[k].filter((y) => y !== x);
+    S.vueMembres = n; pageMembres();
+  }));
   document.querySelectorAll('[data-fiche]').forEach((li) => {
     const ouvrir = () => feuilleFicheMembre(S.membres.find((m) => m.id === li.dataset.fiche));
     li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+  });
+}
+
+// Filtrer et regrouper (comme feuilleFiltres des opérations) : les choix s'appliquent avec « Voir N membres »
+function feuilleFiltresMembres(v0) {
+  const v = { ...v0, pupitre: [...v0.pupitre], nationalite: [...v0.nationalite], statut: [...v0.statut] };
+  const segment = (nom, valeur, choix) => `<div class="segmente segmente-large" role="radiogroup" aria-label="${nom}">${choix.map(([k, l]) => `<button type="button" role="radio" data-${nom}="${k}" aria-checked="${valeur === k}" aria-selected="${valeur === k}">${l}</button>`).join('')}</div>`;
+  const rendu = () => `<h2>Filtrer et regrouper</h2>
+    <h3>Regrouper par</h3>${segment('groupe', v.groupe, [['fonction', 'Fonction'], ['pupitre', 'Pupitre'], ['nationalite', 'Nationalité'], ['statut', 'Statut']])}
+    ${Object.entries(CRITERES_MEMBRES).map(([k, [l]]) => { const gs = groupesMembres(S.membres, k); return gs.length > 1 || gs[0]?.cle ? `<h3>${l}</h3>
+      <div class="filtres">${gs.map((g) => `<button type="button" class="puce-filtre" data-critere="${k}" data-valeur="${esc(g.cle)}" aria-pressed="${v[k].includes(g.cle)}">${esc(g.libelle)} <small>${g.membres.length}</small></button>`).join('')}</div>` : ''; }).join('')}
+    <h3>État</h3>${segment('etat', v.etat, [['tous', 'Tous'], ['actifs', 'Actifs'], ['inactifs', 'Inactifs']])}
+    <h3>Trier par</h3>${segment('tri', v.tri, [['nom', 'Nom'], ['prenom', 'Prénom']])}
+    <div class="actions"><button type="button" class="btn-texte" id="b-raz">Tout effacer</button><button type="button" class="btn-primaire" id="b-voir">Voir ${filtrerMembres(S.membres, v).length} membre${filtrerMembres(S.membres, v).length > 1 ? 's' : ''}</button></div>`;
+  const brancher = (root) => {
+    const redessiner = () => { root.innerHTML = rendu(); brancher(root); };
+    root.querySelectorAll('[data-groupe]').forEach((b) => b.addEventListener('click', () => { v.groupe = b.dataset.groupe; redessiner(); }));
+    root.querySelectorAll('[data-etat]').forEach((b) => b.addEventListener('click', () => { v.etat = b.dataset.etat; redessiner(); }));
+    root.querySelectorAll('[data-tri]').forEach((b) => b.addEventListener('click', () => { v.tri = b.dataset.tri; redessiner(); }));
+    root.querySelectorAll('[data-critere]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.critere, x = b.dataset.valeur; v[k] = v[k].includes(x) ? v[k].filter((y) => y !== x) : [...v[k], x]; redessiner();
+    }));
+    $('#b-raz', root).addEventListener('click', () => { Object.assign(v, { ...VUE_MEMBRES_DEFAUT, pupitre: [], nationalite: [], statut: [] }); redessiner(); });
+    $('#b-voir', root).addEventListener('click', () => { S.vueMembres = v; fermerFeuille(); pageMembres(); });
+  };
+  ouvrirFeuille(rendu(), brancher);
+}
+
+// Répartition des membres actifs : nationalités, pupitres, statuts (effectif, part, groupes peu représentés)
+function feuilleRepartition() {
+  const actifs = S.membres.filter((m) => m.actif);
+  const bloc = (k) => {
+    const r = repartition(actifs, k), connus = r.filter((x) => x.cle), nr = r.find((x) => !x.cle);
+    if (!connus.length) return '';
+    const max = Math.max(...connus.map((x) => x.n));
+    return `<section class="bloc-repartition"><div class="tete-groupe"><h3>${CRITERES_MEMBRES[k][1]}</h3><span class="muted">${connus.length} différent${connus.length > 1 ? 's' : ''}</span></div>
+      <ul class="liste liste-repartition">${connus.map((x) => `<li><div class="corps"><b>${esc(x.libelle)}</b><div class="barre" aria-hidden="true"><span style="width:${Math.round(100 * x.n / max)}%"></span></div></div>
+        <span class="num">${x.n} · ${pourcent(x.part)}</span>${connus.length > 2 && x.part < 10 ? '<span class="puce puce-partiel">Peu représenté</span>' : ''}</li>`).join('')}</ul>
+      ${nr ? `<p class="muted" style="margin:0">Non renseigné : ${nr.n} membre${nr.n > 1 ? 's' : ''}</p>` : ''}
+      <div class="actions-gauche"><button type="button" class="btn-texte btn-petit" data-par="${k}">Voir la liste par ${CRITERES_MEMBRES[k][0].toLowerCase()}</button></div></section>`;
+  };
+  const contenu = ['nationalite', 'pupitre', 'statut'].map(bloc).join('');
+  ouvrirFeuille(`<h2>Répartition des membres</h2>
+    <p class="muted" style="margin:0">${actifs.length} membre${actifs.length > 1 ? 's' : ''} actif${actifs.length > 1 ? 's' : ''}. Utile pour équilibrer les groupes (journées portes ouvertes, ateliers) et repérer les origines peu représentées.</p>
+    ${contenu || '<div class="vide">Aucune nationalité, aucun pupitre ni statut renseigné pour l’instant.<span>Complétez les fiches ou importez la liste.</span></div>'}
+    <div class="actions"><button type="button" class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    root.querySelectorAll('[data-par]').forEach((b) => b.addEventListener('click', () => { S.vueMembres = { ...VUE_MEMBRES_DEFAUT, ...(S.vueMembres || {}), groupe: b.dataset.par, etat: 'actifs' }; fermerFeuille(); location.hash = '#membres'; pageMembres(); }));
   });
 }
 function pucesFonction(m) {
@@ -4264,7 +4363,6 @@ function feuilleJustifier(d, apres) {
   ouvrirFeuille(`<form id="f-just" class="champs"><h2>Joindre le justificatif</h2>
     <p><b>${esc(d.objet)}</b>, ${eur(d.montant)}</p>
     <label class="champ"><span class="obligatoire">Facture ou ticket</span><input type="file" name="piece" accept="image/*,application/pdf" required data-scan></label>
-    <p class="muted">Photo ou PDF de 3&nbsp;Mo maximum.</p>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Joindre</button></div></form>`, (root) => {
     const f = $('#f-just', root);
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
@@ -4458,8 +4556,7 @@ async function pageRapprochement() {
         <label class="champ">Fin<input id="r-fin" type="date" value="${S.rapp.fin}"></label>
       </div>
       <label class="champ"><span class="obligatoire">${S.comptes.find((c) => c.id === compte)?.type === 'caisse' ? 'Procès-verbal de comptage' : 'Relevé de la période'}</span>
-        <input id="r-releve" type="file" accept="application/pdf,image/*" data-scan></label>
-      ${S.rapp.fichier ? `<span class="puce puce-ok" style="align-self:flex-start">${esc(S.rapp.fichier.name)}</span>` : ''}
+        <input id="r-releve" type="file" accept="application/pdf,image/*" data-scan data-nom-actuel="${S.rapp.fichier ? esc(S.rapp.fichier.name) : ''}"></label>
     </section>
     <section class="carte">
       <h2>Écritures à pointer</h2>

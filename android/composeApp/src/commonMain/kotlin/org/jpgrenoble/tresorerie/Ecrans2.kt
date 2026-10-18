@@ -569,12 +569,7 @@ private fun FeuilleJustifier(x: Demande, message: (String) -> Unit, onFini: (Boo
         Text("Joindre le justificatif", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(objetMontant(x))
         Text(obligatoire("Facture ou ticket"), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-            Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-            Text(fichier?.let { it.nom ?: "Fichier choisi (${it.ko}$NBSP" + "Ko)" } ?: "Choisir une photo ou un PDF", maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        BoutonScanner(message, Modifier.fillMaxWidth()) { fichier = it }
-        Text("Photo ou PDF de 3$NBSP" + "Mo maximum.", fontSize = 13.sp, color = Couleurs.Texte2)
+        ChoixPiece(fichier, message, choix) { fichier = it }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             TextButton(onClick = { onFini(false) }) { Text("Annuler") }
             Button(enabled = !enCours && fichier != null, onClick = {
@@ -676,11 +671,7 @@ private fun FormulaireDemande(d: Donnees, onFini: (Boolean) -> Unit, message: (S
         ChampDate(pourLe, { pourLe = it }, label = { Text("Pour le") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true,
             isError = pourLe.isNotBlank() && dateSouhaitee == null, modifier = Modifier.fillMaxWidth())
         Text("Devis (facultatif)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        OutlinedButton(onClick = choixDevis, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-            Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-            Text(devis?.let { it.nom ?: "Devis joint (${it.ko}$NBSP" + "Ko)" } ?: "Choisir une photo ou un PDF", maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        BoutonScanner(message, Modifier.fillMaxWidth()) { devis = it }
+        ChoixPiece(devis, message, choixDevis) { devis = it }
         Text("La demande part au président, qui la valide en signant. Le trésorier paie ensuite, puis le justificatif est à déposer dans les $delai$NBSP" + "jours.",
             fontSize = 13.sp, color = Couleurs.Texte2)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.align(Alignment.End)) {
@@ -836,13 +827,7 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
                         ChampDate(finSaisie, { finSaisie = it }, label = { Text("Fin") }, placeholder = { Text("JJ/MM/AAAA") }, singleLine = true, isError = dateDepuisFr(finSaisie) == null, modifier = Modifier.weight(1f))
                     }
                     Text(obligatoire(if (compte?.type == "caisse") "Procès-verbal de comptage" else "Relevé de la période"), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    OutlinedButton(onClick = choix, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                        Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                        Text("Choisir une photo ou un PDF", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    BoutonScanner(message, Modifier.fillMaxWidth()) { releve = it }
-                    // Nom d'origine du fichier choisi, en puce bleue (puce-ok) comme le site
-                    releve?.let { Puce(it.nom ?: "Fichier joint (${it.ko}$NBSP" + "Ko)", Couleurs.BleuClair, Couleurs.SurBleuClair, Couleurs.BleuTrait) }
+                    ChoixPiece(releve, message, choix) { releve = it }
                 }
             }
             item {

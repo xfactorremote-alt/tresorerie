@@ -1337,8 +1337,15 @@ dialog.visionneuse img{max-width:100%;max-height:calc(100dvh - 64px);object-fit:
 .liste-import .corps{min-width:0}
 .liste-import .corps span{font-size:12.5px}
 /* Scanner de documents (comme Scanner.kt) : plein écran sombre, coins orange, loupe */
-.scan-ligne{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:-4px}
-.scan-etat{font-size:13px}
+/* Pièce jointe (comme ChoixPiece d'Android) : deux boutons égaux sur une ligne, le fichier retenu dessous */
+.choix-piece{display:flex;flex-direction:column;gap:6px}
+.choix-piece-boutons{display:flex;gap:8px}
+.choix-piece-boutons>*{flex:1;min-width:0;justify-content:center}
+.choix-piece-fichier{position:relative;overflow:hidden;cursor:pointer}
+.choix-piece-fichier input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
+.choix-piece-fichier:focus-within{outline:2px solid var(--bord-fort);outline-offset:2px}
+.piece-nom{font-size:13px;font-weight:400;color:var(--texte-2);overflow-wrap:anywhere}
+.piece-nom.piece-choisie{color:var(--texte)}
 dialog.scanner{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;border-radius:0;background:var(--texte);color:#fff;display:flex;flex-direction:column}
 dialog.scanner:not([open]){display:none}
 dialog.scanner::backdrop{background:var(--texte)}
@@ -1363,3 +1370,18 @@ dialog.scanner::backdrop{background:var(--texte)}
 .scanner-filtres button[aria-checked="true"]{background:var(--primaire);border-color:var(--primaire)}
 @media (max-width:520px){.scanner-actions{justify-content:stretch}.scanner-actions button{flex:1}}
 .correction-import{padding:12px;margin:0 0 8px;border:1px solid var(--bord);border-radius:var(--r-moyen);background:var(--surface-2)}
+/* Membres : ligne sobre qui ne déborde jamais (nom, pupitre, points de suspension), en-tête de groupe, répartition */
+.liste-membres li .corps{overflow:hidden}
+.liste-membres li .corps>*{display:block;min-width:0;max-width:100%}
+.liste-membres li > .membre-etats{flex:none}
+.barre-recherche>button{flex:none}
+.tete-groupe{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px}
+.tete-groupe h2,.tete-groupe h3{margin:0;min-width:0;overflow-wrap:anywhere}
+.tete-groupe .muted{flex:none;font-size:13px}
+.liste-repartition li{flex-wrap:nowrap;gap:12px}
+.liste-repartition .corps{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.liste-repartition .num{flex:none;font-size:13px;color:var(--texte-2)}
+.bloc-repartition{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+/* Fiche : une valeur longue (profession, e-mail) passe à la ligne au lieu d'élargir la fenêtre */
+.ligne-detail>:first-child{flex:none}
+.ligne-detail>:last-child{min-width:0;overflow-wrap:anywhere;text-align:right}

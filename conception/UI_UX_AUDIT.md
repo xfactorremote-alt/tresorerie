@@ -45,3 +45,17 @@ dates à taper. Ces causes racines sont corrigées au niveau du thème et des co
 
 - Rendu Android sur un appareil réel ou un émulateur (aucun dans l'environnement) : formes, boutons et calendrier vérifiés à la compilation et dans le bytecode seulement.
 - Lecteurs d'écran (TalkBack, NVDA), mode sombre (le produit est en thème clair uniquement : `color-scheme: light`).
+
+## Contrôle des ajouts récents — 18 octobre 2026 (version 0.37.0)
+
+Signalé par le propriétaire sur son téléphone : liste des membres illisible, fiche qui élargit l'écran, « boutons ajoutés en désordre ». Reproduit en démonstration après ajout de valeurs longues (le balayage passait faute de données longues).
+
+| Id | Gravité | Écran | Constat (fait) | Cause racine | Correction | Statut |
+|---|---|---|---|---|---|---|
+| R1 | P1 | Membres (site) | Profession longue qui sort de la carte ; puce « Trésorier » posée sur le texte | `.corps` sans `min-width:0` sur ses enfants : pas de points de suspension | Ligne réduite à nom + pupitre, enfants de `.corps` bornés, puces `flex:none` | ✅ |
+| R2 | P1 | Fiche du membre (site) | Page élargie à 501 px sur un écran de 412 px (e-mail long) | Valeur de `.ligne-detail` sans retour à la ligne | `overflow-wrap:anywhere`, libellé fixe | ✅ |
+| R3 | P1 | Fiche du membre (Android) | Libellé écrasé par une valeur longue | Poids donné au libellé au lieu de la valeur | Valeur `weight(1f)`, alignée à droite, sur plusieurs lignes | ✅ |
+| R4 | P2 | Pièces jointes (site) | Champ natif « Choose File / No file chosen » (en anglais) et bouton Scanner d'un autre style dessous | Ajout posé sous le champ sans composant commun | Composant `.choix-piece` ↔ `ChoixPiece` : deux boutons égaux + nom du fichier | ✅ |
+| R5 | P2 | Pièces jointes (Android) | Deux boutons pleine largeur empilés de styles différents | idem | idem | ✅ |
+| R6 | P2 | Rapprochement | Nom du relevé affiché deux fois (puce + champ) | Doublon après l'ajout du composant | Puce retirée, nom dans le composant (gardé après redessin) | ✅ |
+| R7 | P2 | Contrôle qualité | `a7.mjs` ne voyait pas le texte hors carte | Démo sans valeurs longues, pas de contrôle « hors carte » | Valeurs longues dans `mock.js` / `Demo.kt`, contrôle `horsCarte` (vérifié : signale l'ancienne version, 0 sur la nouvelle) | ✅ |

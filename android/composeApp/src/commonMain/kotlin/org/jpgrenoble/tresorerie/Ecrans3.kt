@@ -27,6 +27,8 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Check
@@ -693,6 +695,8 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     var liens by remember { mutableStateOf<List<LienMembre>>(emptyList()) }
     var lienDe by remember { mutableStateOf<Membre?>(null) }
     var tousLiens by remember { mutableStateOf(false) }
+    var filtresMembres by remember { mutableStateOf(false) }
+    var voirRepartition by remember { mutableStateOf(false) }
     var exporter by remember { mutableStateOf(false) }
     val gereLiens = d.peut("gerer_membres", "gerer_cotisations")
     val imprimer = rememberImpression()
@@ -718,12 +722,19 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
         profils.firstOrNull { it.memberId == m.id }?.let { it.role to (if (it.actif) "compte" else "coupe") }
             ?: invitations.firstOrNull { it.membreId == m.id }?.let { it.role to "invite" }
     // Comme le site : la recherche ne change pas les sections (sans accents), le filtre Tous / Actifs / Inactifs est gardé
-    val filtre = EtatMembres.filtre.takeIf { it in listOf("tous", "actifs", "inactifs") } ?: "tous"
+    // Filtrer, regrouper, trier (comme pageMembres du site) ; choix gardés pendant la session
+    val vue = EtatMembres.vue
     val cle = sansAccents(recherche)
-    val vus = membres.filter { filtre == "tous" || (filtre == "actifs") == it.actif }
+    val vus = trierMembres(filtrerMembres(membres, vue), vue.tri)
     val nbInactifs = membres.count { !it.actif }
     val nbActifs = membres.size - nbInactifs
     val bureau = vus.filter { fonctionDe(it)?.first?.let { r -> r != "adherent" } == true }.sortedBy { rangRole(fonctionDe(it)!!.first) }
+    val pastillesMembres = buildList {
+        if (vue.etat != "tous") add(Triple("etat", "", if (vue.etat == "actifs") "Actifs" else "Inactifs"))
+        CRITERES_MEMBRES.keys.forEach { k -> vue.choisis(k).forEach { x -> add(Triple(k, x, groupesMembres(membres, k).firstOrNull { it.cle == x }?.libelle ?: "Non renseigné")) } }
+        if (vue.groupe != "fonction") add(Triple("groupe", "", "Par ${CRITERES_MEMBRES[vue.groupe]!!.first.lowercase()}"))
+        if (vue.tri != "nom") add(Triple("tri", "", "Triés par prénom"))
+    }
     val autres = vus - bureau.toSet()
     val trouve = { m: Membre -> cle.isEmpty() || sansAccents(m.nomComplet).contains(cle) }
     @Composable fun PuceFonction(m: Membre) {
@@ -743,7 +754,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             Text("${m.prenom.take(1)}${m.nom.take(1)}", color = Couleurs.SurOrangeClair, fontWeight = FontWeight.Bold, fontSize = (taille / 3).sp)
         }
     }
-    // Ligne sobre : photo, nom (« (vous) » atténué), anniversaire et profession, fonction ; un appui ouvre la fiche (comme le site)
+    // Ligne sobre : photo, nom (« (vous) » atténué), pupitre ; fonction quand on regroupe par fonction ; tout le reste est dans la fiche (comme le site)
     @Composable fun Ligne(m: Membre, derniere: Boolean) {
         Row(Modifier.fillMaxWidth().clip(Formes.Moyen).clickable { detail = m }.padding(horizontal = 4.dp, vertical = 10.dp).alpha(if (m.actif) 1f else 0.6f), verticalAlignment = Alignment.CenterVertically) {
             AvatarMembre(m, 44)
@@ -753,10 +764,10 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                     Text(m.nomComplet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (m.id == d.profil.memberId) Text(" (vous)", fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1)
                 }
-                Text("${m.jour} ${MOIS[m.mois - 1]}" + (m.pupitre?.let { " · $it" } ?: "") + (m.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                m.pupitre?.let { Text(it, fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                PuceFonction(m)
+                if (vue.groupe == "fonction") PuceFonction(m)
                 if (!m.actif) Puce("Inactif", Couleurs.Surface2, Couleurs.Texte2)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Couleurs.Texte2)
@@ -764,11 +775,16 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
         if (!derniere) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
     }
     // Section en carte sobre (Bureau, Membres), comme les cartes du site
-    @Composable fun Section(titre: String?, l: List<Membre>, vide: (@Composable () -> Unit)? = null) {
+    @Composable fun Section(titre: String?, l: List<Membre>, total: Int = 0, vide: (@Composable () -> Unit)? = null) {
+        val v = l.filter(trouve)
+        if (v.isEmpty() && vide == null) return
         Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
-                titre?.let { Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 6.dp)) }
-                val v = l.filter(trouve)
+                // En-tête de groupe : nom, effectif et part (représentation), comme .tete-groupe du site
+                titre?.let { Row(Modifier.padding(start = 8.dp, top = 4.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom) {
+                    Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    if (total > 0) Text("${l.size} · ${pourcent(kotlin.math.round(1000.0 * l.size / total) / 10)}", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.padding(start = 8.dp))
+                } }
                 v.forEachIndexed { k, m -> key(m.id) { Ligne(m, k == v.lastIndex) } }
                 if (l.isEmpty()) vide?.invoke()
             }
@@ -786,37 +802,50 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             // Recherche et menu « ⋯ » (liens personnels, import, export), comme le site ; seulement s'il y a des membres
             if (membres.isNotEmpty()) item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(recherche, { recherche = it }, placeholder = { Text("Rechercher un membre") }, singleLine = true,
+                    OutlinedTextField(recherche, { recherche = it }, placeholder = { Text("Rechercher") }, singleLine = true,
                         modifier = Modifier.weight(1f).semantics { contentDescription = "Rechercher un membre" })
+                    OutlinedButton(onClick = { filtresMembres = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)) {
+                        Icon(Icons.Outlined.FilterList, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text(if (pastillesMembres.isEmpty()) "Filtres" else "Filtres (${pastillesMembres.size})", maxLines = 1)
+                    }
                     Box {
                         OutlinedIconButton(onClick = { menuActions = true }, shape = Formes.Moyen, modifier = Modifier.size(52.dp)) { Icon(Icons.Outlined.MoreHoriz, "Autres actions") }
                         DropdownMenu(menuActions, { menuActions = false }) {
                             if (gereLiens && membres.isNotEmpty()) DropdownMenuItem(text = { Text("Liens personnels") }, leadingIcon = { Icon(Icons.Outlined.Link, null) }, onClick = { menuActions = false; tousLiens = true })
+                            DropdownMenuItem(text = { Text("Répartition") }, leadingIcon = { Icon(Icons.Outlined.PieChart, null) }, onClick = { menuActions = false; voirRepartition = true })
                             if (d.peut("gerer_membres")) DropdownMenuItem(text = { Text("Importer (CSV, Excel)") }, leadingIcon = { Icon(Icons.Outlined.UploadFile, null) }, onClick = { menuActions = false; importer = true })
                             DropdownMenuItem(text = { Text("Exporter la liste") }, leadingIcon = { Icon(Icons.Outlined.Download, null) }, onClick = { menuActions = false; exporter = true })
                         }
                     }
                 }
             }
-            if (membres.isNotEmpty() && nbInactifs > 0) item {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf(Triple("tous", "Tous", membres.size), Triple("actifs", "Actifs", nbActifs), Triple("inactifs", "Inactifs", nbInactifs)).forEachIndexed { k, (c, l, n) ->
-                        SegmentedButton(selected = filtre == c, onClick = { EtatMembres.filtre = c }, shape = SegmentedButtonDefaults.itemShape(k, 3), icon = {}) {
-                            Text(buildAnnotatedString { append("$l "); withStyle(SpanStyle(fontSize = 12.sp, color = Couleurs.Texte2)) { append("$n") } }, maxLines = 1)
+            // Filtres actifs en pastilles retirables (comme les opérations)
+            if (pastillesMembres.isNotEmpty()) item {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    pastillesMembres.forEach { (k, x, libelle) ->
+                        InputChip(selected = false, onClick = {
+                            EtatMembres.vue = when (k) { "etat" -> vue.copy(etat = "tous"); "groupe" -> vue.copy(groupe = "fonction"); "tri" -> vue.copy(tri = "nom")
+                                else -> vue.copy(valeurs = vue.valeurs + (k to vue.choisis(k) - x)) }
+                        }, label = { Text(libelle, maxLines = 1) }, trailingIcon = { Icon(Icons.Outlined.Close, "Retirer $libelle", Modifier.size(16.dp)) })
+                    }
+                    TextButton(onClick = { EtatMembres.vue = VueMembres() }) { Text("Tout effacer") }
+                }
+            }
+            if (membres.isNotEmpty() && vus.isEmpty()) item {
+                Surface(color = MaterialTheme.colorScheme.surface, shape = Formes.XGrand, modifier = Modifier.fillMaxWidth()) {
+                    Text("Aucun membre ne correspond à ces filtres.", color = Couleurs.Texte2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp))
+                }
+            } else if (vue.groupe == "fonction") {
+                if (bureau.isNotEmpty()) item(key = "bureau") { Section("Bureau", bureau) }
+                item(key = "membres") {
+                    Section(if (bureau.isNotEmpty()) "Membres" else null, autres, vide = if (membres.isEmpty()) ({
+                        Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Aucun membre.", color = Couleurs.Texte2)
+                            if (d.peut("gerer_membres")) Text("Ajoutez-les avec le bouton +, ou importez votre liste avec ⋯.", fontSize = 13.sp, color = Couleurs.Texte2)
                         }
-                    }
+                    }) else null)
                 }
-            }
-            if (bureau.isNotEmpty()) item(key = "bureau") { Section("Bureau", bureau) }
-            item(key = "membres") {
-                Section(if (bureau.isNotEmpty()) "Membres" else null, autres) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(when { membres.isNotEmpty() && filtre == "inactifs" -> "Aucun membre inactif."; membres.isNotEmpty() -> "Tous ces membres font partie du bureau."; else -> "Aucun membre." },
-                            color = Couleurs.Texte2)
-                        if (membres.isEmpty() && d.peut("gerer_membres")) Text("Ajoutez-les avec le bouton +, ou importez votre liste avec ⋯.", fontSize = 13.sp, color = Couleurs.Texte2)
-                    }
-                }
-            }
+            } else groupesMembres(vus, vue.groupe).forEach { g -> item(key = "g-${g.cle}") { Section(g.libelle, g.membres, vus.size) } }
         }
         // Bouton + flottant (rond, couleur principale), comme le site sur téléphone
         if (d.peut("gerer_membres")) {
@@ -838,6 +867,12 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             try { Repo.majMembre(m.id, NouveauMembre(m.prenom, m.nom, m.jour, m.mois, m.profession, m.whatsapp, m.consentement, null, m.email, m.nationalite, m.pupitre, m.statut), !m.actif, null)
                 message(if (m.actif) "${m.prenom} est inactif" else "${m.prenom} est réactivé"); version++; recharger() } catch (e: Exception) { message(traduireErreur(e)) } } },
         onSupprimer = if (d.peut("gerer_membres")) ({ detail = null; supprimerMembre("members", m.id, m.nomComplet) }) else null) { detail = null } }
+    if (filtresMembres) ModalBottomSheet(onDismissRequest = { filtresMembres = false }) {
+        FeuilleFiltresMembres(membres, vue) { EtatMembres.vue = it; filtresMembres = false }
+    }
+    if (voirRepartition) ModalBottomSheet(onDismissRequest = { voirRepartition = false }) {
+        FeuilleRepartition(membres, onVoirPar = { k -> EtatMembres.vue = vue.copy(groupe = k, etat = "actifs"); voirRepartition = false }) { voirRepartition = false }
+    }
     lienDe?.let { m ->
         ModalBottomSheet(onDismissRequest = { lienDe = null }) {
             FeuilleLien(d, m, liens.firstOrNull { it.membreId == m.id }, message, onChange = { scope.launch { liens = try { Repo.liens() } catch (_: Exception) { liens } } }) { lienDe = null }
@@ -964,7 +999,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     }
 }
 
-private object EtatMembres { var filtre by mutableStateOf("tous") }
+private object EtatMembres { var vue by mutableStateOf(VueMembres()) }
 
 /** Fiche d'un membre : coordonnées et toutes les actions (lien personnel, fonction, modifier, inactif, supprimer), comme feuilleFicheMembre du site. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -986,9 +1021,11 @@ private fun FicheDetailMembre(d: Donnees, m: Membre, avatar: @Composable () -> U
                 }
             }
             @Composable fun Info(l: String, v: String, lien: String? = null) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Text(l, color = Couleurs.Texte2, modifier = Modifier.weight(1f))
-                    Text(v, color = if (lien != null) Couleurs.Bleu else Couleurs.Texte, modifier = if (lien != null) Modifier.clickable { runCatching { uri.openUri(lien) } } else Modifier)
+                // Libellé à gauche, valeur à droite qui passe à la ligne si elle est longue (comme .ligne-detail du site)
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(l, color = Couleurs.Texte2)
+                    Text(v, color = if (lien != null) Couleurs.Bleu else Couleurs.Texte, textAlign = TextAlign.End,
+                        modifier = Modifier.weight(1f).then(if (lien != null) Modifier.clickable { runCatching { uri.openUri(lien) } } else Modifier))
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
             }
