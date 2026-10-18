@@ -69,3 +69,11 @@
 | Site : `import.mjs` (6 cas), `scanner.mjs` (téléphone, ordinateur, iPhone SE) | ✅ 0 erreur JS |
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 29 tests dont `importMembresDoublons` et `scannerCommeLeSite` | ✅ ; scanner à essayer sur téléphone (appareil photo réel) |
+
+## 0.36.1 — Nom de famille facultatif, correction des lignes refusées (18 octobre 2026)
+
+| Vérification | Résultat |
+|---|---|
+| Site : `import.mjs`, `import2.mjs` (sans nom, doublons par prénom + anniversaire, « Corriger ») | ✅ 0 erreur JS |
+| Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
+| Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |

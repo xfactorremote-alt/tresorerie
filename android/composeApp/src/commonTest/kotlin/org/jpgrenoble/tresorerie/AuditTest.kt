@@ -391,4 +391,27 @@ Pierre;Ancien;2;2;;;;oui;Camerounaise;ALTO;inactif"""
         assertEquals(209 to 249, tourner(r).let { it.w to it.h })
         assertTrue(!detecterDocument(Pixels(50, 40, IntArray(2000) { (255 shl 24) or 0x808080 })).trouve)
     }
+
+    // Nom de famille facultatif et correction dans l'aperçu : même fichier que import2.mjs (site) → mêmes états et motifs
+    @Test
+    fun importSansNomEtCorrection() {
+        val csv = """prénom;nom;jour;mois;profession;whatsapp;email;accord;nationalité;pupitre;statut
+Marie;Exemple;14;3;Infirmière;06 11 22 33 44;marie@exemple.fr;oui;Française;soprano;Choriste
+Kouassi;Daniel;12;10;;;daniel@ex.fr;oui;Ivoirienne;tenor;Choriste
+Jean;Nouveau;5;6;;06 12 34 56 71;;non;;Basse;
+Marie;EXEMPLE;14;3;;;;oui;;;
+Lucie;Sans-Mois;4;;;;;oui;;;
+Pierre;Ancien;2;2;;;;oui;Camerounaise;ALTO;inactif
+Joël;;5;6;;;;oui;;Ténor;Choriste
+Joël;;5;6;;;;oui;;;
+Joël;;7;8;;;;oui;;;"""
+        val existants = listOf(Membre("m1", "Daniel", "Kouassi", 12, 10, "Électricien", "06 12 34 56 71", pupitre = "Alto", statut = "Choriste"))
+        val r = analyserCsvMembres(csv, existants)
+        assertEquals(listOf("nouveau", "doublon", "verifier", "doublon", "erreur", "nouveau", "nouveau", "doublon", "verifier"), r.map { it.etat })
+        assertEquals(listOf(null, null, "doublon de la ligne 8", "même prénom que la ligne 8"), r.drop(5).map { it.motif })
+        assertEquals("", r[6].membre?.nom)
+        val c = analyserCsvMembres(csv, existants, mapOf(6 to mapOf("prenom" to "Lucie", "nom" to "Sans-Mois", "jour" to "4", "mois" to "9", "whatsapp" to "", "email" to "")))
+        assertEquals("nouveau", c[4].etat); assertEquals(9, c[4].membre?.mois)
+        assertEquals("Joël", Membre("x", "Joël", "", 5, 6).nomComplet)
+    }
 }

@@ -1362,3 +1362,4 @@ dialog.scanner::backdrop{background:var(--texte)}
 .scanner-filtres button{flex:none;min-height:40px;padding:0 14px;border-radius:var(--r-moyen);border:1px solid rgba(255,255,255,.4);background:none;color:#fff;font:inherit;cursor:pointer}
 .scanner-filtres button[aria-checked="true"]{background:var(--primaire);border-color:var(--primaire)}
 @media (max-width:520px){.scanner-actions{justify-content:stretch}.scanner-actions button{flex:1}}
+.correction-import{padding:12px;margin:0 0 8px;border:1px solid var(--bord);border-radius:var(--r-moyen);background:var(--surface-2)}

@@ -685,6 +685,10 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     var ajout by remember { mutableStateOf(false) }
     var version by remember { mutableStateOf(0) }
     var aImporter by remember { mutableStateOf<List<LigneImport>?>(null) }
+    // Lignes refusées corrigées dans l'aperçu (comme « Corriger » du site) : le fichier est réanalysé avec les corrections
+    var texteCsv by remember { mutableStateOf<String?>(null) }
+    val corrections = remember { mutableStateMapOf<Int, Map<String, String>>() }
+    var enCorrection by remember { mutableStateOf<Int?>(null) }
     var photos by remember { mutableStateOf<Map<String, androidx.compose.ui.graphics.ImageBitmap>>(emptyMap()) }
     var liens by remember { mutableStateOf<List<LienMembre>>(emptyList()) }
     var lienDe by remember { mutableStateOf<Membre?>(null) }
@@ -696,7 +700,8 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     val scope = rememberCoroutineScope()
     var erreurImport by remember { mutableStateOf<String?>(null) }
     val choixCsv = rememberChoixTexte { texte ->
-        if (texte != null) { erreurImport = null; aImporter = try { analyserCsvMembres(texte, membres) } catch (e: Exception) { erreurImport = e.message ?: "Fichier illisible"; null } }
+        if (texte != null) { erreurImport = null; texteCsv = texte; corrections.clear(); enCorrection = null
+            aImporter = try { analyserCsvMembres(texte, membres) } catch (e: Exception) { erreurImport = e.message ?: "Fichier illisible"; null } }
     }
     LaunchedEffect(version, Synchro.version) {
         try {
@@ -872,8 +877,8 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             Text("Importer des membres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(buildAnnotatedString {
                 append("Fichier CSV (depuis Excel : Enregistrer sous › CSV) avec une ligne d’en-têtes : ")
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("prénom, nom, jour, mois") }
-                append(" (obligatoires), profession, whatsapp, email, accord (oui ou non), nationalité, pupitre, statut. Les doublons (même nom, même WhatsApp ou même e-mail, dans le fichier ou parmi les membres) sont signalés et écartés.")
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("prénom, jour, mois") }
+                append(" (obligatoires), nom (peut rester vide), profession, whatsapp, email, accord (oui ou non), nationalité, pupitre, statut. Les doublons (même nom, même WhatsApp ou même e-mail, dans le fichier ou parmi les membres) sont signalés et écartés.")
             }, fontSize = 14.sp, color = Couleurs.Texte2)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalButton(onClick = choixCsv) { Text("Choisir le fichier") }
@@ -885,8 +890,8 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                 val nouveaux = res.filter { it.etat == "nouveau" }; val dbl = res.filter { it.etat == "doublon" }
                 val averifier = res.filter { it.etat == "verifier" }; val ko = res.filter { it.etat == "erreur" }
                 val aCompleter = dbl.filter { complementFiche(it) != null }
-                var avecVerifier by remember(res) { mutableStateOf(false) }
-                var completer by remember(res) { mutableStateOf(false) }
+                var avecVerifier by remember(texteCsv) { mutableStateOf(false) }
+                var completer by remember(texteCsv) { mutableStateOf(false) }
                 val ok = if (avecVerifier) nouveaux + averifier else nouveaux
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     @Composable fun Chiffre(n: Int, l: String) = Text(buildAnnotatedString { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("$n") }; append(" $l") })
@@ -895,6 +900,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                     if (averifier.isNotEmpty()) Chiffre(averifier.size, "à vérifier")
                     Chiffre(ko.size, if (ko.size > 1) "refusées" else "refusée")
                 }
+                if (ko.isNotEmpty()) Text("Une ligne refusée se corrige ici : « Corriger », puis « Valider la ligne ». Le nom de famille peut rester vide.", fontSize = 13.sp, color = Couleurs.Texte2)
                 Surface(shape = Formes.Moyen, border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Bord), modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         res.forEachIndexed { i, r ->
@@ -903,9 +909,11 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                                 Column(Modifier.weight(1f)) {
                                     Text("Ligne ${r.ligne} · ${"${r.prenom} ${r.nom}".trim().ifBlank { "(sans nom)" }}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(when { r.etat == "erreur" -> r.erreurs.joinToString(", "); r.motif != null -> r.motif
-                                        else -> listOfNotNull(r.membre?.pupitre, r.membre?.statut, r.membre?.nationalite).joinToString(" · ").ifBlank { "${r.membre?.jour} ${r.membre?.mois?.let { MOIS[it - 1] }}" } },
+                                        else -> listOfNotNull(if (r.nom.isBlank()) "sans nom de famille" else null, r.membre?.pupitre, r.membre?.statut, r.membre?.nationalite).joinToString(" · ").ifBlank { "${r.membre?.jour} ${r.membre?.mois?.let { MOIS[it - 1] }}" } } +
+                                        if (corrections.containsKey(r.ligne)) " · corrigée" else "",
                                         fontSize = 12.sp, color = Couleurs.Texte2)
                                 }
+                                if (r.etat == "erreur" && enCorrection != r.ligne) FilledTonalButton(onClick = { enCorrection = r.ligne }) { Text("Corriger") }
                                 when (r.etat) {
                                     "nouveau" -> Puce("Nouveau", Couleurs.BleuClair, Couleurs.SurBleuClair)
                                     "doublon" -> Puce("Doublon écarté", Couleurs.Surface2, Couleurs.Texte2)
@@ -916,9 +924,17 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                         }
                     }
                 }
+                res.firstOrNull { it.ligne == enCorrection }?.let { r ->
+                    CorrectionLigneImport(r, onAnnuler = { enCorrection = null }) { valeurs ->
+                        corrections[r.ligne] = valeurs; enCorrection = null
+                        val nouveau = analyserCsvMembres(texteCsv!!, membres, corrections); aImporter = nouveau
+                        val l = nouveau.first { it.ligne == r.ligne }
+                        message(if (l.etat == "erreur") "Ligne ${r.ligne} : ${l.erreurs.joinToString(", ")}" else "Ligne ${r.ligne} corrigée")
+                    }
+                }
                 if (averifier.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { avecVerifier = !avecVerifier }) {
                     Checkbox(avecVerifier, { avecVerifier = it })
-                    Text("Importer aussi ${if (averifier.size > 1) "les ${averifier.size} lignes" else "la ligne"} « À vérifier » (autre nom, même WhatsApp ou e-mail : par exemple une même famille)", fontSize = 14.sp)
+                    Text("Importer aussi ${if (averifier.size > 1) "les ${averifier.size} lignes" else "la ligne"} « À vérifier » (même prénom sans nom de famille, même WhatsApp ou même e-mail qu’un autre : par exemple une même famille)", fontSize = 14.sp)
                 }
                 if (aCompleter.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { completer = !completer }) {
                     Checkbox(completer, { completer = it })
@@ -1110,7 +1126,7 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
     val scope = rememberCoroutineScope()
     val choixPhoto = rememberChoixFichier(pdfAccepte = false) { f, err -> if (err != null) message(err); if (f != null) photo = f }
     val joursMax = mois?.let { JOURS_MOIS[it - 1] } ?: 31
-    val valide = prenom.isNotBlank() && nom.isNotBlank() && jour != null && mois != null && (whatsapp.isBlank() || numeroWa(whatsapp) != null)
+    val valide = prenom.isNotBlank() && jour != null && mois != null && (whatsapp.isBlank() || numeroWa(whatsapp) != null)
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(titre ?: if (m == null) "Nouveau membre" else "Modifier la fiche", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -1122,7 +1138,7 @@ private fun FicheMembre(m: Membre?, existants: List<Membre>, onFini: (Boolean) -
             Text("Facultatif", fontSize = 13.sp, color = Couleurs.Texte2)
         }
         OutlinedTextField(prenom, { prenom = it.take(60) }, label = { Text("Prénom *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(nom, { nom = it.take(60) }, label = { Text("Nom *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(nom, { nom = it.take(60) }, label = { Text("Nom (facultatif)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Text("Anniversaire (jour et mois, sans l’année) *", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { ChoixListe("Jour", jour?.toString() ?: "–", (1..joursMax).map { it.toString() }) { jour = it + 1 } }

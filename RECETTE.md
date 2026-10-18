@@ -5,7 +5,7 @@ Grille de la page 17 de l'audit du 7 octobre 2026. Un contrôle non effectué re
 Moyens utilisés :
 - **Base** : PostgreSQL 16 local avec le `schema.sql` complet (sections 1 à 12), et les rôles réels (trésorier, président, bureau, adhérent) testés avec les règles d'accès actives.
 - **Site** : mode démonstration piloté par navigateur automatique (Chromium), sans erreur JavaScript sur tous les parcours.
-- **Application Android** : 29 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.36.0.
+- **Application Android** : 30 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.36.1.
 
 | Scénario | Résultat attendu | Résultat | Preuve |
 |---|---|---|---|
@@ -44,12 +44,13 @@ Moyens utilisés :
 | Petit rappel groupé | Un message par personne, au nom de l’association, sans relancer ceux qui viennent d’en recevoir un | **Validé en démonstration (site) et par les tests Android ; à vérifier sur un vrai téléphone** | 11 membres avec un retard, 10 cochés (Esther, prévenue il y a 10 jours, décochée) ; « Envoyer 2 notifications » → « 2 petits mots envoyés », puis « Encore 8 à prévenir » avec 5 boutons WhatsApp et « Copier tous les messages » (un bloc par personne avec son prénom et son montant) ; réouverture : plus personne coché ; même parcours dans une collecte ; test Android `rappelGroupeNoteChaqueEnvoi` |
 | Petit rappel : structure et mise en évidence | Rappel groupé construit comme le rappel individuel ; montant et moyen de paiement visibles d’un coup d’œil | **Validé en démonstration (site) et par les tests Android** | Mêmes éléments dans le même ordre (titre, encadré, message, note, Notification / WhatsApp / Copier, Fermer) ; message : « 💶 Reste pour cette année : *100,00 €* », « 💳 Pour régler : » une puce par moyen ; notification sans astérisques ; texte de production « Veuillez remettre au trésorier… Wero au 0666724026 » rendu sur une ligne en gras ; test `rappelCommeLeSite` (4 cas identiques au site) |
 | Import des membres (nouvelle structure) | Doublons signalés et écartés, rien d’écrasé | **Validé sur la base de test, en production (colonnes ajoutées), en démonstration (site) et par les tests Android** | Fichier de 6 lignes : 2 nouveaux, « Kouassi Daniel » écarté (déjà membre, prénom et nom inversés), « Marie EXEMPLE » écartée (doublon de la ligne 2), « Jean Nouveau » à vérifier (même WhatsApp que Daniel), ligne sans mois refusée ; statut « inactif » → membre inactif ; « soprano » → Soprane ; compléter la fiche de Daniel ajoute l’e-mail et la nationalité sans remplacer son pupitre ; test `importMembresDoublons` (mêmes états et motifs que le site) |
+| Membres sans nom de famille, correction dans l’aperçu | Personne n’est bloqué ; une erreur se corrige sans retoucher le fichier | **Validé en démonstration (site) et par les tests Android** | « Joël » sans nom importé (« sans nom de famille ») ; second « Joël » né le même jour écarté ; « Joël » né un autre jour à vérifier ; ligne sans mois → « Corriger », mois choisi, « Valider la ligne » → Nouveau (« corrigée ») ; fiche de Joël enregistrée sans nom ; test `importSansNomEtCorrection` (mêmes états que le site) |
 | Scanner de pièces jointes | Photo redressée, lisible, placée dans la pièce | **Validé en démonstration (site, iPhone SE, iPhone 13, ordinateur) et par les tests Android ; à essayer sur de vraies factures** | Ticket penché sur une table : papier repéré, loupe pendant le glisser d’un coin, document redressé, papier blanc et tampon bleu gardé (Magique), Noir et blanc, fichier `scan-….jpg` de 50 Ko dans le champ ; test `scannerCommeLeSite` (mêmes coins et proportions que le site) |
 | Nouveautés | Pastilles exactes selon le rôle | **Validé** | Président : demande à valider comptée ; bureau : ses propres saisies non comptées ; adhérent : rendez-vous et participations seulement ; vu → 0 |
 
 ## Points restant à valider par une personne
 
-1. **Application Android sur un vrai téléphone** : installer l’APK 0.36.0 et refaire les parcours (virement, régularisation, filtres, export).
+1. **Application Android sur un vrai téléphone** : installer l’APK 0.36.1 et refaire les parcours (virement, régularisation, filtres, export).
 2. **Export réel** depuis le site en ligne : ouvrir un PDF et un Excel du journal d'octobre et comparer les totaux à l'écran Opérations.
 3. **Restauration sur Supabase** : la commande `set local session_replication_role = replica` du script de restauration doit être acceptée par l'éditeur SQL de Supabase (à confirmer lors d'un premier essai, sur un projet de test).
 

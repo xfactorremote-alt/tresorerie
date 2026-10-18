@@ -32,7 +32,7 @@ const nomRole = (code) => S.roles.find((r) => r.code === code)?.nom || code;
 const initiales = (m) => ((m.prenom || '')[0] || '') + ((m.nom || '')[0] || '');
 const signe = (t) => (t.sens === 'recette' ? 1 : -1) * Number(t.montant);
 const montantSigne = (t) => { const v = signe(t); return `<span class="num ${v >= 0 ? 'recette' : 'depense'}">${v >= 0 ? '+' : '−'} ${eur(Math.abs(v))}</span>`; };
-const nomComplet = (m) => m ? `${m.prenom} ${m.nom}` : '';
+const nomComplet = (m) => m ? `${m.prenom || ''} ${m.nom || ''}`.trim() : '';   // le nom de famille peut manquer
 const sansAccents = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 // Pièces jointes : chaque champ marqué data-scan reçoit « Scanner avec l'appareil photo » (comme BoutonScanner d'Android) ;
@@ -2230,7 +2230,7 @@ function feuilleMembre(m = null, opts = {}) {
     </div>
     <div class="champs champs-2">
       <label class="champ"><span class="obligatoire">Prénom</span><input name="prenom" value="${esc(v.prenom)}" maxlength="60" required autocomplete="off"></label>
-      <label class="champ"><span class="obligatoire">Nom</span><input name="nom" value="${esc(v.nom)}" maxlength="60" required autocomplete="off"></label>
+      <label class="champ">Nom (facultatif)<input name="nom" value="${esc(v.nom)}" maxlength="60" autocomplete="off"></label>
     </div>
     <fieldset style="border:0;padding:0;margin:0"><legend class="champ obligatoire" style="font-size:13px;font-weight:600;color:var(--texte-2);margin-bottom:4px">Anniversaire (jour et mois, sans l’année)</legend>
       <div class="champs champs-2">
@@ -2337,15 +2337,20 @@ function statutImport(s) {
 }
 // Doublon : même prénom et nom (accents, majuscules, tirets et espaces ignorés, prénom et nom inversés compris), même WhatsApp ou même e-mail
 const cleNom = (p, n) => sansAccents(`${p}${n}`).replace(/[^a-z]/g, '');
+// Sans nom de famille (l'un ou l'autre) : même prénom et même anniversaire = doublon ; même prénom seul = à vérifier
+const DOUBLONS_SURS = ['même nom', 'même prénom et anniversaire'];
 function cleDoublon(x, y) {
-  if (cleNom(x.prenom, x.nom) && (cleNom(x.prenom, x.nom) === cleNom(y.prenom, y.nom) || cleNom(x.prenom, x.nom) === cleNom(y.nom, y.prenom))) return 'même nom';
+  if (!cleNom(x.nom, '') || !cleNom(y.nom, '')) {
+    if (cleNom(x.prenom, '') && cleNom(x.prenom, '') === cleNom(y.prenom, '')) return Number(x.naissance_jour) === Number(y.naissance_jour) && Number(x.naissance_mois) === Number(y.naissance_mois) ? 'même prénom et anniversaire' : 'même prénom';
+  } else if (cleNom(x.prenom, x.nom) === cleNom(y.prenom, y.nom) || cleNom(x.prenom, x.nom) === cleNom(y.nom, y.prenom)) return 'même nom';
   if (x.whatsapp && y.whatsapp && numeroWa(x.whatsapp) && numeroWa(x.whatsapp) === numeroWa(y.whatsapp)) return 'même WhatsApp';
   if (x.email && y.email && sansAccents(x.email) === sansAccents(y.email)) return 'même e-mail';
   return null;
 }
 // Chaque ligne : etat « nouveau », « doublon » (même nom : écarté), « verifier » (autre nom mais même WhatsApp ou e-mail,
 // souvent une même famille : importé seulement si on le demande) ou « erreur »
-function analyserLignes(lignes, existants = S.membres) {
+// corrections : { numéro de ligne: { prenom, nom, jour, mois, whatsapp, email } } saisies dans l'aperçu (lignes refusées)
+function analyserLignes(lignes, existants = S.membres, corrections = {}) {
   const entetes = lignes[0].map(sansAccents);
   const col = (...noms) => entetes.findIndex((h) => noms.some((n) => h === n || h.startsWith(n)));
   const idx = {
@@ -2353,13 +2358,13 @@ function analyserLignes(lignes, existants = S.membres) {
     profession: col('profession', 'metier'), whatsapp: col('whatsapp', 'telephone', 'tel'), email: col('email', 'e-mail', 'mail'), consent: col('accord', 'consent'),
     nationalite: col('nationalite', 'pays'), pupitre: col('pupitre', 'voix'), statut: col('statut'),
   };
-  if (idx.prenom < 0 || idx.nom < 0 || ((idx.jour < 0 || idx.mois < 0) && idx.date < 0)) {
-    throw new Error('Colonnes attendues : prénom, nom, jour, mois (ou anniversaire au format jj/mm)');
+  if (idx.prenom < 0 || ((idx.jour < 0 || idx.mois < 0) && idx.date < 0)) {
+    throw new Error('Colonnes attendues : prénom, jour, mois (ou anniversaire au format jj/mm) ; le nom peut manquer');
   }
   const moisTexte = (s) => { const n = Number(s); if (n) return n; const i = MOIS.findIndex((x) => sansAccents(x) === sansAccents(s)); return i + 1; };
   const retenues = [];
   return lignes.slice(1).map((l, i) => {
-    const g = (k) => (idx[k] >= 0 ? String(l[idx[k]] ?? '').trim() : '');
+    const g = (k) => String(corrections[i + 2]?.[k] ?? (idx[k] >= 0 ? l[idx[k]] ?? '' : '')).trim();
     let jour = Number(g('jour')), mois = moisTexte(g('mois'));
     const dateTexte = g('date') || (/[\/\-.]/.test(g('jour')) ? g('jour') : '');
     if ((!jour || !mois) && dateTexte) { const p = dateTexte.split(/[\/\-. ]/); jour = Number(p[0]); mois = moisTexte(p[1]); }
@@ -2372,16 +2377,16 @@ function analyserLignes(lignes, existants = S.membres) {
       erreurs: [], etat: 'nouveau', doublon: null, existant: null,
     };
     if (!r.prenom) r.erreurs.push('prénom manquant');
-    if (!r.nom) r.erreurs.push('nom manquant');
     if (!(mois >= 1 && mois <= 12)) r.erreurs.push('mois invalide');
     else if (!(jour >= 1 && jour <= new Date(2024, mois, 0).getDate())) r.erreurs.push('jour invalide');
     if (r.whatsapp && !numeroWa(r.whatsapp)) r.erreurs.push('WhatsApp invalide');
     if (r.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email)) r.erreurs.push('e-mail invalide');
     if (r.erreurs.length) { r.etat = 'erreur'; return r; }
-    const ex = existants.find((m) => cleDoublon(r, m) === 'même nom') || existants.find((m) => cleDoublon(r, m));
-    const avant = retenues.find((x) => cleDoublon(r, x) === 'même nom') || retenues.find((x) => cleDoublon(r, x));
-    if (ex) { const motif = cleDoublon(r, ex); r.etat = motif === 'même nom' ? 'doublon' : 'verifier'; r.existant = motif === 'même nom' ? ex : null; r.doublon = `${motif === 'même nom' ? 'déjà membre' : `${motif} que`} : ${nomComplet(ex)}`; }
-    else if (avant) { const motif = cleDoublon(r, avant); r.etat = motif === 'même nom' ? 'doublon' : 'verifier'; r.doublon = `${motif === 'même nom' ? 'doublon de la ligne' : `${motif} que la ligne`} ${avant.ligne}`; }
+    const sur = (x) => DOUBLONS_SURS.includes(cleDoublon(r, x));
+    const ex = existants.find(sur) || existants.find((m) => cleDoublon(r, m));
+    const avant = retenues.find(sur) || retenues.find((x) => cleDoublon(r, x));
+    if (ex) { const motif = cleDoublon(r, ex); r.etat = sur(ex) ? 'doublon' : 'verifier'; r.existant = sur(ex) ? ex : null; r.doublon = `${sur(ex) ? 'déjà membre' : `${motif} que`} : ${nomComplet(ex)}`; }
+    else if (avant) { const motif = cleDoublon(r, avant); r.etat = sur(avant) ? 'doublon' : 'verifier'; r.doublon = `${sur(avant) ? 'doublon de la ligne' : `${motif} que la ligne`} ${avant.ligne}`; }
     if (r.etat !== 'doublon') retenues.push(r);
     return r;
   });
@@ -2396,7 +2401,7 @@ function complementFiche(r) {
 
 function feuilleImport() {
   ouvrirFeuille(`<h2>Importer des membres</h2>
-    <p class="muted">Fichier CSV ou Excel avec une ligne d’en-têtes : <b>prénom, nom, jour, mois</b> (obligatoires), profession, whatsapp, email, accord (oui ou non), nationalité, pupitre, statut. Les doublons (même nom, même WhatsApp ou même e-mail, dans le fichier ou parmi les membres) sont signalés et écartés.</p>
+    <p class="muted">Fichier CSV ou Excel avec une ligne d’en-têtes : <b>prénom, jour, mois</b> (obligatoires), nom (peut rester vide), profession, whatsapp, email, accord (oui ou non), nationalité, pupitre, statut. Les doublons (même nom, même WhatsApp ou même e-mail, dans le fichier ou parmi les membres) sont signalés et écartés.</p>
     <div class="actions" style="justify-content:flex-start">
       <label class="btn btn-tonal">Choisir le fichier<input type="file" id="fichier" accept=".csv,.xlsx,.xls,text/csv" hidden></label>
       <button class="btn-texte" id="b-modele">Télécharger le modèle</button>
@@ -2418,20 +2423,42 @@ function feuilleImport() {
           lignes = parserCsv(txt.replace(/^﻿/, ''));
         }
         if (lignes.length < 2) throw new Error('Fichier vide ou sans ligne d’en-têtes');
-        const res = analyserLignes(lignes);
+        // Les lignes refusées se corrigent ici même (« Corriger »), sans retoucher le fichier ; l'aperçu est recalculé
+        const corrections = {}, cases = { verifier: false, completer: false }; let enCorrection = null;
+        const afficher = () => {
+        const res = analyserLignes(lignes, S.membres, corrections);
         const nouveaux = res.filter((r) => r.etat === 'nouveau'), dbl = res.filter((r) => r.etat === 'doublon'), ko = res.filter((r) => r.etat === 'erreur'), averifier = res.filter((r) => r.etat === 'verifier');
         let ok = nouveaux;
         const aCompleter = dbl.filter(complementFiche);
         const PUCE = { nouveau: ['puce-ok', 'Nouveau'], doublon: ['puce-neutre', 'Doublon écarté'], verifier: ['puce-partiel', 'À vérifier'], erreur: ['puce-ko', 'Refusée'] };
+        const formCorrection = (r) => `<form class="correction-import champs" data-ligne="${r.ligne}"><h3 style="margin:0">Corriger la ligne ${r.ligne}</h3><p class="muted" style="margin:0">${esc(r.erreurs.join(', '))}</p>
+            <div class="champs champs-2"><label class="champ"><span class="obligatoire">Prénom</span><input name="prenom" value="${esc(r.prenom)}" maxlength="60" required></label>
+            <label class="champ">Nom (facultatif)<input name="nom" value="${esc(r.nom)}" maxlength="60"></label></div>
+            <div class="champs champs-2"><select name="jour" required aria-label="Jour"><option value="">Jour</option>${Array.from({ length: 31 }, (_, i) => `<option ${Number(r.naissance_jour) === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select>
+            <select name="mois" required aria-label="Mois"><option value="">Mois</option>${MOIS.map((x, i) => `<option value="${i + 1}" ${Number(r.naissance_mois) === i + 1 ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+            <div class="champs champs-2"><label class="champ">WhatsApp<input name="whatsapp" type="tel" value="${esc(r.whatsapp || '')}"></label><label class="champ">E-mail<input name="email" type="email" value="${esc(r.email || '')}"></label></div>
+            <div class="actions"><button type="button" class="btn-texte" data-annuler-correction>Annuler</button><button class="btn-primaire">Valider la ligne</button></div></form>`;
         $('#resultat', root).innerHTML = `
           <p class="resume-import"><span><b>${nouveaux.length}</b> nouveau${nouveaux.length > 1 ? 'x' : ''}</span><span><b>${dbl.length}</b> doublon${dbl.length > 1 ? 's' : ''} écarté${dbl.length > 1 ? 's' : ''}</span>${averifier.length ? `<span><b>${averifier.length}</b> à vérifier</span>` : ''}<span><b>${ko.length}</b> refusée${ko.length > 1 ? 's' : ''}</span></p>
+          ${ko.length ? '<p class="muted" style="margin:0">Une ligne refusée se corrige ici : « Corriger », puis « Valider la ligne ». Le nom de famille peut rester vide.</p>' : ''}
           <ul class="liste liste-import">${res.map((r) => `<li><div class="corps"><b>Ligne ${r.ligne} · ${esc(`${r.prenom} ${r.nom}`.trim() || '(sans nom)')}</b>
-            <span>${r.etat === 'erreur' ? esc(r.erreurs.join(', ')) : r.doublon ? esc(r.doublon) : esc([r.pupitre, r.statut, r.nationalite].filter(Boolean).join(' · ') || `${r.naissance_jour} ${MOIS[r.naissance_mois - 1]}`)}</span></div>
+            <span>${r.etat === 'erreur' ? esc(r.erreurs.join(', ')) : r.doublon ? esc(r.doublon) : esc([r.nom ? '' : 'sans nom de famille', r.pupitre, r.statut, r.nationalite].filter(Boolean).join(' · ') || `${r.naissance_jour} ${MOIS[r.naissance_mois - 1]}`)}${corrections[r.ligne] ? ' · corrigée' : ''}</span></div>
+            ${r.etat === 'erreur' && enCorrection !== r.ligne ? `<button type="button" class="btn-tonal btn-petit" data-corriger="${r.ligne}">Corriger</button>` : ''}
             <span class="puce ${PUCE[r.etat][0]}">${PUCE[r.etat][1]}</span></li>`).join('')}</ul>
-          ${averifier.length ? `<label class="case"><input type="checkbox" id="c-verifier"> Importer aussi ${averifier.length > 1 ? `les ${averifier.length} lignes` : 'la ligne'} « À vérifier » (autre nom, même WhatsApp ou e-mail : par exemple une même famille)</label>` : ''}
-          ${aCompleter.length ? `<label class="case"><input type="checkbox" id="c-completer"> Compléter ${aCompleter.length > 1 ? `les ${aCompleter.length} fiches existantes` : 'la fiche existante'} avec les informations du fichier (seulement les cases vides, rien n’est remplacé)</label>` : ''}
+          ${enCorrection ? formCorrection(res.find((r) => r.ligne === enCorrection)) : ''}
+          ${averifier.length ? `<label class="case"><input type="checkbox" id="c-verifier" ${cases.verifier ? 'checked' : ''}> Importer aussi ${averifier.length > 1 ? `les ${averifier.length} lignes` : 'la ligne'} « À vérifier » (même prénom sans nom de famille, même WhatsApp ou même e-mail qu’un autre : par exemple une même famille)</label>` : ''}
+          ${aCompleter.length ? `<label class="case"><input type="checkbox" id="c-completer" ${cases.completer ? 'checked' : ''}> Compléter ${aCompleter.length > 1 ? `les ${aCompleter.length} fiches existantes` : 'la fiche existante'} avec les informations du fichier (seulement les cases vides, rien n’est remplacé)</label>` : ''}
           <div class="actions"><button class="btn-texte" id="b-fermer">Annuler</button><button class="btn-primaire" id="b-importer" ${ok.length || aCompleter.length ? '' : 'disabled'}>Importer ${ok.length} membre${ok.length > 1 ? 's' : ''}</button></div>`;
         $('#b-fermer', root).addEventListener('click', fermerFeuille);
+        root.querySelectorAll('[data-corriger]').forEach((b) => b.addEventListener('click', () => { enCorrection = Number(b.dataset.corriger); afficher(); $('.correction-import', root)?.scrollIntoView({ block: 'nearest' }); $('.correction-import input', root)?.focus(); }));
+        $('[data-annuler-correction]', root)?.addEventListener('click', () => { enCorrection = null; afficher(); });
+        $('.correction-import', root)?.addEventListener('submit', (e) => {
+          e.preventDefault(); const f = e.target, n = Number(f.dataset.ligne);
+          corrections[n] = { prenom: f.prenom.value.trim(), nom: f.nom.value.trim(), jour: f.jour.value, mois: f.mois.value, whatsapp: f.whatsapp.value.trim(), email: f.email.value.trim() };
+          enCorrection = null; afficher();
+          const r = analyserLignes(lignes, S.membres, corrections).find((x) => x.ligne === n);
+          toast(r.etat === 'erreur' ? `Ligne ${n} : ${r.erreurs.join(', ')}` : `Ligne ${n} corrigée`);
+        });
         $('#b-importer', root).addEventListener('click', async (ev) => {
           ev.target.disabled = true;
           const completer = $('#c-completer', root)?.checked;
@@ -2444,11 +2471,14 @@ function feuilleImport() {
           } catch (err) { ev.target.disabled = false; erreur(err); }
         });
         const maj = () => {
-          const c = $('#c-completer', root)?.checked; ok = $('#c-verifier', root)?.checked ? [...nouveaux, ...averifier] : nouveaux;
+          const c = $('#c-completer', root)?.checked; cases.completer = !!c; cases.verifier = !!$('#c-verifier', root)?.checked;
+          ok = cases.verifier ? [...nouveaux, ...averifier] : nouveaux;
           const b = $('#b-importer', root); b.disabled = !(ok.length || (c && aCompleter.length));
           b.textContent = ok.length || !c ? `Importer ${ok.length} membre${ok.length > 1 ? 's' : ''}` : 'Compléter les fiches';
         };
         $('#c-completer', root)?.addEventListener('change', maj); $('#c-verifier', root)?.addEventListener('change', maj); maj();
+        };
+        afficher();
       } catch (err) { $('#resultat', root).innerHTML = `<div class="alerte">${esc(err.message)}</div>`; }
     });
   });

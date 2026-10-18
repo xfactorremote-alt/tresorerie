@@ -79,7 +79,7 @@ data class Membre(
     val nationalite: String? = null,
     val pupitre: String? = null,
     val statut: String? = null,
-) { val nomComplet get() = "$prenom $nom" }
+) { val nomComplet get() = "$prenom $nom".trim() }   // le nom de famille peut manquer
 
 @Serializable
 data class Ecriture(
