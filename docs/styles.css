@@ -1324,3 +1324,11 @@ dialog.visionneuse img{max-width:100%;max-height:calc(100dvh - 64px);object-fit:
 .choix-envoi{display:flex;flex-direction:column;align-items:stretch;gap:6px}
 .choix-envoi>button{justify-content:center}
 .choix-envoi>.muted{margin:-2px 0 6px;font-size:12.5px}
+.liste-rappel{max-height:300px;overflow:auto;border:1px solid var(--bord);border-radius:var(--r-moyen);padding:0 8px}
+.liste-rappel li{padding:8px 0;min-height:0;flex-shrink:0}
+.liste-rappel .case{min-height:44px;width:100%}
+.liste-rappel .corps{display:flex;flex-direction:column;gap:2px;min-width:0}
+.liste-rappel .corps>*{line-height:18px}
+.liste-rappel .corps span{font-size:12.5px}
+.apercu-rappel summary{cursor:pointer;color:var(--primaire);font-weight:600;min-height:24px}
+.apercu-rappel p{font-size:13px;color:var(--texte-2);background:var(--survol);padding:8px;border-radius:var(--r-moyen)}

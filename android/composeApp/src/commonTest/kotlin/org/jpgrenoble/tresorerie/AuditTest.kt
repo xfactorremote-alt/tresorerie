@@ -329,4 +329,17 @@ class AuditTest {
         assertEquals("JP Grenoble", nomAssoMessage("JP Grenoble"))
         assertTrue(listOf("arriéré", "retard", "relance", "sans pression", "bon moment").none { it in RAPPEL_DEFAUT.values.joinToString().lowercase() })
     }
+
+    // Petit rappel groupé : la notification n'est possible qu'avec des appareils ; un rappel noté apparaît aussitôt (pas coché la fois suivante)
+    @Test
+    fun rappelGroupeNoteChaqueEnvoi() {
+        val tresorier = Demo.comptesTest.first { it.email.startsWith("tresorier") }.profil
+        val adherent = Demo.comptesTest.first { it.email.startsWith("adherent") }.profil
+        assertEquals(2, Demo.envoyerRappel("m1", "notification", "Bonjour", null, tresorier))
+        assertTrue(runCatching { Demo.envoyerRappel("m7", "notification", "Bonjour", null, tresorier) }.isFailure)
+        assertTrue(runCatching { Demo.envoyerRappel("m1", "copie", "Bonjour", null, adherent) }.isFailure)
+        val e = Demo.etatRappels(null, tresorier).associateBy { it.membreId }
+        assertTrue(e.getValue("m1").dernier != null && e.getValue("m7").dernier == null && e.getValue("m2").dernier != null)
+        assertTrue(Demo.etatRappels("autre-collecte", tresorier).all { it.dernier == null })
+    }
 }

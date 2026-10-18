@@ -121,3 +121,119 @@ private fun joursDepuis(iso: String): Int? = try {
     val i = kotlinx.datetime.Instant.parse(if (iso.length == 10) iso + "T00:00:00Z" else iso.replace(' ', 'T').let { if (Regex("[+-]\\d\\d$").containsMatchIn(it)) "$it:00" else it })
     ((kotlinx.datetime.Clock.System.now() - i).inWholeHours / 24).toInt()
 } catch (_: Exception) { null }
+
+/** Une personne d'un petit rappel groupé : son montant restant (0 = montant libre). */
+data class CibleRappel(val membre: Membre, val montant: Double)
+
+// Petit rappel groupé (comme feuilleRappelGroupe du site) : chacun reçoit SON message (prénom, montant, lien),
+// par notification au nom de l'association ; ceux qui n'ont pas les alertes : WhatsApp un par un (pas d'envoi groupé possible) ou copie.
+// Personne n'est coché d'office s'il a eu un petit mot il y a moins de 30 jours.
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FeuilleRappelGroupe(d: Donnees, cibles: List<CibleRappel>, type: String, collecte: String, collecteId: String?, message: (String) -> Unit, onFermer: () -> Unit) {
+    val presse = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val liste = remember(cibles) { cibles.filter { it.membre.actif } }
+    var etats by remember { mutableStateOf<Map<String, EtatRappel>>(emptyMap()) }
+    var modele by remember { mutableStateOf<String?>(null) }
+    var infos by remember { mutableStateOf<String?>(null) }
+    var liens by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    val coches = remember { mutableStateListOf<String>() }
+    var envoi by remember { mutableStateOf(false) }
+    var restants by remember { mutableStateOf<List<CibleRappel>?>(null) }
+    var envoyes by remember { mutableStateOf(0) }
+    val ouverts = remember { mutableStateListOf<String>() }
+    LaunchedEffect(Unit) {
+        try { etats = Repo.etatRappels(collecteId).associateBy { it.membreId } } catch (_: Exception) {}
+        infos = try { Repo.texteReglage("infos_paiement") } catch (_: Exception) { null }
+        liens = try { Repo.liens().mapNotNull { l -> liste.firstOrNull { it.membre.id == l.membreId }?.let { l.membreId to Repo.urlLien(l, it.membre) } }.toMap() } catch (_: Exception) { emptyMap() }
+        coches.addAll(liste.filter { c -> etats[c.membre.id]?.dernier?.let { joursDepuis(it) }?.let { it >= 30 } ?: true }.map { it.membre.id })
+        modele = (try { Repo.texteReglage(cleRappel(type)) } catch (_: Exception) { null }) ?: RAPPEL_DEFAUT.getValue(type)
+    }
+    fun texte(c: CibleRappel) = texteRappel(modele, c.membre.prenom, d.organisation.nom, type, c.montant, collecte, infos, liens[c.membre.id]).trim()
+    fun appareils(c: CibleRappel) = etats[c.membre.id]?.appareils ?: 0
+    fun noter(c: CibleRappel, canal: String) = Annulation.portee.launch { try { Repo.envoyerRappel(c.membre.id, canal, texte(c), collecteId) } catch (_: Exception) {} }
+    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        val m = modele
+        val reste = restants
+        if (m == null) { Text("Petit rappel groupé", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); LinearProgressIndicator(Modifier.fillMaxWidth()) }
+        else if (reste == null) {
+            val choisis = liste.filter { it.membre.id in coches }
+            val nNotif = choisis.count { appareils(it) > 0 }; val nAutres = choisis.size - nNotif
+            Text("Petit rappel groupé", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Chacun reçoit son propre message, avec son prénom et son montant, au nom de ${nomAssoMessage(d.organisation.nom)}.", fontSize = 14.sp, color = Couleurs.Texte2)
+            OutlinedTextField(m, { modele = it.take(1500) }, label = { Text("Message") }, minLines = 6, modifier = Modifier.fillMaxWidth())
+            (choisis.firstOrNull() ?: liste.firstOrNull())?.let { c ->
+                var apercu by remember { mutableStateOf(false) }
+                TextButton(onClick = { apercu = !apercu }, contentPadding = PaddingValues(0.dp)) { Text((if (apercu) "▾ " else "▸ ") + "Aperçu pour ${c.membre.prenom}") }
+                if (apercu) Surface(color = Couleurs.Survol, shape = Formes.Moyen, modifier = Modifier.fillMaxWidth()) { Text(texte(c), Modifier.padding(8.dp), fontSize = 13.sp, color = Couleurs.TexteFort2) }
+            }
+            Text("Destinataires (${choisis.size} sur ${liste.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Surface(shape = Formes.Moyen, border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Bord), modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    liste.forEachIndexed { i, c ->
+                        if (i > 0) HorizontalDivider(color = Couleurs.BordDoux)
+                        val coche = c.membre.id in coches
+                        val j = etats[c.membre.id]?.dernier?.let { joursDepuis(it) }
+                        Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(coche, { if (it) coches.add(c.membre.id) else coches.remove(c.membre.id) })
+                            Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                                Text(c.membre.nomComplet, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text(listOfNotNull(if (type == "cotisation" || c.montant > 0) euros(c.montant) else null,
+                                    if (appareils(c) > 0) "Notification" else if (numeroWa(c.membre.whatsapp) != null) "WhatsApp" else "Copie du message").joinToString(" · "),
+                                    fontSize = 12.sp, color = Couleurs.Texte2)
+                                if (j != null && j < 30) Text("petit mot ${when (j) { 0 -> "aujourd’hui"; 1 -> "hier"; else -> "il y a $j jours" }}", fontSize = 12.sp, color = Couleurs.Erreur)
+                            }
+                        }
+                    }
+                }
+            }
+            if (nAutres > 0) Text("$nAutres sans alertes sur leur téléphone : vous les préviendrez ensuite un par un (WhatsApp) ou en copiant leur message.", fontSize = 13.sp, color = Couleurs.Texte2)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton(onClick = onFermer) { Text("Fermer") }
+                Button(enabled = choisis.isNotEmpty() && !envoi && m.isNotBlank(), onClick = {
+                    envoi = true
+                    scope.launch {
+                        var n = 0; val echecs = mutableListOf<CibleRappel>()
+                        for (c in choisis.filter { appareils(it) > 0 }) { try { Repo.envoyerRappel(c.membre.id, "notification", texte(c), collecteId); n++ } catch (_: Exception) { echecs += c } }
+                        val r = choisis.filter { appareils(it) == 0 } + echecs
+                        val bilan = "$n petit${if (n > 1) "s" else ""} mot${if (n > 1) "s" else ""} envoyé${if (n > 1) "s" else ""} au nom de l’association"
+                        if (r.isEmpty()) { message(bilan); onFermer() } else { envoyes = n; restants = r }
+                        envoi = false
+                    }
+                }) { Text(if (envoi) "Envoi…" else if (nNotif > 0) "Envoyer $nNotif notification${if (nNotif > 1) "s" else ""}" else "Continuer") }
+            }
+        } else {
+            Text("Encore ${reste.size} à prévenir", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            if (envoyes > 0) Surface(color = Couleurs.BleuClair, shape = Formes.Moyen, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Outlined.Info, null, tint = Couleurs.Bleu, modifier = Modifier.size(18.dp))
+                    Text("$envoyes petit${if (envoyes > 1) "s" else ""} mot${if (envoyes > 1) "s" else ""} envoyé${if (envoyes > 1) "s" else ""} au nom de l’association.", fontSize = 14.sp, color = Couleurs.SurBleuClair)
+                }
+            }
+            Text("Ils n’ont pas activé les alertes. WhatsApp ne permet pas d’envoi groupé : chaque message est prêt, un appui par personne. Pour écrire au nom de l’association, utilisez WhatsApp Business avec son numéro.",
+                fontSize = 13.sp, color = Couleurs.Texte2)
+            val business = remember { whatsappBusinessInstalle() }
+            reste.forEachIndexed { i, c ->
+                if (i > 0) HorizontalDivider(color = Couleurs.BordDoux)
+                val num = numeroWa(c.membre.whatsapp)
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(c.membre.nomComplet, fontWeight = FontWeight.SemiBold)
+                        Text(if (num != null) "WhatsApp" else "Pas de numéro WhatsApp", fontSize = 13.sp, color = Couleurs.Texte2)
+                    }
+                    if (num != null) OutlinedButton(enabled = c.membre.id !in ouverts, onClick = {
+                        ouvrirWhatsApp(num, texte(c), business); ouverts.add(c.membre.id); noter(c, "whatsapp")
+                    }) { Text(if (c.membre.id in ouverts) "Ouvert" else "WhatsApp") }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton(onClick = {
+                    presse.setText(AnnotatedString(reste.joinToString("\n\n") { "— ${it.membre.nomComplet} —\n${texte(it)}" }))
+                    message("Messages copiés"); reste.forEach { noter(it, "copie") }
+                }) { Text("Copier tous les messages") }
+                Button(onClick = onFermer) { Text("Terminé") }
+            }
+        }
+    }
+}

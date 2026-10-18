@@ -2394,6 +2394,7 @@ async function ongletCotisations(zone) {
       <select id="annee" aria-label="Année" style="width:auto">${[S.annee + 1, S.annee, S.annee - 1, S.annee - 2].map((a) => `<option ${a === S.annee ? 'selected' : ''}>${a}</option>`).join('')}</select>
       <span class="muted">${PERIODICITES[pasCotis()]}, ${eur(montant)} par période</span>
       <span style="flex:1"></span>
+      ${gere && nbRetard ? '<button class="btn-tonal btn-petit" id="b-rappel-groupe">Petit rappel groupé</button>' : ''}
       <button class="btn-bleu btn-petit" id="b-export-c">Exporter</button>
     </div>
     ${gere && sansCotis ? `<div class="info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><span style="flex:1">${sansCotis} membre${sansCotis > 1 ? 's' : ''} actif${sansCotis > 1 ? 's' : ''} sans cotisation en ${S.annee}</span><button class="btn-primaire btn-petit" id="b-generer">Générer les cotisations ${S.annee}</button></div>` : ''}
@@ -2424,6 +2425,7 @@ async function ongletCotisations(zone) {
   $('#b-generer', zone)?.addEventListener('click', async () => {
     try { const n = await q(sb.rpc('generer_cotisations', { an: S.annee })); toast(`${n} période${n > 1 ? 's' : ''} créée${n > 1 ? 's' : ''}`); pageCotisations(); } catch (e) { erreur(e); }
   });
+  $('#b-rappel-groupe', zone)?.addEventListener('click', () => feuilleRappelGroupe(lignes.filter(({ c }) => Number(c.retard) > 0).map(({ m, c }) => ({ m, montant: Number(c.retard) })), { type: 'cotisation' }).catch(erreur));
   zone.querySelectorAll('[data-rappel]').forEach((b) => b.addEventListener('click', () => {
     const m = S.membres.find((x) => x.id === b.dataset.rappel); if (m) feuilleRappel(m, { type: 'cotisation', montant: Number(b.dataset.montant) }).catch(erreur);
   }));
@@ -2455,8 +2457,9 @@ function nomAssoMessage() {
   if (n !== n.toUpperCase()) return n;
   return casseTitre(n).replace(/(?<=\s)(De|Des|Du|La|Le|Les|Et|En|Pour|Au|Aux|À)(?=\s)/g, (x) => x.toLowerCase());
 }
-function texteRappel(m, { type = 'cotisation', montant = 0, collecte = '' } = {}) {
-  const modele = (type === 'participation' ? S.textes?.message_rappel_participation : S.textes?.message_rappel) || RAPPEL_DEFAUT[type];
+function modeleRappel(type) { return (type === 'participation' ? S.textes?.message_rappel_participation : S.textes?.message_rappel) || RAPPEL_DEFAUT[type]; }
+function texteRappel(m, { type = 'cotisation', montant = 0, collecte = '', modele = null } = {}) {
+  modele = modele?.trim() || modeleRappel(type);
   const l = (S.liensMembres || {})[m.id];
   const reglement = S.textes?.infos_paiement ? `\nPour régler : ${S.textes.infos_paiement.trim().replace(/\s*\n\s*/g, ' ; ')}` : '';
   const valeurs = {
@@ -2472,7 +2475,7 @@ async function feuilleRappel(m, { type = 'cotisation', montant = 0, collecte = '
   const jours = etat.dernier ? Math.floor((Date.now() - new Date(etat.dernier)) / 86400000) : null;
   const num = numeroWa(m.whatsapp);
   ouvrirFeuille(`<h2>Petit rappel à ${esc(m.prenom)}</h2>
-    ${jours !== null && jours < 30 ? `<p class="info">${icone('info', 18)}<span>Un petit mot lui a déjà été envoyé ${jours === 0 ? 'aujourd’hui' : jours === 1 ? 'hier' : `il y a ${jours} jours`}. Pour ne pas être insistant, mieux vaut laisser passer un peu de temps.</span></p>` : ''}
+    ${jours !== null && jours < 30 ? `<p class="info"><span>Un petit mot lui a déjà été envoyé ${jours === 0 ? 'aujourd’hui' : jours === 1 ? 'hier' : `il y a ${jours} jours`}. Pour ne pas être insistant, mieux vaut laisser passer un peu de temps.</span></p>` : ''}
     <label class="champ">Message<textarea id="t-rappel" rows="9" maxlength="1500">${esc(texteRappel(m, { type, montant, collecte }))}</textarea></label>
     <p class="muted" style="margin:0">Signé par le bureau. Le texte proposé se modifie dans Paramètres › Cotisations et dépenses.</p>
     <div class="choix-envoi">
@@ -2498,6 +2501,80 @@ async function feuilleRappel(m, { type = 'cotisation', montant = 0, collecte = '
       try { await navigator.clipboard.writeText(texte()); toast('Message copié'); await noter('copie'); fermerFeuille(); } catch (err) { erreur(err); }
     });
   });
+}
+
+// Petit rappel groupé (comme FeuilleRappelGroupe d'Android) : chacun reçoit SON message (prénom, montant, lien),
+// par notification au nom de l'association ; ceux qui n'ont pas les alertes : WhatsApp un par un (pas d'envoi groupé possible) ou copie.
+// Personne n'est coché d'office s'il a eu un petit mot il y a moins de 30 jours.
+async function feuilleRappelGroupe(cibles, { type = 'cotisation', collecte = '', collecteId = null } = {}) {
+  let etats = [];
+  try { etats = await q(sb.rpc('etat_rappels', { p_collecte: collecteId })); } catch (e) { console.warn(e); }
+  const etat = (id) => etats.find((x) => x.member_id === id) || { appareils: 0, dernier: null };
+  const jours = (id) => { const d = etat(id).dernier; return d ? Math.floor((Date.now() - new Date(d)) / 86400000) : null; };
+  const liste = cibles.filter(({ m }) => m.actif).map((c) => ({ ...c, appareils: etat(c.m.id).appareils, jours: jours(c.m.id) }));
+  const coches = new Set(liste.filter((c) => c.jours === null || c.jours >= 30).map((c) => c.m.id));
+  let modele = modeleRappel(type);
+  const texte = (c) => texteRappel(c.m, { type, montant: c.montant, collecte, modele });
+  const noter = (c, canal) => q(sb.rpc('envoyer_rappel', { p_member: c.m.id, p_canal: canal, p_texte: texte(c).trim(), p_collecte: collecteId }));
+  const canal = (c) => (c.appareils ? 'Notification' : numeroWa(c.m.whatsapp) ? 'WhatsApp' : 'Copie du message');
+  const etape1 = () => {
+    const choisis = liste.filter((c) => coches.has(c.m.id));
+    const nNotif = choisis.filter((c) => c.appareils).length, nAutres = choisis.length - nNotif;
+    return `<h2>Petit rappel groupé</h2>
+    <p class="muted" style="margin:0">Chacun reçoit son propre message, avec son prénom et son montant, au nom de ${esc(nomAssoMessage())}.</p>
+    <label class="champ">Message<textarea id="t-modele" rows="8" maxlength="1500">${esc(modele)}</textarea></label>
+    <details class="apercu-rappel"><summary>Aperçu pour ${esc(choisis[0]?.m.prenom || liste[0]?.m.prenom || '')}</summary><p id="apercu" style="white-space:pre-line;margin:8px 0 0">${esc(texte(choisis[0] || liste[0]))}</p></details>
+    <h3 style="margin-bottom:0">Destinataires (${choisis.length} sur ${liste.length})</h3>
+    <ul class="liste liste-rappel">${liste.map((c) => `<li><label class="case" style="flex:1;min-width:0"><input type="checkbox" data-id="${c.m.id}" ${coches.has(c.m.id) ? 'checked' : ''}>
+      <span class="corps"><b>${esc(nomComplet(c.m))}</b><span>${type === 'cotisation' || c.montant > 0 ? eur(c.montant) + ' · ' : ''}${canal(c)}${c.jours !== null && c.jours < 30 ? ` · <span class="depense">petit mot ${c.jours === 0 ? 'aujourd’hui' : c.jours === 1 ? 'hier' : `il y a ${c.jours} jours`}</span>` : ''}</span></span></label></li>`).join('')}</ul>
+    ${nAutres ? `<p class="muted" style="margin:0">${nAutres} sans alertes sur leur téléphone : vous les préviendrez ensuite un par un (WhatsApp) ou en copiant leur message.</p>` : ''}
+    <div class="actions"><button class="btn-texte" id="b-fermer">Fermer</button>
+      <button class="btn-primaire" id="b-envoyer" ${choisis.length ? '' : 'disabled'}>${nNotif ? `Envoyer ${nNotif} notification${nNotif > 1 ? 's' : ''}` : 'Continuer'}</button></div>`;
+  };
+  const etape2 = (restants, envoyes) => `<h2>Encore ${restants.length} à prévenir</h2>
+    ${envoyes ? `<p class="info"><span>${envoyes} petit${envoyes > 1 ? 's' : ''} mot${envoyes > 1 ? 's' : ''} envoyé${envoyes > 1 ? 's' : ''} au nom de l’association.</span></p>` : ''}
+    <p class="muted" style="margin:0">Ils n’ont pas activé les alertes. WhatsApp ne permet pas d’envoi groupé : chaque message est prêt, un appui par personne. Pour écrire au nom de l’association, utilisez WhatsApp Business avec son numéro.</p>
+    <ul class="liste">${restants.map((c) => `<li><div class="corps"><b>${esc(nomComplet(c.m))}</b><span>${numeroWa(c.m.whatsapp) ? 'WhatsApp' : 'Pas de numéro WhatsApp'}</span></div>
+      ${numeroWa(c.m.whatsapp) ? `<button class="btn-tonal btn-petit" data-wa="${c.m.id}">WhatsApp</button>` : ''}</li>`).join('')}</ul>
+    <div class="actions"><button class="btn-texte" id="b-copier-tout">Copier tous les messages</button><button class="btn-primaire" id="b-fermer">Terminé</button></div>`;
+  const brancher2 = (root, restants) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    root.querySelectorAll('[data-wa]').forEach((b) => b.addEventListener('click', async () => {
+      const c = restants.find((x) => x.m.id === b.dataset.wa);
+      window.open(`https://wa.me/${numeroWa(c.m.whatsapp)}?text=${encodeURIComponent(texte(c).trim())}`, '_blank', 'noopener');
+      b.disabled = true; b.textContent = 'Ouvert';
+      try { await noter(c, 'whatsapp'); } catch (err) { console.warn(err); }
+    }));
+    $('#b-copier-tout', root).addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(restants.map((c) => `— ${nomComplet(c.m)} —\n${texte(c).trim()}`).join('\n\n'));
+        toast('Messages copiés');
+        for (const c of restants) { try { await noter(c, 'copie'); } catch (err) { console.warn(err); } }
+      } catch (err) { erreur(err); }
+    });
+  };
+  const brancher1 = (root) => {
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#t-modele', root).addEventListener('input', (e) => { modele = e.target.value; const c = liste.find((x) => coches.has(x.m.id)) || liste[0]; if (c) $('#apercu', root).textContent = texte(c); });
+    root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('change', () => {
+      if (b.checked) coches.add(b.dataset.id); else coches.delete(b.dataset.id);
+      const ouvert = $('.apercu-rappel', root).open; root.innerHTML = etape1(); brancher1(root); $('.apercu-rappel', root).open = ouvert;
+    }));
+    $('#b-envoyer', root).addEventListener('click', async (e) => {
+      if (!modele.trim()) { erreur(new Error('Le message est vide')); return; }
+      e.target.disabled = true; e.target.textContent = 'Envoi…';
+      const choisis = liste.filter((c) => coches.has(c.m.id));
+      let envoyes = 0; const echecs = [];
+      for (const c of choisis.filter((x) => x.appareils)) {
+        try { await noter(c, 'notification'); envoyes++; } catch (err) { echecs.push(c); console.warn(err); }
+      }
+      const restants = [...choisis.filter((c) => !c.appareils), ...echecs];
+      if (!restants.length) { fermerFeuille(); toast(`${envoyes} petit${envoyes > 1 ? 's' : ''} mot${envoyes > 1 ? 's' : ''} envoyé${envoyes > 1 ? 's' : ''} au nom de l’association`); return; }
+      root.innerHTML = etape2(restants, envoyes); brancher2(root, restants);
+    });
+  };
+  if (!liste.length) { toast('Personne à qui envoyer un petit mot'); return; }
+  ouvrirFeuille(etape1(), brancher1);
 }
 
 // Fiche cotisation d'un membre : périodes, montant dû modifiable (dispense), versements
@@ -2601,6 +2678,8 @@ async function detailCollecte(c) {
   const total = txs.reduce((s, t) => s + Number(t.montant), 0);
   const gere = peut('gerer_cotisations');
   let filtre = 'tous';
+  // Petit rappel groupé : montant proposé non atteint, ou montant libre et rien donné
+  const aRappeler = () => lignes.filter(({ v }) => (att ? v < att : v <= 0)).map(({ m, v }) => ({ m, montant: att ? att - v : 0 }));
   const rendu = () => `<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(c.nom)}</h2>${c.cloturee ? '<span class="puce puce-neutre">Clôturée</span>' : ''}</div>
     <p class="muted">${c.project_id ? esc(nomProjet(c.project_id)) + ' · ' : ''}${att ? eur(att) + ' par personne' : 'Montant libre'}${c.date_limite ? ' · avant le ' + dateFr(c.date_limite) : ''}</p>
     <div class="kpis"><div class="carte" style="background:var(--fond)"><span class="muted">Reçu</span><b class="num recette">${eur(total)}</b></div>
@@ -2616,6 +2695,7 @@ async function detailCollecte(c) {
       <button class="btn-bleu" id="b-exp">Exporter</button>
       ${peut('gerer_activites', 'gerer_cotisations') ? `<button class="btn-texte" id="b-modif">Modifier</button><button class="btn-texte" id="b-clot">${c.cloturee ? 'Rouvrir' : 'Clôturer'}</button>` : ''}
       ${gere && !c.cloturee ? '<button class="btn-tonal" id="b-enc-autre">Autre encaissement</button>' : ''}
+      ${gere && !c.cloturee && aRappeler().length ? '<button class="btn-texte" id="b-rappel-groupe">Petit rappel groupé</button>' : ''}
       ${peut('gerer_activites', 'gerer_cotisations') && !txs.length ? `<button class="btn-texte btn-texte-danger" id="b-suppr-col">${icone('corbeille', 16)} Supprimer</button>` : ''}
       <button class="btn-primaire" id="b-fermer">Fermer</button></div>`;
   const brancher = (root) => {
@@ -2630,6 +2710,7 @@ async function detailCollecte(c) {
       const v = donne(b.dataset.enc);
       feuilleEcriture({ sens: 'recette', rubrique: c.id, member_id: b.dataset.enc, montant: att ? Math.max(att - v, 0) || att : '', apres });
     }));
+    $('#b-rappel-groupe', root)?.addEventListener('click', () => feuilleRappelGroupe(aRappeler(), { type: 'participation', collecte: c.nom, collecteId: c.id }).catch(erreur));
     $('#b-enc-autre', root)?.addEventListener('click', () => feuilleEcriture({ sens: 'recette', rubrique: c.id, apres }));
     $('#b-modif', root)?.addEventListener('click', () => feuilleCollecte(S.collectes.find((x) => x.id === c.id), apres, choisis.map((x) => x.member_id)));
     $('#b-clot', root)?.addEventListener('click', async () => {

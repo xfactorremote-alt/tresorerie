@@ -381,6 +381,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     var filtre by remember { mutableStateOf(PreferencesCotisations.filtre) }
     var encaisser by remember { mutableStateOf<PreEcriture?>(null) }
     var rappel by remember { mutableStateOf<DemandeRappel?>(null) }
+    var rappelGroupe by remember { mutableStateOf<List<CibleRappel>?>(null) }
     var fiche by remember { mutableStateOf<Membre?>(null) }
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
@@ -414,10 +415,13 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
         val large = maxWidth >= 840.dp
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     PuceMenu(annee.toString(), true, listOf(an + 1, an, an - 1, an - 2).map { it.toString() }) { annee = an + 1 - it }
-                    Text("${PERIODICITES[pas] ?: ""}, ${euros(montantPeriode)} par période", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = { exporterCotis = true }) { Text("Exporter") }
+                    Text("${PERIODICITES[pas] ?: ""}, ${euros(montantPeriode)} par période", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.weight(1f).align(Alignment.CenterVertically))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (gere && nbRetard > 0) FilledTonalButton(onClick = { rappelGroupe = lignes.filter { it.second.retard > 0.005 }.map { (m, c) -> CibleRappel(m, c.retard) } }) { Text("Petit rappel groupé") }
+                        OutlinedButton(onClick = { exporterCotis = true }) { Text("Exporter") }
+                    }
                 }
             }
             if (gere && sansCotis > 0 && synth != null) item {
@@ -497,6 +501,9 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     }
     rappel?.let { r ->
         ModalBottomSheet(onDismissRequest = { rappel = null }) { FeuilleRappel(d, r, message) { rappel = null } }
+    }
+    rappelGroupe?.let { l ->
+        ModalBottomSheet(onDismissRequest = { rappelGroupe = null }) { FeuilleRappelGroupe(d, l, "cotisation", "", null, message) { rappelGroupe = null } }
     }
     fiche?.let { m ->
         ModalBottomSheet(onDismissRequest = { fiche = null }) {
@@ -672,6 +679,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
     var version by remember { mutableStateOf(0) }
     var encaisser by remember { mutableStateOf<PreEcriture?>(null) }
     var rappel by remember { mutableStateOf<DemandeRappel?>(null) }
+    var rappelGroupe by remember { mutableStateOf<List<CibleRappel>?>(null) }
     val supprimerCollecte = rememberSuppression(message) { onChange(); onFermer() }
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
@@ -747,6 +755,9 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
                 }
             }
             if (gere && !c.cloturee) OutlinedButton(onClick = { encaisser = PreEcriture("recette", null, c.id) }) { Text("Autre encaissement") }
+            // Petit rappel groupé : montant proposé non atteint, ou montant libre et rien donné (comme aRappeler du site)
+            val aRappeler = lignes.filter { (_, v) -> if (att > 0) v < att else v <= 0 }.map { (m, v) -> CibleRappel(m, if (att > 0) att - v else 0.0) }
+            if (gere && !c.cloturee && aRappeler.isNotEmpty()) TextButton(onClick = { rappelGroupe = aRappeler }) { Text("Petit rappel groupé") }
             if (d.peut("gerer_activites", "gerer_cotisations") && operations.isEmpty()) BoutonSupprimer({ if (onSupprimer != null) onSupprimer() else supprimerCollecte("collectes", c.id, c.nom) })
             Button(onClick = onFermer) { Text("Fermer") }
         }
@@ -758,6 +769,9 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
     }
     rappel?.let { r ->
         ModalBottomSheet(onDismissRequest = { rappel = null }) { FeuilleRappel(d, r, message) { rappel = null } }
+    }
+    rappelGroupe?.let { l ->
+        ModalBottomSheet(onDismissRequest = { rappelGroupe = null }) { FeuilleRappelGroupe(d, l, "participation", c.nom, c.id, message) { rappelGroupe = null } }
     }
 }
 

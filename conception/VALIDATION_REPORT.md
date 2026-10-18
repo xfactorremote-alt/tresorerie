@@ -43,3 +43,12 @@
 | Site : `rappel.mjs` téléphone et ordinateur (notification, avertissement < 30 jours, membre sans alertes) | ✅ 0 erreur JS |
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues iPhone/iPad | ✅ 0 débordement, 0 erreur |
 | Android : compilation, 26 tests dont `rappelCommeLeSite` | ✅ ; **feuille et WhatsApp Business à vérifier sur un téléphone** |
+
+## 0.34.0 — Petit rappel groupé (18 octobre 2026)
+
+| Vérification | Résultat |
+|---|---|
+| Site : `rappel-groupe.mjs` téléphone et ordinateur (cases, aperçu, envoi, étape 2, copie, réouverture, collecte) | ✅ 0 erreur JS |
+| Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
+| Android : compilation, 27 tests dont `rappelGroupeNoteChaqueEnvoi` | ✅ ; rendu à vérifier sur téléphone |
+| Corrigé au passage : double icône dans l’encadré « déjà envoyé » du petit rappel (site) | ✅ |
