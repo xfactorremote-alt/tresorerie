@@ -292,7 +292,7 @@ private fun BlocMontants(message: (String) -> Unit) {
         OutlinedTextField(infos, { infos = it.take(400) }, label = { Text("Comment régler (affiché aux membres)") },
             placeholder = { Text("Virement : IBAN FR76…\nEspèces : auprès du trésorier après le culte") }, minLines = 3, modifier = Modifier.fillMaxWidth())
         Text("Petit rappel aux membres", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-        Text("Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux : la cotisation est libre. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre).",
+        Text("Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre).",
             fontSize = 13.sp, color = Couleurs.Texte2)
         OutlinedTextField(rappelCotis, { rappelCotis = it.take(1500) }, label = { Text("Cotisation") }, minLines = 8, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(rappelPart, { rappelPart = it.take(1500) }, label = { Text("Participation") }, minLines = 6, modifier = Modifier.fillMaxWidth())

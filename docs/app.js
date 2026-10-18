@@ -2446,8 +2446,8 @@ async function ongletCotisations(zone) {
 // Message signé par le bureau, envoyé de préférence par une notification au nom de l'association (envoyer_rappel),
 // sinon par WhatsApp (idéalement WhatsApp Business avec le numéro de l'association) ou copié. Même texte côté Android (Rappels.kt).
 const RAPPEL_DEFAUT = {
-  cotisation: 'Bonjour {prénom} 😊\nOn espère que tu vas bien ! Petit message de {association} au sujet de la cotisation : elle nous aide à faire vivre l’association, mais elle reste libre et sans pression.\nSi tu le souhaites et quand cela t’arrange, il reste {montant} pour cette année.{règlement}\nSi ce n’est pas le bon moment, aucun souci : dis-le-nous simplement, tu restes le bienvenu parmi nous.{lien}\nÀ très vite,\nLe bureau de {association}',
-  participation: 'Bonjour {prénom} 😊\nPour « {collecte} », chacun participe s’il le peut{montant} : chaque geste compte, même petit.{règlement}\nPas de souci si ce n’est pas possible en ce moment.{lien}\nMerci et à bientôt,\nLe bureau de {association}',
+  cotisation: 'Bonjour {prénom} 😊\nOn espère que tu vas bien ! Petit message de {association} au sujet de la cotisation : c’est grâce à elle que l’association vit et que nos activités peuvent continuer.\nQuand tu peux, il reste {montant} pour cette année.{règlement}{lien}\nMerci pour ton soutien et à très vite,\nLe bureau de {association}',
+  participation: 'Bonjour {prénom} 😊\nPour « {collecte} », ta participation compte{montant} : c’est grâce à elle que l’association vit et que ce projet peut se faire.{règlement}{lien}\nMerci et à bientôt,\nLe bureau de {association}',
 };
 // Nom de l'association pour un message : « JEUNES DE TOUS PAYS » → « Jeunes de Tous Pays » (petits mots en minuscules)
 function nomAssoMessage() {
@@ -3170,7 +3170,7 @@ async function paramMontants(zone) {
       <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       <label class="champ">Comment régler (affiché aux membres)<textarea name="infos_paiement" rows="3" maxlength="400" placeholder="Virement : IBAN FR76…&#10;Espèces : auprès du trésorier après le culte">${esc(S.textes?.infos_paiement || '')}</textarea></label>
       <h3>Petit rappel aux membres</h3>
-      <p class="muted" style="margin:0">Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux : la cotisation est libre. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre).</p>
+      <p class="muted" style="margin:0">Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre).</p>
       <label class="champ">Cotisation<textarea name="message_rappel" rows="8" maxlength="1500">${esc(S.textes?.message_rappel || RAPPEL_DEFAUT.cotisation)}</textarea></label>
       <label class="champ">Participation<textarea name="message_rappel_participation" rows="6" maxlength="1500">${esc(S.textes?.message_rappel_participation || RAPPEL_DEFAUT.participation)}</textarea></label>
       <div class="actions-gauche"><button type="button" class="btn-texte btn-petit" id="b-rappel-defaut">Rétablir les messages proposés</button></div>

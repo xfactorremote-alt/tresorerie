@@ -23,8 +23,8 @@ import kotlinx.coroutines.launch
 
 /** Messages proposés : mêmes textes que RAPPEL_DEFAUT du site. */
 val RAPPEL_DEFAUT = mapOf(
-    "cotisation" to "Bonjour {prénom} 😊\nOn espère que tu vas bien ! Petit message de {association} au sujet de la cotisation : elle nous aide à faire vivre l’association, mais elle reste libre et sans pression.\nSi tu le souhaites et quand cela t’arrange, il reste {montant} pour cette année.{règlement}\nSi ce n’est pas le bon moment, aucun souci : dis-le-nous simplement, tu restes le bienvenu parmi nous.{lien}\nÀ très vite,\nLe bureau de {association}",
-    "participation" to "Bonjour {prénom} 😊\nPour « {collecte} », chacun participe s’il le peut{montant} : chaque geste compte, même petit.{règlement}\nPas de souci si ce n’est pas possible en ce moment.{lien}\nMerci et à bientôt,\nLe bureau de {association}",
+    "cotisation" to "Bonjour {prénom} 😊\nOn espère que tu vas bien ! Petit message de {association} au sujet de la cotisation : c’est grâce à elle que l’association vit et que nos activités peuvent continuer.\nQuand tu peux, il reste {montant} pour cette année.{règlement}{lien}\nMerci pour ton soutien et à très vite,\nLe bureau de {association}",
+    "participation" to "Bonjour {prénom} 😊\nPour « {collecte} », ta participation compte{montant} : c’est grâce à elle que l’association vit et que ce projet peut se faire.{règlement}{lien}\nMerci et à bientôt,\nLe bureau de {association}",
 )
 /** Clé du réglage qui garde le message modifié (Paramètres › Cotisations et dépenses). */
 fun cleRappel(type: String) = if (type == "participation") "message_rappel_participation" else "message_rappel"
