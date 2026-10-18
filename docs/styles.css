@@ -1330,5 +1330,4 @@ dialog.visionneuse img{max-width:100%;max-height:calc(100dvh - 64px);object-fit:
 .liste-rappel .corps{display:flex;flex-direction:column;gap:2px;min-width:0}
 .liste-rappel .corps>*{line-height:18px}
 .liste-rappel .corps span{font-size:12.5px}
-.apercu-rappel summary{cursor:pointer;color:var(--primaire);font-weight:600;min-height:24px}
-.apercu-rappel p{font-size:13px;color:var(--texte-2);background:var(--survol);padding:8px;border-radius:var(--r-moyen)}
+.message-apercu{font-weight:400;color:var(--texte);white-space:pre-line;font-size:var(--t-champ);line-height:20px;padding:5px 10px;border:1px solid var(--bord);border-bottom-color:var(--bord-fort);border-radius:var(--r-moyen);background:var(--surface-2);max-height:242px;overflow:auto}

@@ -2447,9 +2447,10 @@ async function ongletCotisations(zone) {
 // Ton chaleureux et sans pression : la cotisation reste libre, on ne parle pas d'« arriérés ».
 // Message signé par le bureau, envoyé de préférence par une notification au nom de l'association (envoyer_rappel),
 // sinon par WhatsApp (idéalement WhatsApp Business avec le numéro de l'association) ou copié. Même texte côté Android (Rappels.kt).
+// Petit rappel : le montant et le moyen de paiement ressortent (ligne à part, emoji, *gras* WhatsApp retiré dans la notification)
 const RAPPEL_DEFAUT = {
-  cotisation: 'Bonjour {prénom} 😊\nOn espère que tu vas bien ! Petit message de {association} au sujet de la cotisation : c’est grâce à elle que l’association vit et que nos activités peuvent continuer.\nQuand tu peux, il reste {montant} pour cette année.{règlement}{lien}\nMerci pour ton soutien et à très vite,\nLe bureau de {association}',
-  participation: 'Bonjour {prénom} 😊\nPour « {collecte} », ta participation compte{montant} : c’est grâce à elle que l’association vit et que ce projet peut se faire.{règlement}{lien}\nMerci et à bientôt,\nLe bureau de {association}',
+  cotisation: 'Bonjour {prénom} 😊\nOn espère que tu vas bien ! Petit message de {association} au sujet de la cotisation : c’est grâce à elle que l’association vit et que nos activités peuvent continuer.\n\n💶 Reste pour cette année : {montant}{règlement}{lien}\n\nMerci pour ton soutien et à très vite,\nLe bureau de {association}',
+  participation: 'Bonjour {prénom} 😊\nPour « {collecte} », ta participation compte : c’est grâce à elle que l’association vit et que ce projet peut se faire.\n{montant}{règlement}{lien}\n\nMerci et à bientôt,\nLe bureau de {association}',
 };
 // Nom de l'association pour un message : « JEUNES DE TOUS PAYS » → « Jeunes de Tous Pays » (petits mots en minuscules)
 function nomAssoMessage() {
@@ -2458,26 +2459,40 @@ function nomAssoMessage() {
   return casseTitre(n).replace(/(?<=\s)(De|Des|Du|La|Le|Les|Et|En|Pour|Au|Aux|À)(?=\s)/g, (x) => x.toLowerCase());
 }
 function modeleRappel(type) { return (type === 'participation' ? S.textes?.message_rappel_participation : S.textes?.message_rappel) || RAPPEL_DEFAUT[type]; }
+// « Comment régler » : une ligne → sur la même ligne ; plusieurs → une puce par moyen de paiement
+function blocReglement(infos) {
+  const l = String(infos || '').split('\n').map((x) => x.trim()).filter(Boolean);
+  if (!l.length) return '';
+  return l.length === 1 ? `\n💳 Pour régler : *${l[0]}*` : `\n💳 Pour régler :\n${l.map((x) => `• *${x}*`).join('\n')}`;
+}
+// La notification n'a pas de mise en forme : on retire les *astérisques* du gras WhatsApp
+const sansGras = (t) => String(t).replace(/\*([^*\n]+)\*/g, '$1');
 function texteRappel(m, { type = 'cotisation', montant = 0, collecte = '', modele = null } = {}) {
   modele = modele?.trim() || modeleRappel(type);
   const l = (S.liensMembres || {})[m.id];
-  const reglement = S.textes?.infos_paiement ? `\nPour régler : ${S.textes.infos_paiement.trim().replace(/\s*\n\s*/g, ' ; ')}` : '';
   const valeurs = {
     'prénom': m.prenom, association: nomAssoMessage(), collecte,
-    montant: type === 'participation' ? (montant > 0 ? ` (montant proposé : ${eur(montant)})` : '') : eur(montant),
-    'règlement': reglement, lien: l ? `\nTon espace membre : ${urlLien(l, m)}` : '',
+    montant: type === 'participation' ? (montant > 0 ? `\n💶 Montant proposé : *${eur(montant)}*` : '') : `*${eur(montant)}*`,
+    'règlement': blocReglement(S.textes?.infos_paiement), lien: l ? `\n🔗 Ton espace membre : ${urlLien(l, m)}` : '',
   };
-  return modele.replace(/\{(prénom|prenom|association|montant|collecte|règlement|reglement|lien)\}/g, (_, k) => valeurs[{ prenom: 'prénom', reglement: 'règlement' }[k] || k] ?? '');
+  return modele.replace(/\{(prénom|prenom|association|montant|collecte|règlement|reglement|lien)\}/g, (_, k) => valeurs[{ prenom: 'prénom', reglement: 'règlement' }[k] || k] ?? '')
+    .replace(/\n{3,}/g, '\n\n');  // une partie vide (pas de montant, pas de « Comment régler ») ne laisse pas de trou
 }
+const NOTE_RAPPEL = 'Signé par le bureau. Les mots entre *astérisques* sont en gras dans WhatsApp. Le texte proposé se modifie dans Paramètres › Cotisations et dépenses.';
+// Sans « Comment régler », le moyen de paiement manquerait au message : on le dit avant l'envoi
+const alerteReglement = () => (S.textes?.infos_paiement?.trim() ? '' : '<p class="alerte"><span>« Comment régler » n’est pas renseigné : le moyen de paiement n’apparaîtra pas dans le message. Ajoutez-le dans Paramètres › Cotisations et dépenses.</span></p>');
+const ilYaJours = (j) => (j === 0 ? 'aujourd’hui' : j === 1 ? 'hier' : `il y a ${j} jours`);
+
 async function feuilleRappel(m, { type = 'cotisation', montant = 0, collecte = '', collecteId = null } = {}) {
   let etat = { appareils: 0, dernier: null };
   try { etat = (await q(sb.rpc('etat_rappels', { p_collecte: collecteId }))).find((x) => x.member_id === m.id) || etat; } catch (e) { console.warn(e); }
   const jours = etat.dernier ? Math.floor((Date.now() - new Date(etat.dernier)) / 86400000) : null;
   const num = numeroWa(m.whatsapp);
   ouvrirFeuille(`<h2>Petit rappel à ${esc(m.prenom)}</h2>
-    ${jours !== null && jours < 30 ? `<p class="info"><span>Un petit mot lui a déjà été envoyé ${jours === 0 ? 'aujourd’hui' : jours === 1 ? 'hier' : `il y a ${jours} jours`}. Pour ne pas être insistant, mieux vaut laisser passer un peu de temps.</span></p>` : ''}
-    <label class="champ">Message<textarea id="t-rappel" rows="9" maxlength="1500">${esc(texteRappel(m, { type, montant, collecte }))}</textarea></label>
-    <p class="muted" style="margin:0">Signé par le bureau. Le texte proposé se modifie dans Paramètres › Cotisations et dépenses.</p>
+    ${jours !== null && jours < 30 ? `<p class="info"><span>Un petit mot lui a déjà été envoyé ${ilYaJours(jours)}. Pour ne pas être insistant, mieux vaut laisser passer un peu de temps.</span></p>` : ''}
+    ${alerteReglement()}
+    <label class="champ">Message<textarea id="t-rappel" rows="11" maxlength="1500">${esc(texteRappel(m, { type, montant, collecte }))}</textarea></label>
+    <p class="muted" style="margin:0">${esc(NOTE_RAPPEL)}</p>
     <div class="choix-envoi">
       <button class="btn-primaire" id="b-r-notif" ${etat.appareils ? '' : 'disabled'}>${icone('cloche', 16)} Notification de l’association</button>
       <span class="muted">${etat.appareils ? `Reçue sur ${etat.appareils > 1 ? `ses ${etat.appareils} appareils` : 'son téléphone'}, au nom de ${esc(nomAssoMessage())} : aucun numéro personnel.` : `${esc(m.prenom)} n’a pas activé les alertes sur son téléphone : utilisez WhatsApp ou copiez le message.`}</span>
@@ -2486,7 +2501,7 @@ async function feuilleRappel(m, { type = 'cotisation', montant = 0, collecte = '
     </div>
     <div class="actions"><button class="btn-texte" id="b-fermer">Fermer</button></div>`, (root) => {
     const texte = () => $('#t-rappel', root).value.trim();
-    const noter = async (canal) => { await q(sb.rpc('envoyer_rappel', { p_member: m.id, p_canal: canal, p_texte: texte(), p_collecte: collecteId })); };
+    const noter = async (canal) => { await q(sb.rpc('envoyer_rappel', { p_member: m.id, p_canal: canal, p_texte: canal === 'notification' ? sansGras(texte()) : texte(), p_collecte: collecteId })); };
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     $('#b-r-notif', root)?.addEventListener('click', async (e) => {
       e.target.disabled = true;
@@ -2503,78 +2518,94 @@ async function feuilleRappel(m, { type = 'cotisation', montant = 0, collecte = '
   });
 }
 
-// Petit rappel groupé (comme FeuilleRappelGroupe d'Android) : chacun reçoit SON message (prénom, montant, lien),
-// par notification au nom de l'association ; ceux qui n'ont pas les alertes : WhatsApp un par un (pas d'envoi groupé possible) ou copie.
-// Personne n'est coché d'office s'il a eu un petit mot il y a moins de 30 jours.
+// Petit rappel groupé (comme FeuilleRappelGroupe d'Android) : MÊME STRUCTURE que le petit rappel individuel
+// (titre, avertissement, message, note, Notification de l'association / WhatsApp / Copier, Fermer), plus la liste des destinataires.
+// Chacun reçoit SON message (prénom, montant, lien) ; ceux qui ont eu un petit mot depuis moins de 30 jours sont décochés d'office.
+// WhatsApp n'a pas d'envoi groupé : une liste « un appui par personne ».
 async function feuilleRappelGroupe(cibles, { type = 'cotisation', collecte = '', collecteId = null } = {}) {
   let etats = [];
   try { etats = await q(sb.rpc('etat_rappels', { p_collecte: collecteId })); } catch (e) { console.warn(e); }
   const etat = (id) => etats.find((x) => x.member_id === id) || { appareils: 0, dernier: null };
-  const jours = (id) => { const d = etat(id).dernier; return d ? Math.floor((Date.now() - new Date(d)) / 86400000) : null; };
-  const liste = cibles.filter(({ m }) => m.actif).map((c) => ({ ...c, appareils: etat(c.m.id).appareils, jours: jours(c.m.id) }));
-  const coches = new Set(liste.filter((c) => c.jours === null || c.jours >= 30).map((c) => c.m.id));
-  let modele = modeleRappel(type);
-  const texte = (c) => texteRappel(c.m, { type, montant: c.montant, collecte, modele });
-  const noter = (c, canal) => q(sb.rpc('envoyer_rappel', { p_member: c.m.id, p_canal: canal, p_texte: texte(c).trim(), p_collecte: collecteId }));
-  const canal = (c) => (c.appareils ? 'Notification' : numeroWa(c.m.whatsapp) ? 'WhatsApp' : 'Copie du message');
-  const etape1 = () => {
-    const choisis = liste.filter((c) => coches.has(c.m.id));
-    const nNotif = choisis.filter((c) => c.appareils).length, nAutres = choisis.length - nNotif;
-    return `<h2>Petit rappel groupé</h2>
-    <p class="muted" style="margin:0">Chacun reçoit son propre message, avec son prénom et son montant, au nom de ${esc(nomAssoMessage())}.</p>
-    <label class="champ">Message<textarea id="t-modele" rows="8" maxlength="1500">${esc(modele)}</textarea></label>
-    <details class="apercu-rappel"><summary>Aperçu pour ${esc(choisis[0]?.m.prenom || liste[0]?.m.prenom || '')}</summary><p id="apercu" style="white-space:pre-line;margin:8px 0 0">${esc(texte(choisis[0] || liste[0]))}</p></details>
-    <h3 style="margin-bottom:0">Destinataires (${choisis.length} sur ${liste.length})</h3>
-    <ul class="liste liste-rappel">${liste.map((c) => `<li><label class="case" style="flex:1;min-width:0"><input type="checkbox" data-id="${c.m.id}" ${coches.has(c.m.id) ? 'checked' : ''}>
-      <span class="corps"><b>${esc(nomComplet(c.m))}</b><span>${type === 'cotisation' || c.montant > 0 ? eur(c.montant) + ' · ' : ''}${canal(c)}${c.jours !== null && c.jours < 30 ? ` · <span class="depense">petit mot ${c.jours === 0 ? 'aujourd’hui' : c.jours === 1 ? 'hier' : `il y a ${c.jours} jours`}</span>` : ''}</span></span></label></li>`).join('')}</ul>
-    ${nAutres ? `<p class="muted" style="margin:0">${nAutres} sans alertes sur leur téléphone : vous les préviendrez ensuite un par un (WhatsApp) ou en copiant leur message.</p>` : ''}
-    <div class="actions"><button class="btn-texte" id="b-fermer">Fermer</button>
-      <button class="btn-primaire" id="b-envoyer" ${choisis.length ? '' : 'disabled'}>${nNotif ? `Envoyer ${nNotif} notification${nNotif > 1 ? 's' : ''}` : 'Continuer'}</button></div>`;
+  const liste = cibles.filter(({ m }) => m.actif).map((c) => {
+    const d = etat(c.m.id).dernier;
+    return { ...c, appareils: etat(c.m.id).appareils, jours: d ? Math.floor((Date.now() - new Date(d)) / 86400000) : null };
+  });
+  if (!liste.length) { toast('Personne à qui envoyer un petit mot'); return; }
+  const recents = liste.filter((c) => c.jours !== null && c.jours < 30);
+  const coches = new Set(liste.filter((c) => !recents.includes(c)).map((c) => c.m.id));
+  const faits = {};
+  let modele = modeleRappel(type), edition = false, vue = 'message', waListe = [];
+  const texte = (c) => texteRappel(c.m, { type, montant: c.montant, collecte, modele }).trim();
+  const noter = (c, canal) => q(sb.rpc('envoyer_rappel', { p_member: c.m.id, p_canal: canal, p_texte: canal === 'notification' ? sansGras(texte(c)) : texte(c), p_collecte: collecteId }));
+  const pluriel = (n, s, p) => (n > 1 ? p : s);
+  const choisis = () => liste.filter((c) => coches.has(c.m.id));
+  const rendu = () => {
+    if (vue === 'whatsapp') return `<h2>WhatsApp · ${waListe.length} ${pluriel(waListe.length, 'message', 'messages')}</h2>
+      <p class="muted" style="margin:0">WhatsApp ne permet pas d’envoi groupé : un appui par personne ouvre la conversation avec son message prêt ; envoyez-le puis revenez ici.</p>
+      <ul class="liste">${waListe.map((c) => `<li><div class="corps"><b>${esc(nomComplet(c.m))}</b><span>${type === 'cotisation' || c.montant > 0 ? eur(c.montant) : 'Montant libre'}</span></div>
+        <button class="btn-tonal btn-petit" data-wa="${c.m.id}" ${faits[c.m.id] ? 'disabled' : ''}>${faits[c.m.id] ? 'Ouvert' : 'WhatsApp'}</button></li>`).join('')}</ul>
+      <div class="actions"><button class="btn-texte" id="b-retour">‹ Retour</button><button class="btn-primaire" id="b-fermer">Terminé</button></div>`;
+    const ch = choisis(), notif = ch.filter((c) => c.appareils), wa = ch.filter((c) => numeroWa(c.m.whatsapp));
+    const ex = ch[0] || liste[0];
+    return `<h2>Petit rappel à ${liste.length} ${pluriel(liste.length, 'membre', 'membres')}</h2>
+    ${recents.length ? `<p class="info"><span>${recents.length === 1 ? `${esc(recents[0].m.prenom)} a déjà reçu un petit mot ${ilYaJours(recents[0].jours)} : décoché` : `${recents.length} ont déjà reçu un petit mot il y a moins de 30 jours : décochés`} pour ne pas être insistant.</span></p>` : ''}
+    ${alerteReglement()}
+    ${edition ? `<label class="champ">Message (modèle commun)<textarea id="t-rappel" rows="11" maxlength="1500">${esc(modele)}</textarea></label>
+      <p class="muted" style="margin:0">Chacun reçoit son propre message : {prénom}, {montant}, {règlement}, {lien}… sont remplacés pour chaque personne. ${esc(NOTE_RAPPEL)}</p>
+      <div class="actions-gauche"><button type="button" class="btn-texte btn-petit" id="b-voir-msg">Voir le message de ${esc(ex.m.prenom)}</button></div>`
+      : `<div class="champ"><span>Message · exemple pour ${esc(ex.m.prenom)}</span><div class="message-apercu" id="apercu">${esc(texte(ex))}</div></div>
+      <p class="muted" style="margin:0">Chacun reçoit son propre message, avec son prénom et son montant. ${esc(NOTE_RAPPEL)}</p>
+      <div class="actions-gauche"><button type="button" class="btn-texte btn-petit" id="b-modif-msg">Modifier le message</button></div>`}
+    <h3 style="margin-bottom:0">Destinataires (${ch.length} sur ${liste.length})</h3>
+    <ul class="liste liste-rappel">${liste.map((c) => `<li><label class="case"><input type="checkbox" data-id="${c.m.id}" ${coches.has(c.m.id) ? 'checked' : ''} ${faits[c.m.id] ? 'disabled' : ''}>
+      <span class="corps"><b>${esc(nomComplet(c.m))}</b><span>${type === 'cotisation' || c.montant > 0 ? eur(c.montant) + ' · ' : ''}${faits[c.m.id] ? `<span class="recette">✓ ${faits[c.m.id]}</span>`
+        : (c.appareils ? 'Alertes activées' : numeroWa(c.m.whatsapp) ? 'WhatsApp' : 'Pas d’alertes ni de WhatsApp')}${c.jours !== null && c.jours < 30 ? ` · <span class="depense">petit mot ${ilYaJours(c.jours)}</span>` : ''}</span></span></label></li>`).join('')}</ul>
+    <div class="choix-envoi">
+      <button class="btn-primaire" id="b-r-notif" ${notif.length ? '' : 'disabled'}>${icone('cloche', 16)} Notification de l’association${notif.length ? ` (${notif.length})` : ''}</button>
+      <span class="muted">${notif.length ? `Reçue par ${notif.length > 1 ? `les ${notif.length} membres cochés qui ont` : 'le membre coché qui a'} activé les alertes, au nom de ${esc(nomAssoMessage())} : aucun numéro personnel.` : 'Aucun des membres cochés n’a activé les alertes sur son téléphone : utilisez WhatsApp ou copiez les messages.'}</span>
+      ${wa.length ? `<button class="btn-tonal" id="b-r-wa">WhatsApp (${wa.length})</button><span class="muted">Un message prêt par personne, un appui chacun. Pour écrire au nom de l’association plutôt que depuis votre numéro, utilisez WhatsApp Business avec le numéro de l’association.</span>` : ''}
+      <button class="btn-texte" id="b-r-copie" ${ch.length ? '' : 'disabled'}>Copier les messages${ch.length ? ` (${ch.length})` : ''}</button>
+    </div>
+    <div class="actions"><button class="btn-texte" id="b-fermer">Fermer</button></div>`;
   };
-  const etape2 = (restants, envoyes) => `<h2>Encore ${restants.length} à prévenir</h2>
-    ${envoyes ? `<p class="info"><span>${envoyes} petit${envoyes > 1 ? 's' : ''} mot${envoyes > 1 ? 's' : ''} envoyé${envoyes > 1 ? 's' : ''} au nom de l’association.</span></p>` : ''}
-    <p class="muted" style="margin:0">Ils n’ont pas activé les alertes. WhatsApp ne permet pas d’envoi groupé : chaque message est prêt, un appui par personne. Pour écrire au nom de l’association, utilisez WhatsApp Business avec son numéro.</p>
-    <ul class="liste">${restants.map((c) => `<li><div class="corps"><b>${esc(nomComplet(c.m))}</b><span>${numeroWa(c.m.whatsapp) ? 'WhatsApp' : 'Pas de numéro WhatsApp'}</span></div>
-      ${numeroWa(c.m.whatsapp) ? `<button class="btn-tonal btn-petit" data-wa="${c.m.id}">WhatsApp</button>` : ''}</li>`).join('')}</ul>
-    <div class="actions"><button class="btn-texte" id="b-copier-tout">Copier tous les messages</button><button class="btn-primaire" id="b-fermer">Terminé</button></div>`;
-  const brancher2 = (root, restants) => {
+  const brancher = (root) => {
+    const redessiner = () => { const h = $('.liste-rappel', root)?.scrollTop; root.innerHTML = rendu(); brancher(root); if (h) $('.liste-rappel', root).scrollTop = h; };
+    const finir = (msg) => { toast(msg); if (!choisis().length) fermerFeuille(); else redessiner(); };
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
-    root.querySelectorAll('[data-wa]').forEach((b) => b.addEventListener('click', async () => {
-      const c = restants.find((x) => x.m.id === b.dataset.wa);
-      window.open(`https://wa.me/${numeroWa(c.m.whatsapp)}?text=${encodeURIComponent(texte(c).trim())}`, '_blank', 'noopener');
-      b.disabled = true; b.textContent = 'Ouvert';
-      try { await noter(c, 'whatsapp'); } catch (err) { console.warn(err); }
-    }));
-    $('#b-copier-tout', root).addEventListener('click', async () => {
+    if (vue === 'whatsapp') {
+      $('#b-retour', root).addEventListener('click', () => { vue = 'message'; redessiner(); });
+      root.querySelectorAll('[data-wa]').forEach((b) => b.addEventListener('click', async () => {
+        const c = waListe.find((x) => x.m.id === b.dataset.wa);
+        window.open(`https://wa.me/${numeroWa(c.m.whatsapp)}?text=${encodeURIComponent(texte(c))}`, '_blank', 'noopener');
+        faits[c.m.id] = 'WhatsApp ouvert'; coches.delete(c.m.id); b.disabled = true; b.textContent = 'Ouvert';
+        try { await noter(c, 'whatsapp'); } catch (err) { console.warn(err); }
+      }));
+      return;
+    }
+    $('#t-rappel', root)?.addEventListener('input', (e) => { modele = e.target.value; });
+    $('#b-modif-msg', root)?.addEventListener('click', () => { edition = true; redessiner(); $('#t-rappel', root).focus(); });
+    $('#b-voir-msg', root)?.addEventListener('click', () => { edition = false; redessiner(); });
+    root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('change', () => { if (b.checked) coches.add(b.dataset.id); else coches.delete(b.dataset.id); redessiner(); }));
+    $('#b-r-notif', root).addEventListener('click', async (e) => {
+      if (!modele.trim()) { erreur(new Error('Le message est vide')); return; }
+      e.target.disabled = true; e.target.textContent = 'Envoi…';
+      let n = 0;
+      for (const c of choisis().filter((x) => x.appareils)) {
+        try { await noter(c, 'notification'); faits[c.m.id] = 'Notification envoyée'; coches.delete(c.m.id); n++; } catch (err) { console.warn(err); }
+      }
+      finir(`${n} ${pluriel(n, 'petit mot envoyé', 'petits mots envoyés')} au nom de l’association`);
+    });
+    $('#b-r-wa', root)?.addEventListener('click', () => { waListe = choisis().filter((c) => numeroWa(c.m.whatsapp)); vue = 'whatsapp'; redessiner(); });
+    $('#b-r-copie', root).addEventListener('click', async () => {
+      const ch = choisis();
       try {
-        await navigator.clipboard.writeText(restants.map((c) => `— ${nomComplet(c.m)} —\n${texte(c).trim()}`).join('\n\n'));
-        toast('Messages copiés');
-        for (const c of restants) { try { await noter(c, 'copie'); } catch (err) { console.warn(err); } }
+        await navigator.clipboard.writeText(ch.map((c) => `— ${nomComplet(c.m)} —\n${texte(c)}`).join('\n\n'));
+        for (const c of ch) { faits[c.m.id] = 'Message copié'; coches.delete(c.m.id); try { await noter(c, 'copie'); } catch (err) { console.warn(err); } }
+        finir(`${ch.length} ${pluriel(ch.length, 'message copié', 'messages copiés')}`);
       } catch (err) { erreur(err); }
     });
   };
-  const brancher1 = (root) => {
-    $('#b-fermer', root).addEventListener('click', fermerFeuille);
-    $('#t-modele', root).addEventListener('input', (e) => { modele = e.target.value; const c = liste.find((x) => coches.has(x.m.id)) || liste[0]; if (c) $('#apercu', root).textContent = texte(c); });
-    root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('change', () => {
-      if (b.checked) coches.add(b.dataset.id); else coches.delete(b.dataset.id);
-      const ouvert = $('.apercu-rappel', root).open; root.innerHTML = etape1(); brancher1(root); $('.apercu-rappel', root).open = ouvert;
-    }));
-    $('#b-envoyer', root).addEventListener('click', async (e) => {
-      if (!modele.trim()) { erreur(new Error('Le message est vide')); return; }
-      e.target.disabled = true; e.target.textContent = 'Envoi…';
-      const choisis = liste.filter((c) => coches.has(c.m.id));
-      let envoyes = 0; const echecs = [];
-      for (const c of choisis.filter((x) => x.appareils)) {
-        try { await noter(c, 'notification'); envoyes++; } catch (err) { echecs.push(c); console.warn(err); }
-      }
-      const restants = [...choisis.filter((c) => !c.appareils), ...echecs];
-      if (!restants.length) { fermerFeuille(); toast(`${envoyes} petit${envoyes > 1 ? 's' : ''} mot${envoyes > 1 ? 's' : ''} envoyé${envoyes > 1 ? 's' : ''} au nom de l’association`); return; }
-      root.innerHTML = etape2(restants, envoyes); brancher2(root, restants);
-    });
-  };
-  if (!liste.length) { toast('Personne à qui envoyer un petit mot'); return; }
-  ouvrirFeuille(etape1(), brancher1);
+  ouvrirFeuille(rendu(), brancher);
 }
 
 // Fiche cotisation d'un membre : périodes, montant dû modifiable (dispense), versements
@@ -3251,7 +3282,7 @@ async function paramMontants(zone) {
       <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       <label class="champ">Comment régler (affiché aux membres)<textarea name="infos_paiement" rows="3" maxlength="400" placeholder="Virement : IBAN FR76…&#10;Espèces : auprès du trésorier après le culte">${esc(S.textes?.infos_paiement || '')}</textarea></label>
       <h3>Petit rappel aux membres</h3>
-      <p class="muted" style="margin:0">Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre).</p>
+      <p class="muted" style="margin:0">Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre). Entre *astérisques* : en gras dans WhatsApp (retirés dans la notification).</p>
       <label class="champ">Cotisation<textarea name="message_rappel" rows="8" maxlength="1500">${esc(S.textes?.message_rappel || RAPPEL_DEFAUT.cotisation)}</textarea></label>
       <label class="champ">Participation<textarea name="message_rappel_participation" rows="6" maxlength="1500">${esc(S.textes?.message_rappel_participation || RAPPEL_DEFAUT.participation)}</textarea></label>
       <div class="actions-gauche"><button type="button" class="btn-texte btn-petit" id="b-rappel-defaut">Rétablir les messages proposés</button></div>

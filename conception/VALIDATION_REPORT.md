@@ -52,3 +52,11 @@
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 27 tests dont `rappelGroupeNoteChaqueEnvoi` | ✅ ; rendu à vérifier sur téléphone |
 | Corrigé au passage : double icône dans l’encadré « déjà envoyé » du petit rappel (site) | ✅ |
+
+## 0.35.0 — Rappels : même structure, montant et paiement mis en évidence (18 octobre 2026)
+
+| Vérification | Résultat |
+|---|---|
+| Site : structure comparée (individuel / groupé) par `rappel-groupe.mjs` | ✅ mêmes éléments, même ordre ; 0 erreur JS |
+| Site : `rappel.mjs`, `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
+| Android : compilation, 27 tests (`rappelCommeLeSite` : 4 textes identiques au site, dont `sansGras`) | ✅ ; rendu à vérifier sur téléphone |

@@ -320,12 +320,14 @@ class AuditTest {
     @Test
     fun rappelCommeLeSite() {
         fun n(s: String) = s.replace('\u202F', ' ').replace('\u00A0', ' ')
-        assertEquals("Bonjour Daniel 😊\nOn espère que tu vas bien ! Petit message de Jeunes de Tous Pays au sujet de la cotisation : c’est grâce à elle que l’association vit et que nos activités peuvent continuer.\nQuand tu peux, il reste 40,00 € pour cette année.\nPour régler : Espèces au trésorier ; Virement IBAN FR76\nTon espace membre : https://x.fr/?m=daniel-abc\nMerci pour ton soutien et à très vite,\nLe bureau de Jeunes de Tous Pays",
+        assertEquals("Bonjour Daniel 😊\nOn espère que tu vas bien ! Petit message de Jeunes de Tous Pays au sujet de la cotisation : c’est grâce à elle que l’association vit et que nos activités peuvent continuer.\n\n💶 Reste pour cette année : *40,00 €*\n💳 Pour régler :\n• *Espèces au trésorier*\n• *Virement IBAN FR76*\n🔗 Ton espace membre : https://x.fr/?m=daniel-abc\n\nMerci pour ton soutien et à très vite,\nLe bureau de Jeunes de Tous Pays",
             n(texteRappel(null, "Daniel", "JEUNES DE TOUS PAYS", "cotisation", 40.0, "", "Espèces au trésorier\n Virement IBAN FR76", "https://x.fr/?m=daniel-abc")))
-        assertEquals("Bonjour Daniel 😊\nPour « Sortie au lac », ta participation compte (montant proposé : 12,50 €) : c’est grâce à elle que l’association vit et que ce projet peut se faire.\nMerci et à bientôt,\nLe bureau de Jeunes de Tous Pays",
-            n(texteRappel(null, "Daniel", "JEUNES DE TOUS PAYS", "participation", 12.5, "Sortie au lac", null, null)))
-        assertEquals("Bonjour Daniel 😊\nPour « Sortie », ta participation compte : c’est grâce à elle que l’association vit et que ce projet peut se faire.\nMerci et à bientôt,\nLe bureau de Jeunes de Tous Pays",
+        assertEquals("Bonjour Daniel 😊\nPour « Sortie au lac », ta participation compte : c’est grâce à elle que l’association vit et que ce projet peut se faire.\n\n💶 Montant proposé : *12,50 €*\n💳 Pour régler : *Veuillez remettre au trésorier votre participation en espèces ou Wero au 0666724026*\n\nMerci et à bientôt,\nLe bureau de Jeunes de Tous Pays",
+            n(texteRappel(null, "Daniel", "JEUNES DE TOUS PAYS", "participation", 12.5, "Sortie au lac", "Veuillez remettre au trésorier votre participation en espèces ou Wero au 0666724026", null)))
+        assertEquals("Bonjour Daniel 😊\nPour « Sortie », ta participation compte : c’est grâce à elle que l’association vit et que ce projet peut se faire.\n\nMerci et à bientôt,\nLe bureau de Jeunes de Tous Pays",
             n(texteRappel("", "Daniel", "JEUNES DE TOUS PAYS", "participation", 0.0, "Sortie", "  ", null)))
+        // Notification : sans les astérisques du gras WhatsApp
+        assertEquals("Bonjour Daniel 😊\nOn espère que tu vas bien ! Petit message de Jeunes de Tous Pays au sujet de la cotisation : c’est grâce à elle que l’association vit et que nos activités peuvent continuer.\n\n💶 Reste pour cette année : 40,00 €\n\nMerci pour ton soutien et à très vite,\nLe bureau de Jeunes de Tous Pays", n(sansGras(texteRappel(null, "Daniel", "JEUNES DE TOUS PAYS", "cotisation", 40.0, "", null, null))))
         assertEquals("JP Grenoble", nomAssoMessage("JP Grenoble"))
         assertTrue(listOf("arriéré", "retard", "relance", "sans pression", "bon moment").none { it in RAPPEL_DEFAUT.values.joinToString().lowercase() })
     }
