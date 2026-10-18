@@ -315,4 +315,18 @@ class AuditTest {
         assertEquals(listOf("JEUNES DE TOUS PAYS", "CHORALE SAINT-JOSEPH DE GRENOBLE"), Demo.annuaire.map { it.nom })
         assertTrue(Demo.annuaire.all { it.codePostal == "38000" && it.rna != null })
     }
+
+    // Petit rappel : même texte que texteRappel du site (mots remplacés, nom de l'association lisible, signature du bureau)
+    @Test
+    fun rappelCommeLeSite() {
+        fun n(s: String) = s.replace('\u202F', ' ').replace('\u00A0', ' ')
+        assertEquals("Bonjour Daniel 😊\nOn espère que tu vas bien ! Petit message de Jeunes de Tous Pays au sujet de la cotisation : elle nous aide à faire vivre l’association, mais elle reste libre et sans pression.\nSi tu le souhaites et quand cela t’arrange, il reste 40,00 € pour cette année.\nPour régler : Espèces au trésorier ; Virement IBAN FR76\nSi ce n’est pas le bon moment, aucun souci : dis-le-nous simplement, tu restes le bienvenu parmi nous.\nTon espace membre : https://x.fr/?m=daniel-abc\nÀ très vite,\nLe bureau de Jeunes de Tous Pays",
+            n(texteRappel(null, "Daniel", "JEUNES DE TOUS PAYS", "cotisation", 40.0, "", "Espèces au trésorier\n Virement IBAN FR76", "https://x.fr/?m=daniel-abc")))
+        assertEquals("Bonjour Daniel 😊\nPour « Sortie au lac », chacun participe s’il le peut (montant proposé : 12,50 €) : chaque geste compte, même petit.\nPas de souci si ce n’est pas possible en ce moment.\nMerci et à bientôt,\nLe bureau de Jeunes de Tous Pays",
+            n(texteRappel(null, "Daniel", "JEUNES DE TOUS PAYS", "participation", 12.5, "Sortie au lac", null, null)))
+        assertEquals("Bonjour Daniel 😊\nPour « Sortie », chacun participe s’il le peut : chaque geste compte, même petit.\nPas de souci si ce n’est pas possible en ce moment.\nMerci et à bientôt,\nLe bureau de Jeunes de Tous Pays",
+            n(texteRappel("", "Daniel", "JEUNES DE TOUS PAYS", "participation", 0.0, "Sortie", "  ", null)))
+        assertEquals("JP Grenoble", nomAssoMessage("JP Grenoble"))
+        assertTrue(listOf("arriéré", "retard", "relance").none { it in RAPPEL_DEFAUT.values.joinToString().lowercase() })
+    }
 }

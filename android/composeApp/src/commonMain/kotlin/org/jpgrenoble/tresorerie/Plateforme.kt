@@ -73,3 +73,8 @@ expect fun rememberDemandeNotifications(quandFini: (Boolean) -> Unit): () -> Uni
 
 /** Ajoute un rendez-vous à l'agenda du téléphone (Google Agenda…) ; faux si aucune application d'agenda. */
 expect fun ajouterAgenda(nom: String, date: String, heureDebut: String?, dateFin: String?, heureFin: String?, lieu: String?, description: String?): Boolean
+
+/** WhatsApp Business est-il installé ? (pour écrire avec le numéro de l'association plutôt que le sien) */
+expect fun whatsappBusinessInstalle(): Boolean
+/** Ouvre une conversation WhatsApp préremplie ; dans WhatsApp Business si `business`. */
+expect fun ouvrirWhatsApp(numero: String, texte: String, business: Boolean)

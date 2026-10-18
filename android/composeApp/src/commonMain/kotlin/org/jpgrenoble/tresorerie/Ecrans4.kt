@@ -189,20 +189,6 @@ private fun Legende() {
     }
 }
 
-// Relance WhatsApp : même texte que lienRelance du site (comment régler, lien vers l'espace membre)
-private val porteeRelance = kotlinx.coroutines.MainScope()
-private fun lienRelance(uri: androidx.compose.ui.platform.UriHandler, m: Membre, objet: String) {
-    val num = numeroWa(m.whatsapp) ?: return
-    porteeRelance.launch {
-        val infos = try { Repo.texteReglage("infos_paiement") } catch (_: Exception) { null }
-        val lien = try { Repo.liens().firstOrNull { it.membreId == m.id } } catch (_: Exception) { null }
-        val texte = "Bonjour ${m.prenom}, $objet. " +
-            (infos?.takeIf { it.isNotBlank() }?.let { "Pour régler : " + it.trim().replace(Regex("\\s*\n\\s*"), " ; ") + "." } ?: "Vous pouvez régler en espèces auprès du trésorier ou par virement.") +
-            (lien?.let { " Votre espace membre : ${Repo.urlLien(it, m)}" } ?: "") + " Merci."
-        uri.openUri("https://wa.me/$num?text=${encoderUrl(texte)}")
-    }
-}
-
 // =====================================================================
 // Saisie d'une opération : tiers et rubrique (cotisation ou participation)
 // =====================================================================
@@ -394,6 +380,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     var version by remember { mutableStateOf(0) }
     var filtre by remember { mutableStateOf(PreferencesCotisations.filtre) }
     var encaisser by remember { mutableStateOf<PreEcriture?>(null) }
+    var rappel by remember { mutableStateOf<DemandeRappel?>(null) }
     var fiche by remember { mutableStateOf<Membre?>(null) }
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
@@ -479,9 +466,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
                                     val actions: @Composable () -> Unit = {
                                         if (gere) {
                                             OutlinedButton(onClick = { encaisser = PreEcriture("recette", m.id, "cotisation", if (c.retard > 0.005) c.retard else montantPeriode) }) { Text("Encaisser") }
-                                            if (c.retard > 0.005 && numeroWa(m.whatsapp) != null) TextButton(onClick = {
-                                                lienRelance(uri, m, "votre cotisation ${if (nomOrg.isNotEmpty()) "à $nomOrg " else ""}présente un retard de ${euros(c.retard)}")
-                                            }) { Text("Relancer") }
+                                            if (c.retard > 0.005) TextButton(onClick = { rappel = DemandeRappel(m, "cotisation", c.retard) }) { Text("Petit rappel") }
                                         }
                                     }
                                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -509,6 +494,9 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
         ModalBottomSheet(onDismissRequest = { encaisser = null }) {
             FormulaireEcriture(d, pre, onFini = { ok -> encaisser = null; if (ok) { message("Encaissement enregistré"); version++ } }, message)
         }
+    }
+    rappel?.let { r ->
+        ModalBottomSheet(onDismissRequest = { rappel = null }) { FeuilleRappel(d, r, message) { rappel = null } }
     }
     fiche?.let { m ->
         ModalBottomSheet(onDismissRequest = { fiche = null }) {
@@ -683,6 +671,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
     var filtre by remember { mutableStateOf("tous") }
     var version by remember { mutableStateOf(0) }
     var encaisser by remember { mutableStateOf<PreEcriture?>(null) }
+    var rappel by remember { mutableStateOf<DemandeRappel?>(null) }
     val supprimerCollecte = rememberSuppression(message) { onChange(); onFermer() }
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
@@ -736,9 +725,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
                 // Actions sous la ligne, alignées sur le nom (actions-ligne du site)
                 if (gere && !c.cloturee) Row(Modifier.padding(start = 50.dp, top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { encaisser = PreEcriture("recette", m.id, c.id, if (att > 0) maxOf(att - v, 0.0).takeIf { it > 0 } ?: att else null) }) { Text("Encaisser") }
-                    if ((att == 0.0 || v < att) && numeroWa(m.whatsapp) != null) TextButton(onClick = {
-                        lienRelance(uri, m, "pour « ${c.nom} », la participation demandée est de ${if (att > 0) euros(att - v) else "votre choix"}")
-                    }) { Text("Relancer") }
+                    if (att == 0.0 || v < att) TextButton(onClick = { rappel = DemandeRappel(m, "participation", if (att > 0) att - v else 0.0, c.nom, c.id) }) { Text("Petit rappel") }
                 }
             }
         }
@@ -768,6 +755,9 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
         ModalBottomSheet(onDismissRequest = { encaisser = null }) {
             FormulaireEcriture(d, pre, onFini = { ok -> encaisser = null; if (ok) { message("Encaissement enregistré"); version++; onChange() } }, message)
         }
+    }
+    rappel?.let { r ->
+        ModalBottomSheet(onDismissRequest = { rappel = null }) { FeuilleRappel(d, r, message) { rappel = null } }
     }
 }
 

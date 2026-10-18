@@ -2416,7 +2416,7 @@ async function ongletCotisations(zone) {
         ${Number(c.retard) > 0 ? `<span class="puce puce-ko">Retard ${eur(c.retard)}</span>` : '<span class="puce puce-ok">À jour</span>'}
         ${Number(c.avance) > 0 ? `<span class="puce puce-neutre">Avance ${eur(c.avance)}</span>` : ''}
         ${gere ? `<div class="actions-ligne"><button class="btn-tonal btn-petit" data-encaisser="${m.id}">Encaisser</button>
-          ${Number(c.retard) > 0 && numeroWa(m.whatsapp) ? `<a class="btn btn-texte btn-petit" target="_blank" rel="noopener" href="${lienRelance(m, `votre cotisation ${S.org?.nom ? 'à ' + S.org.nom : ''} présente un retard de ${eur(c.retard)}`)}">Relancer</a>` : ''}</div>` : ''}
+          ${Number(c.retard) > 0 ? `<button class="btn-texte btn-petit" data-rappel="${m.id}" data-montant="${Number(c.retard)}">Petit rappel</button>` : ''}</div>` : ''}
       </li>`).join('')}</ul>` : `<div class="vide">Aucune cotisation${lignes.length ? '' : ' pour ' + S.annee}</div>`}
     </section>`;
   $('#annee', zone).addEventListener('change', (e) => { S.annee = Number(e.target.value); pageCotisations().catch(erreur); });
@@ -2424,6 +2424,9 @@ async function ongletCotisations(zone) {
   $('#b-generer', zone)?.addEventListener('click', async () => {
     try { const n = await q(sb.rpc('generer_cotisations', { an: S.annee })); toast(`${n} période${n > 1 ? 's' : ''} créée${n > 1 ? 's' : ''}`); pageCotisations(); } catch (e) { erreur(e); }
   });
+  zone.querySelectorAll('[data-rappel]').forEach((b) => b.addEventListener('click', () => {
+    const m = S.membres.find((x) => x.id === b.dataset.rappel); if (m) feuilleRappel(m, { type: 'cotisation', montant: Number(b.dataset.montant) }).catch(erreur);
+  }));
   zone.querySelectorAll('[data-encaisser]').forEach((b) => b.addEventListener('click', () => {
     const c = parMembre[b.dataset.encaisser];
     feuilleEcriture({ sens: 'recette', rubrique: 'cotisation', member_id: b.dataset.encaisser, montant: Number(c.retard) > 0 ? Number(c.retard) : montant, apres: () => pageCotisations() });
@@ -2438,10 +2441,63 @@ async function ongletCotisations(zone) {
       Number(c.montant_du), Number(c.montant_paye), Number(c.exigible || 0), Number(c.retard), c.regle_jusqu_a ? nomPeriode(c.regle_jusqu_a) : '']))));
 }
 
-function lienRelance(m, objet) {
+// ---------- Petits rappels (cotisation, participation) ----------
+// Ton chaleureux et sans pression : la cotisation reste libre, on ne parle pas d'« arriérés ».
+// Message signé par le bureau, envoyé de préférence par une notification au nom de l'association (envoyer_rappel),
+// sinon par WhatsApp (idéalement WhatsApp Business avec le numéro de l'association) ou copié. Même texte côté Android (Rappels.kt).
+const RAPPEL_DEFAUT = {
+  cotisation: 'Bonjour {prénom} 😊\nOn espère que tu vas bien ! Petit message de {association} au sujet de la cotisation : elle nous aide à faire vivre l’association, mais elle reste libre et sans pression.\nSi tu le souhaites et quand cela t’arrange, il reste {montant} pour cette année.{règlement}\nSi ce n’est pas le bon moment, aucun souci : dis-le-nous simplement, tu restes le bienvenu parmi nous.{lien}\nÀ très vite,\nLe bureau de {association}',
+  participation: 'Bonjour {prénom} 😊\nPour « {collecte} », chacun participe s’il le peut{montant} : chaque geste compte, même petit.{règlement}\nPas de souci si ce n’est pas possible en ce moment.{lien}\nMerci et à bientôt,\nLe bureau de {association}',
+};
+// Nom de l'association pour un message : « JEUNES DE TOUS PAYS » → « Jeunes de Tous Pays » (petits mots en minuscules)
+function nomAssoMessage() {
+  const n = String(S.org?.nom || '').trim(); if (!n) return 'l’association';
+  if (n !== n.toUpperCase()) return n;
+  return casseTitre(n).replace(/(?<=\s)(De|Des|Du|La|Le|Les|Et|En|Pour|Au|Aux|À)(?=\s)/g, (x) => x.toLowerCase());
+}
+function texteRappel(m, { type = 'cotisation', montant = 0, collecte = '' } = {}) {
+  const modele = (type === 'participation' ? S.textes?.message_rappel_participation : S.textes?.message_rappel) || RAPPEL_DEFAUT[type];
   const l = (S.liensMembres || {})[m.id];
-  const msg = `Bonjour ${m.prenom}, ${objet}. ${S.textes?.infos_paiement ? 'Pour régler : ' + S.textes.infos_paiement.replace(/\s*\n\s*/g, ' ; ') + '.' : 'Vous pouvez régler en espèces auprès du trésorier ou par virement.'}${l ? ` Votre espace membre : ${urlLien(l, m)}` : ''} Merci.`;
-  return `https://wa.me/${numeroWa(m.whatsapp)}?text=${encodeURIComponent(msg)}`;
+  const reglement = S.textes?.infos_paiement ? `\nPour régler : ${S.textes.infos_paiement.trim().replace(/\s*\n\s*/g, ' ; ')}` : '';
+  const valeurs = {
+    'prénom': m.prenom, association: nomAssoMessage(), collecte,
+    montant: type === 'participation' ? (montant > 0 ? ` (montant proposé : ${eur(montant)})` : '') : eur(montant),
+    'règlement': reglement, lien: l ? `\nTon espace membre : ${urlLien(l, m)}` : '',
+  };
+  return modele.replace(/\{(prénom|prenom|association|montant|collecte|règlement|reglement|lien)\}/g, (_, k) => valeurs[{ prenom: 'prénom', reglement: 'règlement' }[k] || k] ?? '');
+}
+async function feuilleRappel(m, { type = 'cotisation', montant = 0, collecte = '', collecteId = null } = {}) {
+  let etat = { appareils: 0, dernier: null };
+  try { etat = (await q(sb.rpc('etat_rappels', { p_collecte: collecteId }))).find((x) => x.member_id === m.id) || etat; } catch (e) { console.warn(e); }
+  const jours = etat.dernier ? Math.floor((Date.now() - new Date(etat.dernier)) / 86400000) : null;
+  const num = numeroWa(m.whatsapp);
+  ouvrirFeuille(`<h2>Petit rappel à ${esc(m.prenom)}</h2>
+    ${jours !== null && jours < 30 ? `<p class="info">${icone('info', 18)}<span>Un petit mot lui a déjà été envoyé ${jours === 0 ? 'aujourd’hui' : jours === 1 ? 'hier' : `il y a ${jours} jours`}. Pour ne pas être insistant, mieux vaut laisser passer un peu de temps.</span></p>` : ''}
+    <label class="champ">Message<textarea id="t-rappel" rows="9" maxlength="1500">${esc(texteRappel(m, { type, montant, collecte }))}</textarea></label>
+    <p class="muted" style="margin:0">Signé par le bureau. Le texte proposé se modifie dans Paramètres › Cotisations et dépenses.</p>
+    <div class="choix-envoi">
+      <button class="btn-primaire" id="b-r-notif" ${etat.appareils ? '' : 'disabled'}>${icone('cloche', 16)} Notification de l’association</button>
+      <span class="muted">${etat.appareils ? `Reçue sur ${etat.appareils > 1 ? `ses ${etat.appareils} appareils` : 'son téléphone'}, au nom de ${esc(nomAssoMessage())} : aucun numéro personnel.` : `${esc(m.prenom)} n’a pas activé les alertes sur son téléphone : utilisez WhatsApp ou copiez le message.`}</span>
+      ${num ? `<button class="btn-tonal" id="b-r-wa">WhatsApp</button><span class="muted">S’ouvre dans le WhatsApp de cet appareil. Pour écrire au nom de l’association plutôt que depuis votre numéro, utilisez WhatsApp Business avec le numéro de l’association.</span>` : ''}
+      <button class="btn-texte" id="b-r-copie">Copier le message</button>
+    </div>
+    <div class="actions"><button class="btn-texte" id="b-fermer">Fermer</button></div>`, (root) => {
+    const texte = () => $('#t-rappel', root).value.trim();
+    const noter = async (canal) => { await q(sb.rpc('envoyer_rappel', { p_member: m.id, p_canal: canal, p_texte: texte(), p_collecte: collecteId })); };
+    $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#b-r-notif', root)?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await noter('notification'); fermerFeuille(); toast(`Petit mot envoyé à ${m.prenom} au nom de l’association`); } catch (err) { e.target.disabled = false; erreur(err); }
+    });
+    $('#b-r-wa', root)?.addEventListener('click', async () => {
+      window.open(`https://wa.me/${num}?text=${encodeURIComponent(texte())}`, '_blank', 'noopener');
+      try { await noter('whatsapp'); } catch (err) { console.warn(err); }
+      fermerFeuille();
+    });
+    $('#b-r-copie', root).addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(texte()); toast('Message copié'); await noter('copie'); fermerFeuille(); } catch (err) { erreur(err); }
+    });
+  });
 }
 
 // Fiche cotisation d'un membre : périodes, montant dû modifiable (dispense), versements
@@ -2554,7 +2610,7 @@ async function detailCollecte(c) {
     <ul class="liste">${lignes.filter((x) => filtre === 'tous' || (filtre === 'donne' ? x.v > 0 : x.v <= 0)).map(({ m, v }) => `<li>${avatar(m)}<div class="corps"><b>${esc(nomComplet(m))}</b><span>${eur(v)}${att ? ' sur ' + eur(att) : ''}</span></div>
       ${att ? (v >= att ? '<span class="puce puce-ok">Réglé</span>' : v > 0 ? '<span class="puce puce-partiel">Partiel</span>' : '<span class="puce puce-ko">À régler</span>') : v > 0 ? '<span class="puce puce-ok">Donné</span>' : ''}
       ${gere && !c.cloturee ? `<div class="actions-ligne"><button class="btn-tonal btn-petit" data-enc="${m.id}">Encaisser</button>
-        ${(!att || v < att) && numeroWa(m.whatsapp) ? `<a class="btn btn-texte btn-petit" target="_blank" rel="noopener" href="${lienRelance(m, `pour « ${c.nom} », la participation demandée est de ${att ? eur(att - v) : 'votre choix'}`)}">Relancer</a>` : ''}</div>` : ''}</li>`).join('') || '<li class="muted">Personne</li>'}</ul>
+        ${!att || v < att ? `<button class="btn-texte btn-petit" data-rappel-part="${m.id}" data-montant="${att ? att - v : 0}">Petit rappel</button>` : ''}</div>` : ''}</li>`).join('') || '<li class="muted">Personne</li>'}</ul>
     ${autres.length ? `<h3>Autres contributions</h3><ul class="liste">${autres.map((t) => `<li><div class="corps"><b>${esc(nomTiers(t) || t.libelle)}</b><span>${dateFr(t.date_op)}</span></div>${montantSigne(t)}</li>`).join('')}</ul>` : ''}
     <div class="actions">
       <button class="btn-bleu" id="b-exp">Exporter</button>
@@ -2567,6 +2623,9 @@ async function detailCollecte(c) {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
     root.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { filtre = b.dataset.f; root.innerHTML = rendu(); brancher(root); }));
     const apres = () => { pageCotisations().catch(erreur); };
+    root.querySelectorAll('[data-rappel-part]').forEach((b) => b.addEventListener('click', () => {
+      const m = S.membres.find((x) => x.id === b.dataset.rappelPart); if (m) feuilleRappel(m, { type: 'participation', montant: Number(b.dataset.montant), collecte: c.nom, collecteId: c.id }).catch(erreur);
+    }));
     root.querySelectorAll('[data-enc]').forEach((b) => b.addEventListener('click', () => {
       const v = donne(b.dataset.enc);
       feuilleEcriture({ sens: 'recette', rubrique: c.id, member_id: b.dataset.enc, montant: att ? Math.max(att - v, 0) || att : '', apres });
@@ -3110,12 +3169,18 @@ async function paramMontants(zone) {
       <div class="champs champs-2"><label class="champ">Montant (€ par période)<input name="cotisation_montant" type="number" step="0.01" min="0" value="${esc(S.settings.cotisation_montant)}"></label>
       <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       <label class="champ">Comment régler (affiché aux membres)<textarea name="infos_paiement" rows="3" maxlength="400" placeholder="Virement : IBAN FR76…&#10;Espèces : auprès du trésorier après le culte">${esc(S.textes?.infos_paiement || '')}</textarea></label>
+      <h3>Petit rappel aux membres</h3>
+      <p class="muted" style="margin:0">Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux : la cotisation est libre. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre).</p>
+      <label class="champ">Cotisation<textarea name="message_rappel" rows="8" maxlength="1500">${esc(S.textes?.message_rappel || RAPPEL_DEFAUT.cotisation)}</textarea></label>
+      <label class="champ">Participation<textarea name="message_rappel_participation" rows="6" maxlength="1500">${esc(S.textes?.message_rappel_participation || RAPPEL_DEFAUT.participation)}</textarea></label>
+      <div class="actions-gauche"><button type="button" class="btn-texte btn-petit" id="b-rappel-defaut">Rétablir les messages proposés</button></div>
       <h3>Demandes de dépense et budget</h3>
       <div class="champs champs-2"><label class="champ">Délai du justificatif (jours après paiement)<input name="delai_justificatif_jours" type="number" min="1" max="90" value="${esc(S.settings.delai_justificatif_jours)}"></label>
       <label class="champ">Justification obligatoire à partir de (€)<input name="seuil_justification" type="number" min="0" step="1" value="${esc(S.settings.seuil_justification ?? 100)}"></label>
       <label class="champ">Alerte budget (% du prévu)<input name="seuil_alerte_budget_pct" type="number" min="1" max="200" value="${esc(S.settings.seuil_alerte_budget_pct ?? 90)}"></label></div>
       <button class="btn-primaire" style="align-self:flex-end">Enregistrer</button></form>`;
   const fm = $('#f-montants', zone);
+  $('#b-rappel-defaut', zone).addEventListener('click', () => { fm.message_rappel.value = RAPPEL_DEFAUT.cotisation; fm.message_rappel_participation.value = RAPPEL_DEFAUT.participation; });
   fm.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -3126,6 +3191,10 @@ async function paramMontants(zone) {
         S.settings[cle] = Number(fm[cle].value);
       }
       await enregistrerTexteReglage('infos_paiement', fm.infos_paiement.value.trim() || null, 'Comment régler sa cotisation');
+      // Le message proposé n'est enregistré que s'il diffère du texte par défaut (sinon il suit les améliorations futures)
+      for (const [cle, type, desc] of [['message_rappel', 'cotisation', 'Message de rappel (cotisation)'], ['message_rappel_participation', 'participation', 'Message de rappel (participation)']]) {
+        const v = fm[cle].value.trim(); await enregistrerTexteReglage(cle, v && v !== RAPPEL_DEFAUT[type] ? v : null, desc);
+      }
       toast('Paramètres enregistrés');
     } catch (err) { erreur(err); }
   });

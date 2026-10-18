@@ -523,3 +523,7 @@ data class NouveauCommunique(
 // Association trouvée dans l'annuaire public (registre SIRENE) — même forme que chercherAssociation du site
 data class AssociationAnnuaire(val nom: String, val adresse: String?, val codePostal: String?, val ville: String?,
                                val siret: String?, val rna: String?, val dateCreation: String?)
+
+// Rappel de cotisation / participation (etat_rappels de la base) : appareils qui reçoivent la notification, date du dernier rappel
+@Serializable
+data class EtatRappel(@SerialName("member_id") val membreId: String, val appareils: Int = 0, val dernier: String? = null)

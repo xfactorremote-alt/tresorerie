@@ -315,11 +315,21 @@ object Repo {
     suspend fun texteReglage(cle: String): String? =
         if (demo) Demo.textes[cle] else client.from("settings").select { filter { eq("cle", cle) } }.decodeList<Reglage>().firstOrNull()?.texte
 
-    suspend fun majTexteReglage(cle: String, texte: String?) {
+    suspend fun majTexteReglage(cle: String, texte: String?, description: String = "Comment régler sa cotisation") {
         if (demo) { Demo.majTexte(cle, texte, profilDemo.value); return }
         val n = client.from("settings").update({ set("texte", texte) }) { filter { eq("cle", cle) }; select() }.decodeList<Reglage>()
-        if (n.isEmpty()) client.from("settings").insert(buildJsonObject { put("cle", cle); put("texte", texte); put("description", "Comment régler sa cotisation") })
+        if (n.isEmpty()) client.from("settings").insert(buildJsonObject { put("cle", cle); put("texte", texte); put("description", description) })
     }
+
+    // ---------- Petit rappel au nom de l'association (envoyer_rappel / etat_rappels de la base) ----------
+    suspend fun etatRappels(collecteId: String?): List<EtatRappel> =
+        if (demo) Demo.etatRappels(collecteId, profilDemo.value)
+        else client.postgrest.rpc("etat_rappels", buildJsonObject { put("p_collecte", collecteId) }).decodeList()
+
+    /** Notification (au nom de l'association), WhatsApp ou copie : le rappel est noté ; renvoie le nombre d'appareils joints. */
+    suspend fun envoyerRappel(membreId: String, canal: String, texte: String, collecteId: String?): Int =
+        if (demo) Demo.envoyerRappel(membreId, canal, texte, collecteId, profilDemo.value)
+        else client.postgrest.rpc("envoyer_rappel", buildJsonObject { put("p_member", membreId); put("p_canal", canal); put("p_texte", texte); put("p_collecte", collecteId) }).decodeAs()
 
     suspend fun majReglage(cle: String, valeur: Double) {
         if (demo) { Demo.majReglage(cle, valeur, profilDemo.value); return }

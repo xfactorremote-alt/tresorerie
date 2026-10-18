@@ -201,6 +201,8 @@ function seed() {
         { id: 'cq5', genre: 'lien', titre: 'Partitions de la chorale', texte: 'Toutes les partitions du trimestre sont dans le Drive.', debut: iso(ilYa(5)), fin: null, priorite: 'basse', visible_adherents: true,
           lien: 'https://drive.google.com/drive/folders/demonstration', created_by: ids.b, created_at: ilYa(5).toISOString() },
       ],
+      // Rappels « au nom de l'association » (table rappels, envoyer_rappel) : un rappel il y a 10 jours pour montrer l'avertissement
+      rappels: [{ id: 'rp1', member_id: 'm2', collecte_id: null, canal: 'whatsapp', texte: 'Bonjour…', par: ids.t, le: ilYa(10).toISOString() }],
       reponses_sondage: [
         { id: 'rs1', communique_id: 'cq3', member_id: 'm1', reponses: { q1: '14 novembre', q2: ['Bowling', 'Pique-nique'] }, cree_le: new Date().toISOString(), modifie_le: new Date().toISOString() },
         { id: 'rs2', communique_id: 'cq3', member_id: 'm2', reponses: { q1: '14 novembre', q2: ['Musée'], q3: 'Pourquoi pas le musée dauphinois ?' }, cree_le: new Date().toISOString(), modifie_le: new Date().toISOString() },
@@ -235,7 +237,7 @@ function calculResultats(t, c, bureau) {
 // Droit exigé pour modifier chaque table (comme les règles RLS de la base)
 const DROIT_ECRITURE = {
   members: ['gerer_membres'], budgets: ['gerer_budget'], projects: ['gerer_activites'], cotisations: ['gerer_cotisations'], reconciliations: ['rapprocher'],
-  categories: ['administrer'], accounts: ['administrer'], settings: ['administrer'], organisation: ['administrer'], invitations: ['administrer'], exercices: ['administrer'], corbeille: ['__aucun'],
+  categories: ['administrer'], accounts: ['administrer'], settings: ['administrer'], organisation: ['administrer'], invitations: ['administrer'], exercices: ['administrer'], corbeille: ['__aucun'], rappels: ['__aucun'],
   profiles: ['administrer'], roles: ['administrer'], role_permissions: ['administrer'],
   materiel: ['gerer_materiel'], materiel_mouvements: ['gerer_materiel'], liens_membres: ['gerer_membres', 'gerer_cotisations'],
   tiers: ['saisir_ecritures', 'gerer_cotisations'], collectes: ['gerer_activites', 'gerer_cotisations'], collecte_membres: ['gerer_activites', 'gerer_cotisations'],
@@ -483,6 +485,23 @@ export function createMockClient() {
         if (jeton) { const v = String(jeton); return t.liens_membres.find((x) => (v.length === 32 && x.jeton === v) || (v.length === 12 && x.code === v.toLowerCase()))?.member_id || null; }
         return t.profiles.find((x) => x.id === db.moi())?.member_id || null;
       };
+      // Rappels : mêmes règles que envoyer_rappel / etat_rappels de la base (appareils fictifs pour m0, m1, m3)
+      if (nom === 'envoyer_rappel' || nom === 'etat_rappels') {
+        const d = db.droits(); const APPAREILS = { m0: 1, m1: 2, m3: 1 };
+        if (nom === 'etat_rappels') {
+          if (!d.has('gerer_cotisations') && !d.has('consulter_finances')) return ko('Accès refusé');
+          return ok(t.members.filter((m) => m.actif).map((m) => ({ member_id: m.id, appareils: APPAREILS[m.id] || 0,
+            dernier: t.rappels.filter((r) => r.member_id === m.id && (r.collecte_id || null) === (args.p_collecte || null)).map((r) => r.le).sort().pop() || null })));
+        }
+        if (!d.has('gerer_cotisations')) return ko('Accès refusé');
+        if (!['notification', 'whatsapp', 'copie'].includes(args.p_canal)) return ko('Canal inconnu');
+        if (!t.members.some((m) => m.id === args.p_member && m.actif)) return ko('Membre introuvable ou inactif');
+        if (!String(args.p_texte || '').trim()) return ko('Le message est vide');
+        const n = args.p_canal === 'notification' ? (APPAREILS[args.p_member] || 0) : 0;
+        if (args.p_canal === 'notification' && !n) return ko('Ce membre n’a pas activé les alertes : envoyez le message par WhatsApp ou copiez-le');
+        t.rappels.push({ id: 'rp' + Date.now(), member_id: args.p_member, collecte_id: args.p_collecte || null, canal: args.p_canal, texte: String(args.p_texte).slice(0, 1500), par: db.moi(), le: new Date().toISOString() });
+        return ok(n);
+      }
       if (nom === 'mes_reponses') { const mid = membreAppelant(args.p_jeton); return ok(Object.fromEntries(t.reponses_sondage.filter((r) => r.member_id === mid).map((r) => [r.communique_id, r.reponses]))); }
       if (nom === 'resultats_sondage') {
         const c = t.communiques.find((x) => x.id === args.p_communique && x.genre === 'sondage'); if (!c) return ok(null);

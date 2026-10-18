@@ -34,3 +34,12 @@
 | Page du lien personnel aux tailles iPhone/iPad/PC | ✅ 0 débordement, 0 erreur |
 | Android : onglets Calendrier / À venir, compilation, 25 tests | ✅ compilé et testé ; **rendu à vérifier sur téléphone** (pas d'émulateur) |
 | Safari réel (WebKit) | ❌ non disponible ici : à essayer sur un iPhone |
+
+## 0.33.0 — Petit rappel au nom de l'association (18 octobre 2026)
+
+| Vérification | Résultat |
+|---|---|
+| Base locale : `envoyer_rappel` / `etat_rappels` (droits, canal, membre actif, message vide, sans appareil) | ✅ ; appliqué en production, empreintes identiques au dépôt |
+| Site : `rappel.mjs` téléphone et ordinateur (notification, avertissement < 30 jours, membre sans alertes) | ✅ 0 erreur JS |
+| Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues iPhone/iPad | ✅ 0 débordement, 0 erreur |
+| Android : compilation, 26 tests dont `rappelCommeLeSite` | ✅ ; **feuille et WhatsApp Business à vérifier sur un téléphone** |

@@ -352,6 +352,28 @@ object Demo {
     }
     fun majTexte(cle: String, texte: String?, profil: Profil?) { exiger(profil, "administrer"); textes[cle] = texte }
 
+    // ---------- Petit rappel (mêmes règles que envoyer_rappel / etat_rappels de la base) ----------
+    data class RappelDemo(val membreId: String, val collecteId: String?, val canal: String, val texte: String, val le: String)
+    val rappels = mutableListOf(RappelDemo("m2", null, "whatsapp", "Bonjour Esther…", kotlinx.datetime.Clock.System.now().minus(10 * 86_400, kotlinx.datetime.DateTimeUnit.SECOND).toString()))
+    // Appareils abonnés aux alertes (comme APPAREILS de mock.js)
+    val APPAREILS_DEMO = mapOf("m0" to 1, "m1" to 2, "m3" to 1)
+    fun etatRappels(collecteId: String?, profil: Profil?): List<EtatRappel> {
+        exiger(profil, "gerer_cotisations", "consulter_finances")
+        return membres.filter { it.actif }.map { m ->
+            EtatRappel(m.id, APPAREILS_DEMO[m.id] ?: 0, rappels.filter { it.membreId == m.id && it.collecteId == collecteId }.maxOfOrNull { it.le })
+        }
+    }
+    fun envoyerRappel(membreId: String, canal: String, texte: String, collecteId: String?, profil: Profil?): Int {
+        exiger(profil, "gerer_cotisations")
+        if (canal !in listOf("notification", "whatsapp", "copie")) throw IllegalStateException("Canal inconnu")
+        if (membres.none { it.id == membreId && it.actif }) throw IllegalStateException("Membre introuvable ou inactif")
+        if (texte.isBlank()) throw IllegalStateException("Le message est vide")
+        val n = if (canal == "notification") APPAREILS_DEMO[membreId] ?: 0 else 0
+        if (canal == "notification" && n == 0) throw IllegalStateException("Ce membre n’a pas activé les alertes : envoyez le message par WhatsApp ou copiez-le")
+        rappels += RappelDemo(membreId, collecteId, canal, texte.take(1500), maintenant())
+        return n
+    }
+
     // ---------- Liens personnels (même règle que la fonction lien_membre de la base) ----------
     val liens = mutableListOf(LienMembre("m0", "a1b2c3d4e5f60718293a4b5c6d7e8f90", 3, ilYa(2), code = "k7qp2xyz9abc"))
     fun lienMembre(membreId: String, renouveler: Boolean, profil: Profil?): String {

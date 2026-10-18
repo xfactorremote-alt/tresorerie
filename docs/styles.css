@@ -1319,3 +1319,8 @@ dialog.visionneuse img{max-width:100%;max-height:calc(100dvh - 64px);object-fit:
 .chronologie li.ko::before{background:var(--erreur);border-color:var(--erreur)}
 .chronologie li span{color:var(--texte-2);font-size:14px}
 .pieces-demande{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Petit rappel : trois façons d'envoyer, l'explication sous chaque bouton */
+.choix-envoi{display:flex;flex-direction:column;align-items:stretch;gap:6px}
+.choix-envoi>button{justify-content:center}
+.choix-envoi>.muted{margin:-2px 0 6px;font-size:12.5px}

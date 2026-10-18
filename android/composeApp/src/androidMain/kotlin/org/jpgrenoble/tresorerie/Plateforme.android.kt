@@ -317,3 +317,14 @@ actual fun ajouterAgenda(nom: String, date: String, heureDebut: String?, dateFin
     description?.let { intent.putExtra(android.provider.CalendarContract.Events.DESCRIPTION, it) }
     ContexteApp.contexte.startActivity(intent); true
 } catch (_: android.content.ActivityNotFoundException) { false } catch (_: Exception) { false }
+
+actual fun whatsappBusinessInstalle(): Boolean = try {
+    ContexteApp.contexte.packageManager.getLaunchIntentForPackage("com.whatsapp.w4b") != null
+} catch (_: Exception) { false }
+
+actual fun ouvrirWhatsApp(numero: String, texte: String, business: Boolean) {
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://wa.me/$numero?text=" + encoderUrl(texte)))
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    try { ContexteApp.contexte.startActivity(if (business) android.content.Intent(intent).setPackage("com.whatsapp.w4b") else intent) }
+    catch (_: Exception) { ContexteApp.contexte.startActivity(intent) }
+}

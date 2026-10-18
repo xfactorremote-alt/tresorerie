@@ -43,7 +43,7 @@ object Synchro {
 
     // Tables suivies (mêmes que la publication « supabase_realtime » de la base)
     private val TABLES = listOf("transactions", "expense_requests", "projects", "collectes", "collecte_membres", "members", "communiques", "reponses_sondage",
-        "cotisations", "budgets", "materiel", "settings", "organisation", "accounts", "categories", "tiers", "exercices", "liens_membres")
+        "cotisations", "budgets", "materiel", "settings", "organisation", "accounts", "categories", "tiers", "exercices", "liens_membres", "rappels")
 
     fun demarrer(scope: CoroutineScope) {
         if (job?.isActive == true || Repo.demo) return

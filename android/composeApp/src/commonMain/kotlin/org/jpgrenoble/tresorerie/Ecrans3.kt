@@ -267,6 +267,8 @@ private fun BlocMontants(message: (String) -> Unit) {
     var seuil by remember { mutableStateOf("") }
     var seuilJustif by remember { mutableStateOf("") }
     var infos by remember { mutableStateOf("") }
+    var rappelCotis by remember { mutableStateOf(RAPPEL_DEFAUT.getValue("cotisation")) }
+    var rappelPart by remember { mutableStateOf(RAPPEL_DEFAUT.getValue("participation")) }
     val action = rememberAction(message) {}
     LaunchedEffect(Unit) {
         try {
@@ -277,6 +279,8 @@ private fun BlocMontants(message: (String) -> Unit) {
             seuil = (r["seuil_alerte_budget_pct"] ?: 90.0).toInt().toString()
             seuilJustif = (r["seuil_justification"] ?: 100.0).toInt().toString()
             infos = Repo.texteReglage("infos_paiement") ?: ""
+            rappelCotis = Repo.texteReglage("message_rappel") ?: RAPPEL_DEFAUT.getValue("cotisation")
+            rappelPart = Repo.texteReglage("message_rappel_participation") ?: RAPPEL_DEFAUT.getValue("participation")
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
     // Même ordre et mêmes libellés que paramMontants du site
@@ -287,6 +291,12 @@ private fun BlocMontants(message: (String) -> Unit) {
         ChoixListe("Périodicité", PERIODICITES[periodicite] ?: "", PERIODICITES.values.toList()) { periodicite = PERIODICITES.keys.toList()[it] }
         OutlinedTextField(infos, { infos = it.take(400) }, label = { Text("Comment régler (affiché aux membres)") },
             placeholder = { Text("Virement : IBAN FR76…\nEspèces : auprès du trésorier après le culte") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+        Text("Petit rappel aux membres", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+        Text("Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux : la cotisation est libre. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre).",
+            fontSize = 13.sp, color = Couleurs.Texte2)
+        OutlinedTextField(rappelCotis, { rappelCotis = it.take(1500) }, label = { Text("Cotisation") }, minLines = 8, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(rappelPart, { rappelPart = it.take(1500) }, label = { Text("Participation") }, minLines = 6, modifier = Modifier.fillMaxWidth())
+        TextButton(onClick = { rappelCotis = RAPPEL_DEFAUT.getValue("cotisation"); rappelPart = RAPPEL_DEFAUT.getValue("participation") }) { Text("Rétablir les messages proposés") }
         Text("Demandes de dépense et budget", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
         OutlinedTextField(delai, { delai = it.filter { c -> c.isDigit() }.take(2) }, label = { Text("Délai du justificatif (jours après paiement)") },
             singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
@@ -302,6 +312,9 @@ private fun BlocMontants(message: (String) -> Unit) {
                 Repo.majReglage("seuil_alerte_budget_pct", seuil.toDouble())
                 Repo.majReglage("seuil_justification", seuilJustif.toDouble())
                 Repo.majTexteReglage("infos_paiement", infos.trim().ifBlank { null })
+                // Enregistré seulement s'il diffère du texte proposé (sinon il suit les améliorations futures), comme le site
+                Repo.majTexteReglage("message_rappel", rappelCotis.trim().takeIf { it.isNotEmpty() && it != RAPPEL_DEFAUT["cotisation"] }, "Message de rappel (cotisation)")
+                Repo.majTexteReglage("message_rappel_participation", rappelPart.trim().takeIf { it.isNotEmpty() && it != RAPPEL_DEFAUT["participation"] }, "Message de rappel (participation)")
             }, "Paramètres enregistrés")
         }) { Text("Enregistrer") }
     }

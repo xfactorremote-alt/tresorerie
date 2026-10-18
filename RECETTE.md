@@ -5,7 +5,7 @@ Grille de la page 17 de l'audit du 7 octobre 2026. Un contrôle non effectué re
 Moyens utilisés :
 - **Base** : PostgreSQL 16 local avec le `schema.sql` complet (sections 1 à 12), et les rôles réels (trésorier, président, bureau, adhérent) testés avec les règles d'accès actives.
 - **Site** : mode démonstration piloté par navigateur automatique (Chromium), sans erreur JavaScript sur tous les parcours.
-- **Application Android** : 24 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.32.0.
+- **Application Android** : 26 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.33.0.
 
 | Scénario | Résultat attendu | Résultat | Preuve |
 |---|---|---|---|
@@ -40,11 +40,12 @@ Moyens utilisés :
 | Page Membres (téléphone) | Liste lisible, suppression possible, bouton + en bas | **Corrigé et validé en démonstration (site) et compilé (Android)** | Bouton + coincé en haut : l’animation d’entrée laissait une transformation sur l’en-tête (corrigé pour toutes les pages). Nouvelle page : recherche + « ⋯ », filtre Tous / Actifs / Inactifs, lignes sobres, fiche du membre avec Lien, Fonction, Modifier, Rendre inactif, Supprimer (confirmation avec motif) ; testé sur Pixel 7 et ordinateur, sans débordement |
 | Visibilité des rendez-vous | Coché « visible » = visible par les membres | **Corrigé et validé** | Cause : l’application Android n’envoyait pas la case cochée (valeur par défaut omise), la base mettait « non visible » ; 3 rendez-vous du 11 octobre réparés en production ; défaut de la base passé à « visible » ; mêmes contrôles pour le statut des demandes et la nature des devis (aucune donnée touchée) ; interrupteur dans le détail testé |
 | Parcours complet du site | Aucune erreur, aucun débordement | **Validé** | 12 pages × 4 rôles × 3 tailles = 144 vues sans erreur JavaScript ni défilement horizontal |
+| Petit rappel de cotisation ou de participation | Message chaleureux, au nom de l’association, pas insistant | **Validé sur la base de test, en production (fonctions installées, empreintes vérifiées), en démonstration (site) et par les tests Android ; notification à vérifier sur un vrai téléphone** | Base : notification refusée sans appareil abonné, message vide ou membre inactif refusés, adhérent refusé, file `notifications_push` remplie avec « Un petit mot de … ». Démonstration : Daniel (2 appareils) → « Petit mot envoyé à Daniel au nom de l’association » ; Esther → avertissement « déjà envoyé il y a 10 jours » ; Élie sans alertes → bouton grisé, WhatsApp et copie proposés. Android : test `rappelCommeLeSite` (texte identique au site) |
 | Nouveautés | Pastilles exactes selon le rôle | **Validé** | Président : demande à valider comptée ; bureau : ses propres saisies non comptées ; adhérent : rendez-vous et participations seulement ; vu → 0 |
 
 ## Points restant à valider par une personne
 
-1. **Application Android sur un vrai téléphone** : installer l’APK 0.32.0 et refaire les parcours (virement, régularisation, filtres, export).
+1. **Application Android sur un vrai téléphone** : installer l’APK 0.33.0 et refaire les parcours (virement, régularisation, filtres, export).
 2. **Export réel** depuis le site en ligne : ouvrir un PDF et un Excel du journal d'octobre et comparer les totaux à l'écran Opérations.
 3. **Restauration sur Supabase** : la commande `set local session_replication_role = replica` du script de restauration doit être acceptée par l'éditeur SQL de Supabase (à confirmer lors d'un premier essai, sur un projet de test).
 
