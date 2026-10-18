@@ -2116,10 +2116,9 @@ async function pageMembres() {
     ...(peut('gerer_membres', 'gerer_cotisations') && S.membres.length ? [['Liens personnels', 'lien', feuilleLiens]] : []),
     ['Répartition', 'rapports', feuilleRepartition],
     ...(peut('gerer_membres') ? [['Importer (CSV, Excel)', 'ajout', feuilleImport]] : []),
-    ['Exporter la liste', 'telecharger', () => choisirFormat('Exporter la liste des membres', () => pdfMembres(), csvMembres)],
   ];
   rendre(`<div class="page">
-    <div class="page-titre"><h1>Membres</h1><span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? ` · ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
+    <div class="page-titre"><h1>Membres</h1>${S.membres.length ? '<button class="btn-bleu btn-petit" id="b-export-membres">Exporter</button>' : ''}<span class="muted">${actifs.length} actif${actifs.length > 1 ? 's' : ''}${inactifs ? ` · ${inactifs} inactif${inactifs > 1 ? 's' : ''}` : ''}</span>
       ${peut('gerer_membres') ? '<button class="fab" id="b-ajout" aria-label="Ajouter un membre" title="Ajouter un membre"></button>' : ''}</div>
     ${S.membres.length ? `<div class="barre-recherche"><input type="search" id="recherche" placeholder="Rechercher" aria-label="Rechercher un membre">
       <button type="button" class="btn-tonal" id="b-filtres-membres" aria-haspopup="dialog">${icone('filtre', 16)} Filtres${pastilles.length ? ` (${pastilles.length})` : ''}</button>
@@ -2135,6 +2134,8 @@ async function pageMembres() {
   $('#b-ajout')?.addEventListener('click', () => feuilleMembre());
   $('#b-actions')?.addEventListener('click', (e) => menuActions(e.currentTarget, actions));
   $('#b-filtres-membres')?.addEventListener('click', () => feuilleFiltresMembres(v));
+  // L'export suit ce qui est affiché : filtres, regroupement, tri
+  $('#b-export-membres')?.addEventListener('click', () => choisirFormat(`Exporter ${vus.length} membre${vus.length > 1 ? 's' : ''}${libelleVue(v) ? ` (${libelleVue(v)})` : ''}`, () => pdfMembres(v), () => csvMembres(v)));
   $('#f-raz')?.addEventListener('click', () => { S.vueMembres = { ...VUE_MEMBRES_DEFAUT }; pageMembres(); });
   document.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', () => {
     const [k, x] = b.dataset.retirer.split(':'), n = { ...v };
@@ -2189,8 +2190,9 @@ function feuilleRepartition() {
   ouvrirFeuille(`<h2>Répartition des membres</h2>
     <p class="muted" style="margin:0">${actifs.length} membre${actifs.length > 1 ? 's' : ''} actif${actifs.length > 1 ? 's' : ''}. Utile pour équilibrer les groupes (journées portes ouvertes, ateliers) et repérer les origines peu représentées.</p>
     ${contenu || '<div class="vide">Aucune nationalité, aucun pupitre ni statut renseigné pour l’instant.<span>Complétez les fiches ou importez la liste.</span></div>'}
-    <div class="actions"><button type="button" class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
+    <div class="actions">${contenu ? '<button type="button" class="btn-bleu" id="b-export-rep">Exporter</button>' : ''}<button type="button" class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
+    $('#b-export-rep', root)?.addEventListener('click', () => choisirFormat('Exporter la répartition', pdfRepartition, csvRepartition));
     root.querySelectorAll('[data-par]').forEach((b) => b.addEventListener('click', () => { S.vueMembres = { ...VUE_MEMBRES_DEFAUT, ...(S.vueMembres || {}), groupe: b.dataset.par, etat: 'actifs' }; fermerFeuille(); location.hash = '#membres'; pageMembres(); }));
   });
 }
@@ -2240,10 +2242,27 @@ function feuilleFicheMembre(m) {
     }));
   });
 }
-// Mêmes premières colonnes que le modèle d'import (le fichier exporté se réimporte tel quel), puis fonction et actif
-const csvMembres = () => telechargerCsv('membres.csv',
-  ['Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Accord', 'Nationalité', 'Pupitre', 'Statut', 'Fonction', 'Actif'],
-  S.membres.map((m) => [m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email, m.consent_anniversaire ? 'Oui' : 'Non', m.nationalite, m.pupitre, m.statut, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.actif ? 'Oui' : 'Non']));
+// Ce que montre la liste : sections dans l'ordre affiché (Bureau / Membres, ou un groupe par valeur), membres filtrés et triés
+function sectionsMembres(v) {
+  const l = trierMembres(filtrerMembres(S.membres, v), v.tri);
+  if (v.groupe !== 'fonction') return groupesMembres(l, v.groupe).map((g) => ({ titre: g.libelle, membres: g.membres, part: Math.round(1000 * g.membres.length / (l.length || 1)) / 10 }));
+  const bureau = l.filter((m) => { const f = fonctionMembre(m); return f && f.role !== 'adherent'; }).sort((x, y) => rangRole(fonctionMembre(x).role) - rangRole(fonctionMembre(y).role));
+  return [{ titre: 'Bureau', membres: bureau }, { titre: 'Membres', membres: l.filter((m) => !bureau.includes(m)) }].filter((x) => x.membres.length);
+}
+// Description des choix (même texte que libelleVue d'Android) : « Filtres : actifs, Soprane · regroupés par nationalité · triés par prénom »
+function libelleVue(v) {
+  const f = [v.etat !== 'tous' ? v.etat : null, ...Object.keys(CRITERES_MEMBRES).flatMap((k) => v[k].map((x) => groupesMembres(S.membres, k).find((g) => g.cle === x)?.libelle || 'Non renseigné'))].filter(Boolean);
+  return [f.length ? `Filtres : ${f.join(', ')}` : '', v.groupe !== 'fonction' ? `regroupés par ${CRITERES_MEMBRES[v.groupe][0].toLowerCase()}` : '', v.tri === 'prenom' ? 'triés par prénom' : ''].filter(Boolean).join(' · ');
+}
+// Mêmes premières colonnes que le modèle d'import (le fichier exporté se réimporte tel quel), puis fonction et actif ;
+// regroupé : une première colonne avec le groupe ; lignes dans l'ordre de l'écran
+const csvMembres = (v = { ...VUE_MEMBRES_DEFAUT }) => {
+  const groupe = v.groupe !== 'fonction' ? CRITERES_MEMBRES[v.groupe][0] : null;
+  telechargerCsv('membres.csv',
+    [...(groupe ? [`Groupe (${groupe.toLowerCase()})`] : []), 'Prénom', 'Nom', 'Jour', 'Mois', 'Profession', 'WhatsApp', 'E-mail', 'Accord', 'Nationalité', 'Pupitre', 'Statut', 'Fonction', 'Actif'],
+    sectionsMembres(v).flatMap((sct) => sct.membres.map((m) => [...(groupe ? [sct.titre] : []), m.prenom, m.nom, m.naissance_jour, m.naissance_mois, m.profession, m.whatsapp, m.email,
+      m.consent_anniversaire ? 'Oui' : 'Non', m.nationalite, m.pupitre, m.statut, fonctionMembre(m) ? nomRole(fonctionMembre(m).role) : '', m.actif ? 'Oui' : 'Non'])));
+};
 
 // Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
 function feuilleAcces(m) {
@@ -2588,7 +2607,8 @@ function feuilleImport() {
 async function pageCotisations() {
   const onglet = S.ongletCotis || 'cotisations';
   rendre(`<div class="page">
-    <div class="page-titre"><h1>Cotisations</h1></div>
+    <div class="page-titre"><h1>Cotisations</h1>${onglet === 'cotisations' ? '<button class="btn-bleu btn-petit" id="b-export-c">Exporter</button>'
+      : peut('gerer_activites', 'gerer_cotisations') ? '<button class="fab" id="b-collecte" aria-label="Nouvelle collecte" title="Nouvelle collecte"></button>' : ''}</div>
     <div class="onglets" role="tablist">${[['cotisations', 'Cotisations'], ['participations', 'Participations']].map(([k, l]) => `<button role="tab" aria-selected="${onglet === k}" data-onglet="${k}">${l}</button>`).join('')}</div>
     <div id="zone-cotis"><p class="chargement">Chargement…</p></div></div>`);
   document.querySelectorAll('[data-onglet]').forEach((b) => b.addEventListener('click', () => { S.ongletCotis = b.dataset.onglet; pageCotisations().catch(erreur); }));
@@ -2619,7 +2639,6 @@ async function ongletCotisations(zone) {
       <span class="muted">${PERIODICITES[pasCotis()]}, ${eur(montant)} par période</span>
       <span style="flex:1"></span>
       ${gere && nbRetard ? '<button class="btn-tonal btn-petit" id="b-rappel-groupe">Petit rappel groupé</button>' : ''}
-      <button class="btn-bleu btn-petit" id="b-export-c">Exporter</button>
     </div>
     ${gere && sansCotis ? `<div class="info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><span style="flex:1">${sansCotis} membre${sansCotis > 1 ? 's' : ''} actif${sansCotis > 1 ? 's' : ''} sans cotisation en ${S.annee}</span><button class="btn-primaire btn-petit" id="b-generer">Générer les cotisations ${S.annee}</button></div>` : ''}
     ${lignes.length ? `<div class="kpis">
@@ -2661,7 +2680,7 @@ async function ongletCotisations(zone) {
     const ouvrir = () => ficheCotisation(S.membres.find((m) => m.id === b.dataset.fiche));
     b.addEventListener('click', ouvrir); b.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
   });
-  $('#b-export-c', zone).addEventListener('click', () => choisirFormat(`Cotisations ${S.annee}`, () => pdfCotisations(S.annee), () => telechargerCsv(`cotisations-${S.annee}.csv`,
+  $('#b-export-c')?.addEventListener('click', () => choisirFormat(`Cotisations ${S.annee}`, () => pdfCotisations(S.annee), () => telechargerCsv(`cotisations-${S.annee}.csv`,
     ['Prénom', 'Nom', ...cases.map((p) => nomPeriode(p)), 'Dû', 'Réglé', 'Exigible', 'Retard', 'Réglé jusqu’à'],
     lignes.map(({ m, c }) => [m.prenom, m.nom, ...cases.map((p) => { const x = parCase[cle(m.id, p)]; return x ? STATUT_PERIODE[x.statut][1] : ''; }),
       Number(c.montant_du), Number(c.montant_paye), Number(c.exigible || 0), Number(c.retard), c.regle_jusqu_a ? nomPeriode(c.regle_jusqu_a) : '']))));
@@ -2900,7 +2919,6 @@ async function ongletParticipations(zone) {
   const gere = peut('gerer_activites', 'gerer_cotisations');
   const vise = (c) => Number(c.objectif || 0) || Number(c.montant_attendu || 0) * Number(c.nb_concernes || 0);
   zone.innerHTML = `
-    <div class="filtres" style="margin:12px 0"><span style="flex:1"></span>${gere ? '<button class="btn-primaire btn-petit" id="b-collecte">Nouvelle collecte</button>' : ''}</div>
     ${coll.length ? `<div class="grille grille-2">${coll.map((c) => {
       const v = vise(c), pct = v ? Math.min(100, Math.round(100 * Number(c.total_recu) / v)) : null;
       return `<article class="carte cliquable-carte" data-collecte="${c.id}" tabindex="0" role="button">
@@ -2911,7 +2929,7 @@ async function ongletParticipations(zone) {
         <span class="muted">${c.nb_contributeurs} contributeur${c.nb_contributeurs > 1 ? 's' : ''} · ${c.nb_concernes} membre${c.nb_concernes > 1 ? 's' : ''} concerné${c.nb_concernes > 1 ? 's' : ''}</span>
       </article>`;
     }).join('')}</div>` : '<div class="carte vide">Aucune collecte</div>'}`;
-  $('#b-collecte', zone)?.addEventListener('click', () => feuilleCollecte(null, () => pageCotisations()));
+  $('#b-collecte')?.addEventListener('click', () => feuilleCollecte(null, () => pageCotisations()));
   zone.querySelectorAll('[data-collecte]').forEach((a) => {
     const ouvrir = () => detailCollecte(coll.find((c) => c.id === a.dataset.collecte));
     a.addEventListener('click', ouvrir); a.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
@@ -3045,7 +3063,7 @@ async function pageTiers() {
     .sort((a, b) => b.rec + b.dep - (a.rec + a.dep) || a.nom.localeCompare(b.nom));
   const an = new Date().getFullYear();
   rendre(`<div class="page">
-    <div class="page-titre"><h1>Tiers</h1>${peut('saisir_ecritures', 'gerer_cotisations') ? '<button class="btn-primaire btn-petit" id="b-tiers">Nouveau tiers</button>' : ''}</div>
+    <div class="page-titre"><h1>Tiers</h1>${peut('saisir_ecritures', 'gerer_cotisations') ? '<button class="fab" id="b-tiers" aria-label="Nouveau tiers" title="Nouveau tiers"></button>' : ''}</div>
     <div class="filtres">
       ${[['tous', 'Tous'], ['membres', 'Membres'], ['autres', 'Autres tiers']].map(([k, l]) => `<button class="puce-filtre" data-type="${k}" aria-pressed="${f.type === k}">${l}</button>`).join('')}
       <select id="t-an" aria-label="Année">${[an, an - 1, an - 2].map((a) => `<option ${String(a) === f.an ? 'selected' : ''}>${a}</option>`).join('')}<option value="tout" ${f.an === 'tout' ? 'selected' : ''}>Toutes les années</option></select>
@@ -3263,7 +3281,7 @@ async function paramNotifications(zone) {
 // Communiqués et partages (menu Plus) : publier une annonce, un sondage, des photos, un lien ; ordre de la bannière
 async function pageCommuniques() {
   const gere = peut('gerer_activites', 'administrer');
-  rendre(`<div class="page"><div class="page-titre"><h1>Communiqués</h1>${gere ? `<button class="btn-primaire btn-petit" id="b-communique">${icone('ajout', 16)} Publier</button>` : ''}</div><div id="z-communiques"></div></div>`);
+  rendre(`<div class="page"><div class="page-titre"><h1>Communiqués</h1>${gere ? '<button class="fab" id="b-communique" aria-label="Publier" title="Publier"></button>' : ''}</div><div id="z-communiques"></div></div>`);
   await paramBanniere($('#z-communiques'), true);
 }
 async function paramBanniere(zone, enPage = false) {
@@ -4520,7 +4538,7 @@ async function pageRapprochement() {
       <td data-label="Relevé">${r.statement_path ? `<button class="btn-texte btn-petit" data-voir="${esc(r.statement_path)}" data-bucket="releves">Voir</button>` : ''}</td><td data-label="Terminé le">${r.termine_le ? dateFr(String(r.termine_le).slice(0, 10)) : '<span class="puce puce-partiel">En cours</span>'}</td></tr>`).join('')}</tbody></table></div>`
     : '<p class="muted">Aucun rapprochement terminé.</p>';
   if (!peut('rapprocher')) {
-    rendre(`<div class="page"><h1>Rapprochement</h1>
+    rendre(`<div class="page"><div class="page-titre"><h1>Rapprochement</h1></div>
       <p class="info">Consultation&nbsp;: le rapprochement est fait par le trésorier. Il compare chaque mois les opérations enregistrées au relevé de la banque et au comptage de la caisse&nbsp;; une période rapprochée est verrouillée. ${historique.length ? '' : 'Aucun rapprochement n’a encore été terminé.'}</p>
       <section class="carte"><h2>Historique</h2>${tableHist}</section></div>`);
     return brancherPieces(() => {});
@@ -4547,7 +4565,7 @@ async function pageRapprochement() {
   };
 
   rendre(`<div class="page">
-    <h1>Rapprochement</h1>
+    <div class="page-titre"><h1>Rapprochement</h1></div>
     <section class="carte">
       <div class="champs champs-2">
         <label class="champ">Compte<select id="r-compte">${S.comptes.map((c) => `<option value="${c.id}" ${c.id === compte ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select></label>
@@ -4621,7 +4639,7 @@ async function pageRapports() {
   // Exercices déclarés (Paramètres, Exercices) : intitulé et dates exactes ; sinon l'année civile
   const exDe = (a2) => (S.exercices || []).find((e) => Number(e.debut.slice(0, 4)) === Number(a2));
   const annees = [an, an - 1, an - 2].map((a2) => [a2, exDe(a2) ? `${exDe(a2).libelle} (${dateFr(exDe(a2).debut)} – ${dateFr(exDe(a2).fin)})` : a2]);
-  rendre(`<div class="page"><h1>Rapports et exports</h1>
+  rendre(`<div class="page"><div class="page-titre"><h1>Rapports et exports</h1></div>
     <section class="carte export-carte">
       <form id="f-export" class="champs">
         <label class="champ">Document<select name="doc">${options(DOCS.map(([k, l]) => [k, l]), 'rapport')}</select></label>
@@ -4961,10 +4979,11 @@ function enteteDocument(titre, periode) {
     <div class="doc-edition">Édité le ${dateFr(aujourdhui())}<br>par ${esc(S.profil.nom)}</div></header>`;
 }
 // colonnes : [libellé, alignement 'd' pour les montants] ; totaux : ligne finale facultative
-function tableDocument(colonnes, lignes, totaux) {
+// largeurs (en %, facultatif) : colonnes fixes, pour que des tableaux successifs (une section par groupe) restent alignés
+function tableDocument(colonnes, lignes, totaux, largeurs = null) {
   if (!lignes.length) return '<p class="muted">Aucune ligne.</p>';
   const cl = (i) => (colonnes[i][1] ? ` class="${colonnes[i][1]}"` : '');
-  return `<table class="doc-table"><thead><tr>${colonnes.map(([l], i) => `<th${cl(i)}>${l}</th>`).join('')}</tr></thead>
+  return `<table class="doc-table"${largeurs ? ' style="table-layout:fixed;overflow-wrap:anywhere"' : ''}>${largeurs ? `<colgroup>${largeurs.map((l) => `<col style="width:${l}%">`).join('')}</colgroup>` : ''}<thead><tr>${colonnes.map(([l], i) => `<th${cl(i)}>${l}</th>`).join('')}</tr></thead>
     <tbody>${lignes.map((l) => `<tr>${l.map((v, i) => `<td${cl(i)}>${v ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
     ${totaux ? `<tfoot><tr>${totaux.map((v, i) => `<td${cl(i)}>${v ?? ''}</td>`).join('')}</tr></tfoot>` : ''}</table>`;
 }
@@ -5013,15 +5032,37 @@ async function pdfCotisations(an) {
   afficherDocument(`État des cotisations ${an}`, html);
 }
 
-async function pdfMembres() {
+// Colonnes de la liste imprimable : titre, largeur (%), donnée (même liste que COLONNES_DOC_MEMBRES d'Android)
+const COLONNES_DOC_MEMBRES = [['Membre', 19, 'nom'], ['Fonction', 10, 'fonction'], ['Pupitre', 9, 'pupitre'], ['Nationalité', 14, 'nationalite'], ['Anniversaire', 10, 'anniversaire'],
+  ['WhatsApp', 13, 'whatsapp'], ['E-mail', 16, 'email'], ['Adhésion', 9, 'adhesion']];
+function celluleDocMembre(m, k) {
+  const f = fonctionMembre(m);
+  return { nom: esc(nomComplet(m)) + (m.actif ? '' : ' <span class="muted">(inactif)</span>'), fonction: f && f.etat !== 'invite' ? esc(nomRole(f.role)) : '', pupitre: esc(m.pupitre || ''),
+    nationalite: esc(m.nationalite || ''), anniversaire: `${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}`, whatsapp: esc(m.whatsapp || ''), email: esc(m.email || ''),
+    adhesion: m.date_adhesion ? dateFr(m.date_adhesion) : '' }[k];
+}
+// Liste imprimable : ce que montre l'écran (filtres, regroupement avec effectif et part, tri)
+async function pdfMembres(v = { ...VUE_MEMBRES_DEFAUT }) {
   await chargerAcces();
-  const liste = [...S.membres].filter((m) => m.actif).sort((a, b) => rangRole(fonctionMembre(a)?.role || 'adherent') - rangRole(fonctionMembre(b)?.role || 'adherent') || nomComplet(a).localeCompare(nomComplet(b), 'fr'));
-  const html = `${enteteDocument('Liste des membres', `${liste.length} membre${liste.length > 1 ? 's' : ''} actif${liste.length > 1 ? 's' : ''} au ${dateFr(aujourdhui())}`)}
-    ${tableDocument([['Membre'], ['Fonction'], ['Pupitre'], ['Anniversaire'], ['Profession'], ['WhatsApp'], ['E-mail'], ['Adhésion']],
-      liste.map((m) => { const f = fonctionMembre(m); return [esc(nomComplet(m)), f && f.etat !== 'invite' ? esc(nomRole(f.role)) : '', esc(m.pupitre || ''), `${m.naissance_jour} ${MOIS[m.naissance_mois - 1]}`, esc(m.profession || ''), esc(m.whatsapp || ''), esc(m.email || ''), m.date_adhesion ? dateFr(m.date_adhesion) : '']; }))}
+  const sections = sectionsMembres(v), n = sections.reduce((t, x) => t + x.membres.length, 0), lib = libelleVue(v);
+  // Colonnes à largeur fixe (mêmes positions d'une section à l'autre) ; la colonne du regroupement est retirée (elle est le titre de la section)
+  const cols = COLONNES_DOC_MEMBRES.filter(([, , k]) => k !== v.groupe);
+  const table = (l) => tableDocument(cols.map(([t]) => [t]), l.map((m) => cols.map(([, , k]) => celluleDocMembre(m, k))), null, cols.map(([, w]) => w));
+  const html = `${enteteDocument('Liste des membres', `${n} membre${n > 1 ? 's' : ''}${lib ? ` · ${esc(lib)}` : ''} · au ${dateFr(aujourdhui())}`)}
+    ${sections.map((x) => `<h2>${esc(x.titre)} <span class="muted">— ${x.membres.length}${x.part != null ? ` · ${pourcent(x.part)}` : ''}</span></h2>${table(x.membres)}`).join('') || '<p class="muted">Aucun membre.</p>'}
     <p class="muted">Document interne : données personnelles à ne pas diffuser en dehors du bureau.</p>`;
   afficherDocument('Liste des membres', html);
 }
+
+// Répartition imprimable et en tableau (nationalités, pupitres, statuts des membres actifs)
+async function pdfRepartition() {
+  const actifs = S.membres.filter((m) => m.actif);
+  afficherDocument('Répartition des membres', `${enteteDocument('Répartition des membres', `${actifs.length} membre${actifs.length > 1 ? 's' : ''} actif${actifs.length > 1 ? 's' : ''} · au ${dateFr(aujourdhui())}`)}
+    ${['nationalite', 'pupitre', 'statut'].map((k) => `<h2>${CRITERES_MEMBRES[k][1]}</h2>${tableDocument([[CRITERES_MEMBRES[k][0]], ['Effectif', 'd'], ['Part', 'd']],
+      repartition(actifs, k).map((x) => [esc(x.libelle), x.n, pourcent(x.part)]))}`).join('')}`);
+}
+const csvRepartition = () => telechargerCsv('repartition-membres.csv', ['Critère', 'Valeur', 'Effectif', 'Part (%)'],
+  ['nationalite', 'pupitre', 'statut'].flatMap((k) => repartition(S.membres.filter((m) => m.actif), k).map((x) => [CRITERES_MEMBRES[k][0], x.libelle, x.n, x.part])));
 
 async function pdfDemandes(an) {
   const [l, profils] = await Promise.all([q(sb.from('expense_requests').select('*').order('created_at')), q(sb.from('profiles').select('id,nom')).catch(() => [])]);

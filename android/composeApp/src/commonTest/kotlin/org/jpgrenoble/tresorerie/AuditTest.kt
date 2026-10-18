@@ -432,4 +432,19 @@ Joël;;7;8;;;;oui;;;"""
         assertEquals("Ana,Bob,Cid,Dan,Eve,Fay,Gil", trierMembres(l, "nom").joinToString(",") { it.prenom })
         assertEquals("33,3\u00A0%", pourcent(33.3)); assertEquals("50\u00A0%", pourcent(50.0))
     }
+
+    // Export des membres : il suit l'écran (filtres, regroupement, tri) ; description identique au site
+    @Test
+    fun exportSelonLaVue() {
+        val l = listOf(Membre("a", "Ana", "A", 1, 1, nationalite = "Cameroun", pupitre = "Alto"), Membre("b", "Bob", "B", 1, 1, nationalite = "Ghana", pupitre = "Alto"),
+            Membre("c", "Cid", "C", 1, 1, nationalite = "Cameroun", pupitre = "Basse"), Membre("e", "Eve", "E", 1, 1, nationalite = "Cameroun", pupitre = "Alto", actif = false))
+        val v = VueMembres(etat = "actifs", groupe = "nationalite", tri = "prenom", valeurs = mapOf("pupitre" to setOf("alto")))
+        assertEquals("Filtres : actifs, Alto · regroupés par nationalité · triés par prénom", libelleVue(l, v))
+        val s = sectionsMembres(l, v) { null }
+        assertEquals(listOf("Cameroun" to listOf("Ana"), "Ghana" to listOf("Bob")), s.map { it.titre to it.membres.map { m -> m.prenom } })
+        assertEquals(listOf(50.0, 50.0), s.map { it.part })
+        val f = sectionsMembres(l, VueMembres()) { if (it.id == "c") 1 else null }
+        assertEquals(listOf("Bureau" to listOf("Cid"), "Membres" to listOf("Ana", "Bob", "Eve")), f.map { it.titre to it.membres.map { m -> m.prenom } })
+        assertTrue(csvRepartition(l).lines().any { it.startsWith("Nationalité;Cameroun;2;66,7") || it.startsWith("Nationalité;Cameroun;2;66.7") }, csvRepartition(l))
+    }
 }

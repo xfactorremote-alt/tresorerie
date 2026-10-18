@@ -1385,3 +1385,8 @@ dialog.scanner::backdrop{background:var(--texte)}
 /* Fiche : une valeur longue (profession, e-mail) passe à la ligne au lieu d'élargir la fenêtre */
 .ligne-detail>:first-child{flex:none}
 .ligne-detail>:last-child{min-width:0;overflow-wrap:anywhere;text-align:right}
+/* En-tête de page commun : titre et actions de la page sur une ligne (Exporter, puis le bouton + en texte sur grand écran),
+   le résumé (« 13 actifs », « 1 à valider · 1 à payer ») toujours dessous, à gauche */
+.page-titre>.muted{order:9;flex-basis:100%;margin-top:-4px}
+.page-titre>h1{order:0}
+.page-titre>button:not(.fab),.page-titre>select{min-height:32px}

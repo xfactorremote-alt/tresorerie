@@ -78,6 +78,13 @@
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |
 
+## 0.38.0 — Exports selon la vue, en-têtes unifiés (18 octobre 2026)
+
+- Membres : « Exporter » dans l'en-tête ; PDF et Excel suivent filtres, regroupement et tri (titre du document qui rappelle la vue, sections « valeur — N · part % », colonne « Groupe (…) » dans le CSV) ; Répartition exportable. Mêmes calculs `sectionsMembres`, `libelleVue`, `csvMembres`, `documentMembres` (test `exportSelonLaVue`).
+- Colonnes de largeur fixe dans les documents en sections (`largeurs`), colonne de regroupement retirée.
+- En-têtes : titre + actions sur une ligne, résumé dessous (Membres, Demandes, Cotisations, Rapprochement, Rapports) ; ajout par le + rond (Tiers, Communiqués, Nouvelle collecte).
+- Contrôles : Android compilé, 31 tests d'audit + VersionTest ; balayages a7 (312 vues, 0 problème) et a5 (144 vues, aucune erreur) ; scénario `export-membres.mjs` au téléphone et à l'ordinateur sans erreur JavaScript.
+
 ## 0.37.0 — Membres : liste sobre, filtres, regroupement, répartition ; composant pièce jointe (18 octobre 2026)
 
 | Vérification | Résultat |

@@ -50,13 +50,19 @@ private fun synthese(vararg tuiles: Triple<String, String, String?>) =
     "<div class=\"doc-synthese\">" + tuiles.joinToString("") { (l, v, c) -> "<div><span>$l</span><b${c?.let { " style=\"color:$it\"" } ?: ""}>$v</b></div>" } + "</div>"
 
 // colonnes : (libellé, classe) ; la classe « d » aligne les montants à droite
-private fun table(colonnes: List<Pair<String, String>>, lignes: List<List<String>>, totaux: List<String>? = null): String {
+// largeurs (en %, facultatif) : colonnes fixes, pour que des tableaux successifs restent alignés (comme tableDocument du site)
+private fun table(colonnes: List<Pair<String, String>>, lignes: List<List<String>>, totaux: List<String>? = null, largeurs: List<Int>? = null): String {
     if (lignes.isEmpty()) return "<p class=\"m\">Aucune ligne.</p>"
     fun cl(i: Int) = colonnes[i].second.let { if (it.isEmpty()) "" else " class=\"$it\"" }
-    return "<table><thead><tr>" + colonnes.mapIndexed { i, c -> "<th${cl(i)}>${c.first}</th>" }.joinToString("") + "</tr></thead><tbody>" +
+    return (if (largeurs != null) "<table style=\"table-layout:fixed;overflow-wrap:anywhere\"><colgroup>" + largeurs.joinToString("") { "<col style=\"width:$it%\">" } + "</colgroup>" else "<table>") + "<thead><tr>" + colonnes.mapIndexed { i, c -> "<th${cl(i)}>${c.first}</th>" }.joinToString("") + "</tr></thead><tbody>" +
         lignes.joinToString("") { l -> "<tr>" + l.mapIndexed { i, v -> "<td${cl(i)}>$v</td>" }.joinToString("") + "</tr>" } + "</tbody>" +
         (totaux?.let { t -> "<tfoot><tr>" + t.mapIndexed { i, v -> "<td${cl(i)}>$v</td>" }.joinToString("") + "</tr></tfoot>" } ?: "") + "</table>"
 }
+
+// Accès depuis les autres fichiers (listes affichées : membres, répartition)
+internal fun pageHtml(d: Donnees, titre: String, periode: String, corps: String) = page(d, titre, periode, corps)
+internal fun tableHtml(colonnes: List<Pair<String, String>>, lignes: List<List<String>>, largeurs: List<Int>? = null) = table(colonnes, lignes, null, largeurs)
+internal fun eHtml(s: String?) = e(s)
 
 private const val SIGNATURES = "<div class=\"sig\"><div>Le trésorier</div><div>Le président</div></div>"
 

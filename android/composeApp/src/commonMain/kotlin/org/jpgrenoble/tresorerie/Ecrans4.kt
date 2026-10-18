@@ -331,13 +331,17 @@ fun FormulaireEcriture(d: Donnees, pre: PreEcriture = PreEcriture(), onFini: (Bo
 // Cotisations (par période) et participations aux activités
 // =====================================================================
 // Mémoire de l'écran pendant la session (comme S.ongletCotis et S.filtreCotis du site)
+object EtatCotisations { var exporter by mutableStateOf(false) }
 object PreferencesCotisations { var onglet = 0; var filtre = "tous" }
 
 @Composable
 fun EcranCotisations(d: Donnees, message: (String) -> Unit) {
     var onglet by remember { mutableStateOf(PreferencesCotisations.onglet) }
     Column(Modifier.fillMaxSize()) {
-        Text("Cotisations", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp))
+        // En-tête commun : « Exporter » dans l'en-tête pour l'onglet Cotisations (le bouton + pour l'onglet Participations)
+        Box(Modifier.padding(16.dp, 16.dp, 16.dp, 0.dp)) {
+            Titre("Cotisations") { if (onglet == 0) OutlinedButton(onClick = { EtatCotisations.exporter = true }) { Text("Exporter") } }
+        }
         TabRow(selectedTabIndex = onglet, containerColor = MaterialTheme.colorScheme.background) {
             listOf("Cotisations", "Participations").forEachIndexed { i, t -> Tab(selected = onglet == i, onClick = { onglet = i; PreferencesCotisations.onglet = i }, text = { Text(t) }) }
         }
@@ -347,7 +351,7 @@ fun EcranCotisations(d: Donnees, message: (String) -> Unit) {
 
 // Choix du format d'export : même feuille que choisirFormat du site
 @Composable
-private fun ChoixFormat(titre: String, onPdf: () -> Unit, onExcel: () -> Unit, onFermer: () -> Unit) {
+internal fun ChoixFormat(titre: String, onPdf: () -> Unit, onExcel: () -> Unit, onFermer: () -> Unit) {
     AlertDialog(
         onDismissRequest = onFermer,
         title = { Text(titre) },
@@ -400,7 +404,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     val vues = lignes.filter { (_, c) -> filtre == "tous" || (filtre == "retard") == (c.retard > 0.005) }
     val sansCotis = d.membres.count { it.actif && parMembre[it.id] == null }
     val nomOrg = d.organisation.nom.trim()
-    var exporterCotis by remember { mutableStateOf(false) }
+    var exporterCotis by EtatCotisations::exporter
     val imprimerCotis = rememberImpression()
     val enregistrerCotis = rememberEnregistrer { it?.let(message) }
     // Export : PDF (même document que pdfCotisations) ou tableau des cases de la grille (mêmes colonnes que le site)
@@ -420,7 +424,6 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
                     Text("${PERIODICITES[pas] ?: ""}, ${euros(montantPeriode)} par période", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.weight(1f).align(Alignment.CenterVertically))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (gere && nbRetard > 0) FilledTonalButton(onClick = { rappelGroupe = lignes.filter { it.second.retard > 0.005 }.map { (m, c) -> CibleRappel(m, c.retard) } }) { Text("Petit rappel groupé") }
-                        OutlinedButton(onClick = { exporterCotis = true }) { Text("Exporter") }
                     }
                 }
             }

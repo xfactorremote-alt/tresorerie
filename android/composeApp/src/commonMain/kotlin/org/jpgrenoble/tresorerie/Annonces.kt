@@ -404,12 +404,9 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
     val large = maxWidth >= 840.dp
     val admin = d.peut("administrer")
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Page Plus › Communiqués : titre de la page et bouton « Publier » (une seule fois sur l'écran)
+        // Page Plus › Communiqués : en-tête commun ; « Publier » = bouton + flottant au téléphone, bouton texte dans l'en-tête sur grand écran (règle 9 bis)
         if (enPage) item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Communiqués", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                if (gere) Button(onClick = { nouveau = true }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Publier") }
-            }
+            Titre("Communiqués") { if (gere && large) Button(onClick = { nouveau = true }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Publier") } }
         }
         // Deux colonnes au-delà de 840 dp (grille-2 du site) : publications, ordre et fréquence
         if (large && admin) item {
@@ -422,6 +419,7 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
             if (admin) item { CarteOrdre() }
         }
     }
+    if (enPage && gere && !large) BoutonPlus("Publier", Modifier.align(Alignment.BottomEnd)) { nouveau = true }
     }
     if (nouveau || edition != null) EditionCommunique(edition, onSupprimer = edition?.let { c -> { edition = null; supprimer("communiques", c.id, c.titre) } }, message = message,
         onFini = { nouveau = false; edition = null; version++ }) { nouveau = false; edition = null }

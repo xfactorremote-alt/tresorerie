@@ -697,6 +697,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     var tousLiens by remember { mutableStateOf(false) }
     var filtresMembres by remember { mutableStateOf(false) }
     var voirRepartition by remember { mutableStateOf(false) }
+    var exporterRepartition by remember { mutableStateOf(false) }
     var exporter by remember { mutableStateOf(false) }
     val gereLiens = d.peut("gerer_membres", "gerer_cotisations")
     val imprimer = rememberImpression()
@@ -793,10 +794,9 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                    Text("Membres", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("$nbActifs actif" + (if (nbActifs > 1) "s" else "") + if (nbInactifs > 0) " · $nbInactifs inactif" + (if (nbInactifs > 1) "s" else "") else "",
-                        color = Couleurs.Texte2, modifier = Modifier.padding(bottom = 6.dp))
+                // En-tête commun : titre et « Exporter » (ce qui est affiché : filtres, regroupement, tri), résumé dessous
+                Titre("Membres", "$nbActifs actif" + (if (nbActifs > 1) "s" else "") + if (nbInactifs > 0) " · $nbInactifs inactif" + (if (nbInactifs > 1) "s" else "") else "") {
+                    if (membres.isNotEmpty()) OutlinedButton(onClick = { exporter = true }) { Text("Exporter") }
                 }
             }
             // Recherche et menu « ⋯ » (liens personnels, import, export), comme le site ; seulement s'il y a des membres
@@ -814,7 +814,6 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                             if (gereLiens && membres.isNotEmpty()) DropdownMenuItem(text = { Text("Liens personnels") }, leadingIcon = { Icon(Icons.Outlined.Link, null) }, onClick = { menuActions = false; tousLiens = true })
                             DropdownMenuItem(text = { Text("Répartition") }, leadingIcon = { Icon(Icons.Outlined.PieChart, null) }, onClick = { menuActions = false; voirRepartition = true })
                             if (d.peut("gerer_membres")) DropdownMenuItem(text = { Text("Importer (CSV, Excel)") }, leadingIcon = { Icon(Icons.Outlined.UploadFile, null) }, onClick = { menuActions = false; importer = true })
-                            DropdownMenuItem(text = { Text("Exporter la liste") }, leadingIcon = { Icon(Icons.Outlined.Download, null) }, onClick = { menuActions = false; exporter = true })
                         }
                     }
                 }
@@ -867,11 +866,14 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             try { Repo.majMembre(m.id, NouveauMembre(m.prenom, m.nom, m.jour, m.mois, m.profession, m.whatsapp, m.consentement, null, m.email, m.nationalite, m.pupitre, m.statut), !m.actif, null)
                 message(if (m.actif) "${m.prenom} est inactif" else "${m.prenom} est réactivé"); version++; recharger() } catch (e: Exception) { message(traduireErreur(e)) } } },
         onSupprimer = if (d.peut("gerer_membres")) ({ detail = null; supprimerMembre("members", m.id, m.nomComplet) }) else null) { detail = null } }
+    if (exporterRepartition) ChoixFormat("Exporter la répartition", onFermer = { exporterRepartition = false },
+        onPdf = { scope.launch { try { val (t, h) = documentRepartition(d, membres); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } } },
+        onExcel = { enregistrer("repartition-membres.csv", "text/csv", csvRepartition(membres).encodeToByteArray()) })
     if (filtresMembres) ModalBottomSheet(onDismissRequest = { filtresMembres = false }) {
         FeuilleFiltresMembres(membres, vue) { EtatMembres.vue = it; filtresMembres = false }
     }
     if (voirRepartition) ModalBottomSheet(onDismissRequest = { voirRepartition = false }) {
-        FeuilleRepartition(membres, onVoirPar = { k -> EtatMembres.vue = vue.copy(groupe = k, etat = "actifs"); voirRepartition = false }) { voirRepartition = false }
+        FeuilleRepartition(membres, onVoirPar = { k -> EtatMembres.vue = vue.copy(groupe = k, etat = "actifs"); voirRepartition = false }, onExporter = { voirRepartition = false; exporterRepartition = true }) { voirRepartition = false }
     }
     lienDe?.let { m ->
         ModalBottomSheet(onDismissRequest = { lienDe = null }) {
@@ -884,7 +886,8 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     // Choix du format, comme choisirFormat du site : deux cartes, PDF puis Excel
     if (exporter) ModalBottomSheet(onDismissRequest = { exporter = false }) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Exporter la liste des membres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            val n = vus.size; val lib = libelleVue(membres, vue)
+            Text("Exporter $n membre${if (n > 1) "s" else ""}" + if (lib.isNotEmpty()) " ($lib)" else "", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 @Composable fun Choix(titre: String, sous: String, onClick: () -> Unit) =
                     Surface(onClick = onClick, shape = Formes.XGrand, color = MaterialTheme.colorScheme.surface,
@@ -894,10 +897,10 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
                         }
                     }
                 Choix("PDF", "Mise en page pour imprimer, archiver ou transmettre") {
-                    exporter = false; scope.launch { try { val (t, h) = documentHtml(d, "membres", aujourdhui().year); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } }
+                    exporter = false; scope.launch { try { val (t, h) = documentMembres(d, membres, vue); imprimer(t, h) } catch (e: Exception) { message(traduireErreur(e)) } }
                 }
                 Choix("Excel", "Tableau modifiable (CSV)") {
-                    exporter = false; scope.launch { try { enregistrer("membres.csv", "text/csv", exportCsv(d, "membres", aujourdhui().year).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } }
+                    exporter = false; scope.launch { try { enregistrer("membres.csv", "text/csv", csvMembres(d, membres, vue).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } }
                 }
             }
         }

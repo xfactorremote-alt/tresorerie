@@ -46,6 +46,16 @@ dates à taper. Ces causes racines sont corrigées au niveau du thème et des co
 - Rendu Android sur un appareil réel ou un émulateur (aucun dans l'environnement) : formes, boutons et calendrier vérifiés à la compilation et dans le bytecode seulement.
 - Lecteurs d'écran (TalkBack, NVDA), mode sombre (le produit est en thème clair uniquement : `color-scheme: light`).
 
+## Contrôle des en-têtes et exports — 18 octobre 2026 (version 0.38.0)
+
+| Constat | Correction |
+|---|---|
+| Export des membres sans lien avec les filtres et le tri affichés | Export selon la vue, rappel de la vue dans le titre du document |
+| Colonnes du PDF décalées d'une section à l'autre | Largeurs fixes (`largeurs`), colonne de regroupement retirée |
+| Résumé tantôt à droite, tantôt dessous ; bouton Exporter caché dans « ⋯ » (Membres) | En-tête commun : résumé toujours dessous, Exporter toujours dans l'en-tête |
+| Boutons « Nouveau… » dans l'en-tête au téléphone (Tiers, Communiqués, Nouvelle collecte) en plus du + | + rond seul (règle 11) |
+| Rapprochement et Rapports hors du modèle d'en-tête | Passés en `.page-titre` |
+
 ## Contrôle des ajouts récents — 18 octobre 2026 (version 0.37.0)
 
 Signalé par le propriétaire sur son téléphone : liste des membres illisible, fiche qui élargit l'écran, « boutons ajoutés en désordre ». Reproduit en démonstration après ajout de valeurs longues (le balayage passait faute de données longues).

@@ -62,11 +62,15 @@ private val STATUTS = mapOf(
     "justifiee" to "Clôturée", "annulee" to "Annulée", "brouillon" to "Brouillon",
 )
 
+/** En-tête de page commun (comme .page-titre du site) : titre et actions de la page sur une ligne, résumé toujours dessous. */
 @Composable
-internal fun Titre(texte: String, action: (@Composable () -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(texte, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-        action?.invoke()
+internal fun Titre(texte: String, resume: String? = null, action: (@Composable () -> Unit)? = null) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(texte, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+            action?.invoke()
+        }
+        resume?.let { Text(it, color = Couleurs.Texte2, fontSize = 14.sp) }
     }
 }
 
@@ -317,15 +321,11 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
                 val resume = listOf("a_valider", "a_payer", "a_justifier", "a_regulariser").mapNotNull { k ->
                     val n = l0.count { garde(it, k) }; if (n > 0) "$n " + (filtres.firstOrNull { it.first == k }?.second ?: "").lowercase() else null }
                     .joinToString(" · ").ifEmpty { "Rien en attente" }
-                if (large) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Demandes", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text(resume, color = Couleurs.Texte2, fontSize = 13.sp)
-                    if (d.peut("demander_depenses")) Button(onClick = { nouvelle = true }) {
+                // En-tête commun : résumé toujours sous le titre ; « Nouvelle demande » dans l'en-tête sur grand écran (bouton + au téléphone)
+                Titre("Demandes", resume) {
+                    if (large && d.peut("demander_depenses")) Button(onClick = { nouvelle = true }) {
                         Icon(Icons.Filled.Add, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text("Nouvelle demande")
                     }
-                } else Column {
-                    Text("Demandes", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text(resume, color = Couleurs.Texte2)
                 }
             }
             item {
