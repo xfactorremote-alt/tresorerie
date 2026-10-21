@@ -1392,3 +1392,14 @@ dialog.scanner::backdrop{background:var(--texte)}
 .page-titre>button:not(.fab),.page-titre>select{min-height:32px}
 .raccourcis{display:flex;gap:4px;margin:4px 0 12px}
 .rapport-page.paysage{max-width:1240px}
+/* Création directe des comptes : une ligne par membre (case, nom, adresse) ; la ligne cochée s'ouvre sur l'adresse et la fonction */
+.texte-erreur{color:var(--erreur)}
+.champ-ligne{display:flex;gap:8px;align-items:stretch}.champ-ligne>input{flex:1;min-width:0;font-family:ui-monospace,Consolas,monospace;letter-spacing:.02em}
+.liste-comptes li{flex-wrap:wrap}
+.case-compte{display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;min-height:44px}
+.case-compte input{appearance:auto;-webkit-appearance:auto;flex:none;width:20px;height:20px;min-width:0;min-height:0;padding:0;border:0;box-shadow:none;background:none;accent-color:var(--primaire);margin:0}
+.case-compte .corps>*{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.details-compte{display:grid;grid-template-columns:1fr;gap:8px;width:100%;padding-left:32px}
+@media (min-width:600px){.details-compte{grid-template-columns:2fr 1fr}}
+.case-compte .texte-erreur{color:var(--erreur)}
+.raccourcis{align-items:center;flex-wrap:wrap}

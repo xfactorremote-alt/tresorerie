@@ -78,6 +78,12 @@
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |
 
+## 0.40.0 — Comptes créés directement par l'administrateur (21 octobre 2026)
+
+- Base : `profiles.mdp_provisoire`, `mot_de_passe_definitif()` (testés sur PostgreSQL local, appliqués en production) ; fonction Edge `creer-comptes` (droit `administrer` vérifié avec le jeton de l'appelant, création sans e-mail, profil relié à la fiche, journal d'audit `CREER_COMPTE`) ; appel sans droit refusé (403) vérifié en production.
+- Site et Android : « Créer des comptes » (Comptes et accès) et « Créer le compte tout de suite » (Membres › Fonction) ; résultat avec message par personne ; écran de choix du mot de passe à la première connexion.
+- Contrôles : 33 tests d'audit (dont `comptesDirectsCommeLeSite`) + VersionTest ; scénarios `comptes.mjs` (375 px et ordinateur) et `comptes2.mjs` (connexion provisoire, même mot de passe refusé, reconnexion) sans erreur ; a7 312 vues 0 problème ; a5 144 vues sans erreur.
+
 ## 0.39.0 — Colonnes d'export au choix (18 octobre 2026)
 
 - Membres › Exporter : puces de colonnes (Nationalité, Statut, Profession… ; Accord anniversaire et Actif en option), Tout / Par défaut, choix gardé sur l'appareil ; même liste `COLONNES_EXPORT_MEMBRES` des deux côtés.

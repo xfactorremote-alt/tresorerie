@@ -460,4 +460,18 @@ Joël;;7;8;;;;oui;;;"""
         assertEquals(listOf(15, 8, 8, 11, 8, 8, 10, 11, 13, 8), largeursExport(cols))
         assertTrue(paysageMembres(cols)); assertFalse(paysageMembres(colonnesExport(listOf("pupitre", "nationalite"))))
     }
+
+    /** Comptes créés directement : même mot de passe provisoire, même message et même ordre des membres que le site. */
+    @Test
+    fun comptesDirectsCommeLeSite() {
+        val seq = listOf(3, 1, 7, 2, 0, 4, 1234); var i = 0
+        assertEquals("Fekibu-2234", motDePasseProvisoire { n -> seq[i++] % n })
+        repeat(50) { val p = motDePasseProvisoire(); assertTrue(Regex("^[A-Z][a-z]{5}-\\d{4}$").matches(p), p) }
+        val m = Membre("m1", "Daniel", "Kouassi", 1, 1)
+        assertEquals("Bonjour Daniel,\n\nTon compte sur l’espace de Jeunes de Tous Pays est prêt.\n\n👉 ${Config.SITE_URL}\n📧 Identifiant : daniel@exemple.fr\n🔑 Mot de passe provisoire : Fekibu-2234\n\nÀ ta première connexion, tu choisiras ton propre mot de passe.\n\nLe bureau de Jeunes de Tous Pays",
+            messageCompte("JEUNES DE TOUS PAYS", m, "daniel@exemple.fr", "Fekibu-2234"))
+        val l = listOf(Membre("a", "Zoé", "B", 1, 1), Membre("b", "Ana", "C", 1, 1), Membre("c", "Ben", "D", 1, 1), Membre("d", "Eve", "E", 1, 1, actif = false), Membre("e", "Ali", "F", 1, 1))
+        val c = candidatsCompte(l, listOf(Profil("u", "Ali F", "adherent", memberId = "e")), listOf(Invitation("z@x.fr", "Zoé B", "bureau", "a")))
+        assertEquals(listOf("Zoé", "Ana", "Ben"), c.map { it.prenom })
+    }
 }

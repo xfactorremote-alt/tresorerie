@@ -5,7 +5,7 @@ Grille de la page 17 de l'audit du 7 octobre 2026. Un contrôle non effectué re
 Moyens utilisés :
 - **Base** : PostgreSQL 16 local avec le `schema.sql` complet (sections 1 à 12), et les rôles réels (trésorier, président, bureau, adhérent) testés avec les règles d'accès actives.
 - **Site** : mode démonstration piloté par navigateur automatique (Chromium), sans erreur JavaScript sur tous les parcours.
-- **Application Android** : 33 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.39.0.
+- **Application Android** : 34 tests automatiques des règles (`./gradlew :composeApp:testDebugUnitTest`) et compilation de l’APK 0.40.0.
 
 | Scénario | Résultat attendu | Résultat | Preuve |
 |---|---|---|---|
@@ -51,7 +51,7 @@ Moyens utilisés :
 
 ## Points restant à valider par une personne
 
-1. **Application Android sur un vrai téléphone** : installer l’APK 0.39.0 et refaire les parcours (virement, régularisation, filtres, export).
+1. **Application Android sur un vrai téléphone** : installer l’APK 0.40.0 et refaire les parcours (virement, régularisation, filtres, export).
 2. **Export réel** depuis le site en ligne : ouvrir un PDF et un Excel du journal d'octobre et comparer les totaux à l'écran Opérations.
 3. **Restauration sur Supabase** : la commande `set local session_replication_role = replica` du script de restauration doit être acceptée par l'éditeur SQL de Supabase (à confirmer lors d'un premier essai, sur un projet de test).
 
@@ -60,6 +60,8 @@ Moyens utilisés :
 **Scénario 0.38.0 — export selon la vue** : Membres › Filtres (Soprane, Alto, regrouper par nationalité, trier par prénom) › Exporter : le titre rappelle la vue ; le CSV suit l'ordre de l'écran avec la colonne « Groupe (nationalité) » ; le PDF a une section par pays avec effectif et part, colonnes alignées ; ⋯ › Répartition › Exporter donne le tableau des parts.
 
 **Scénario 0.39.0 — colonnes au choix** : Membres › Filtres › Regrouper par nationalité › Exporter : décocher WhatsApp et E-mail, cocher Actif ; le PDF (à l'italienne) et l'Excel n'ont que ces colonnes, la Nationalité y figure ; rouvrir Exporter : le choix est gardé ; « Par défaut » le remet.
+
+**Scénario 0.40.0 — comptes créés directement** : Paramètres › Comptes et accès › Créer des comptes : cocher un membre du bureau, vérifier l'adresse, choisir « Bureau », créer ; envoyer le message par WhatsApp ; sur un autre appareil, se connecter avec l'adresse et le mot de passe provisoire : l'écran « Bienvenue » impose un nouveau mot de passe (le provisoire est refusé) ; se reconnecter avec le nouveau.
 
 Date de revue : ___________  Participants : ___________
 

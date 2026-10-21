@@ -20,6 +20,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.header
+import io.ktor.client.request.setBody
+import io.ktor.http.contentType
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -235,8 +239,34 @@ object Repo {
     }
 
     suspend fun changerMotDePasse(motDePasse: String) {
-        if (demo) return
+        if (demo) { Demo.changerMotDePasse(profilDemo.value, motDePasse); return }
         client.auth.updateUser { password = motDePasse }
+    }
+
+    /** Le mot de passe provisoire a été remplacé : la base lève l'obligation (rpc mot_de_passe_definitif). */
+    suspend fun motDePasseDefinitif() {
+        if (demo) { Demo.motDePasseDefinitif(profilDemo.value); return }
+        client.postgrest.rpc("mot_de_passe_definitif")
+    }
+
+    /** Crée directement les comptes (fonction Edge creer-comptes, avec le jeton de la personne connectée) : pas d'e-mail envoyé. */
+    suspend fun creerComptes(motDePasse: String, comptes: List<DemandeCompte>): List<ResultatCompte> {
+        if (demo) return Demo.creerComptes(motDePasse, comptes, profilDemo.value)
+        val jeton = client.auth.currentAccessTokenOrNull() ?: throw IllegalStateException("Session expirée : reconnectez-vous")
+        val corps = buildJsonObject {
+            put("mot_de_passe", motDePasse)
+            put("comptes", Json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(DemandeCompte.serializer()), comptes))
+        }
+        val http = io.ktor.client.HttpClient()
+        try {
+            val r = http.post(Config.SUPABASE_URL + "/functions/v1/creer-comptes") {
+                header("Authorization", "Bearer $jeton"); header("apikey", Config.SUPABASE_ANON_KEY)
+                contentType(ContentType.Application.Json); setBody(corps.toString())
+            }
+            val o = try { Json.parseToJsonElement(r.bodyAsText()).jsonObject } catch (_: Exception) { null }
+            if (r.status.value !in 200..299) throw IllegalStateException((o?.get("erreur") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "Création impossible (${r.status.value})")
+            return Json { ignoreUnknownKeys = true }.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(ResultatCompte.serializer()), o?.get("resultats") ?: return emptyList())
+        } finally { http.close() }
     }
 
     fun emailConnecte(): String = if (demo) Demo.emailDe(profilDemo.value?.id) else client.auth.currentUserOrNull()?.email ?: ""

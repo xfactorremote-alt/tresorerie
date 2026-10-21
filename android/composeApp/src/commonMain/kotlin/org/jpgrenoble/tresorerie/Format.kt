@@ -72,6 +72,7 @@ fun traduireErreur(e: Throwable): String {
     val m = e.message ?: e.toString()
     return when {
         "Invalid login credentials" in m -> "Adresse ou mot de passe incorrect"
+        "different from the old password" in m -> "Choisissez un mot de passe différent du mot de passe provisoire"
         "Email not confirmed" in m -> "Adresse pas encore confirmée. Ouvrez le lien reçu par e-mail."
         "row-level security" in m || "permission denied" in m -> "Action réservée à un autre rôle"
         "Réservé au trésorier" in m -> "Action réservée au trésorier"

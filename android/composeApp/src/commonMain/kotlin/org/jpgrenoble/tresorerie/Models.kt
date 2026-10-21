@@ -15,6 +15,8 @@ data class Profil(
     val role: String,
     @SerialName("member_id") val memberId: String? = null,
     val actif: Boolean = true,
+    // compte créé par l'administrateur : mot de passe à choisir à la première connexion
+    @SerialName("mdp_provisoire") val mdpProvisoire: Boolean = false,
 )
 
 @Serializable
@@ -320,6 +322,14 @@ class Fichier(val octets: ByteArray, val mime: String, val extension: String, va
 
 @Serializable
 data class Reglage(val cle: String, val valeur: Double? = null, val texte: String? = null)
+
+/** Demande de création directe d'un compte (fonction creer-comptes). */
+@Serializable
+data class DemandeCompte(@SerialName("member_id") val memberId: String, val email: String, val role: String)
+
+/** Résultat de la fonction creer-comptes pour un membre : créé, ou refusé avec le motif. */
+@Serializable
+data class ResultatCompte(@SerialName("member_id") val memberId: String? = null, val email: String = "", val ok: Boolean = false, val erreur: String = "")
 
 @Serializable
 data class Invitation(

@@ -65,6 +65,8 @@ create table profiles (
   role text not null default 'adherent' references roles(code) on update cascade,
   member_id uuid,
   actif boolean not null default true,
+  -- compte créé par l'administrateur (fonction creer-comptes) : mot de passe à choisir à la première connexion
+  mdp_provisoire boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -485,6 +487,14 @@ begin
   return new;
 end $$;
 create trigger trg_new_user after insert on auth.users for each row execute function handle_new_user();
+
+-- La personne connectée a choisi son propre mot de passe : on lève l'obligation (elle ne peut agir que sur elle-même)
+create or replace function mot_de_passe_definitif() returns void
+language sql security definer set search_path = public as $$
+  update profiles set mdp_provisoire = false where id = auth.uid()
+$$;
+revoke all on function mot_de_passe_definitif() from public;
+grant execute on function mot_de_passe_definitif() to authenticated;
 
 -- Journal d'audit
 create or replace function log_change() returns trigger

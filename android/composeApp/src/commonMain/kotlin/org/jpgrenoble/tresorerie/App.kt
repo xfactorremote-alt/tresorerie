@@ -274,6 +274,8 @@ fun Principal(cle: String) {
     when {
         sansProfil -> MessagePlein("Accès en attente",
             "Votre adresse n’a pas encore d’accès. Demandez à l’administrateur de vous inviter.") { scope.launch { Repo.deconnecter() } }
+        // Compte créé par l'administrateur : la personne choisit d'abord son propre mot de passe (comme le site)
+        d != null && d.profil.mdpProvisoire -> MotDePasseProvisoire(d) { version++ }
         // Assistant : proposé à l'administrateur tant que l'association n'est pas configurée, mais dosé (Rappels)
         d != null && d.peut("administrer") && !d.organisation.configuree && !assistantRepousse && remember(d.profil.id) { Rappels.permis(d.profil.id, "assistant") } ->
             AssistantConfiguration(d, onFini = { assistantRepousse = true; version++ }, onPlusTard = { Rappels.repousser(d.profil.id, "assistant"); EtatMiseEnRoute.fenetreMontree = true; assistantRepousse = true })

@@ -201,6 +201,8 @@ async function entrer() {
   try {
     S.profil = await q(sb.from('profiles').select('*').eq('id', S.session.user.id).maybeSingle());
     if (!S.profil || !S.profil.actif) return ecranSansAcces();
+    // Compte créé par l'administrateur : la personne choisit d'abord son propre mot de passe
+    if (S.profil.mdp_provisoire) return ecranMotDePasseProvisoire();
     if (!S.org) await chargerOrganisation();
     await chargerReferentiels();
     // Ordre de l'arrivée : configuration de l'association (administrateur, une fois), puis l'accueil ;
@@ -370,6 +372,43 @@ function ecranNouveauMotDePasse() {
     e.preventDefault();
     try { await q(sb.auth.updateUser({ password: e.target.mdp.value })); toast('Mot de passe modifié'); await entrer(); }
     catch (err) { erreur(err); }
+  });
+}
+
+// Première connexion avec le mot de passe provisoire donné par l'administrateur (même écran que MotDePasseProvisoire d'Android)
+function ecranMotDePasseProvisoire() {
+  const email = S.session?.user?.email || '';
+  const prenom = String(S.profil?.nom || '').split(' ')[0];
+  $('#app').innerHTML = `<main class="connexion"><div class="carte connexion-carte">
+    <div class="connexion-tete"><img src="${esc(S.logoUrl)}" alt=""><div><h1>${esc(S.org?.nom || 'Trésorerie')}</h1><span class="muted">Trésorerie de l’association</span></div></div>
+    <h2 class="connexion-titre">Bienvenue${prenom && !prenom.includes('@') ? ' ' + esc(prenom) : ''}</h2>
+    <p class="info">Votre compte a été créé par le bureau avec un mot de passe provisoire. Choisissez maintenant votre mot de passe personnel : vous l’utiliserez désormais pour vous connecter.</p>
+    <form id="f-provisoire" class="champs" method="post" action="#" autocomplete="on">
+      <input type="email" name="email" autocomplete="username" value="${esc(email)}" hidden>
+      ${champMotDePasse('mdp', 'Nouveau mot de passe (8 caractères minimum)', 'new-password')}
+      ${champMotDePasse('mdp2', 'Confirmez le mot de passe', 'new-password')}
+      <button class="btn-primaire btn-large" type="submit">Enregistrer mon mot de passe</button>
+    </form>
+    <p class="connexion-bascule"><button type="button" class="lien-texte" id="b-sortir">Se déconnecter</button></p>
+  </div></main>`;
+  brancherYeux($('#app'));
+  $('#b-sortir').addEventListener('click', () => deconnecter());
+  const f = $('#f-provisoire');
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (f.mdp.value.length < 8) { f.mdp.focus(); return toast('8 caractères au moins'); }
+    if (f.mdp.value !== f.mdp2.value) { f.mdp2.focus(); return toast('Les deux mots de passe sont différents'); }
+    const b = f.querySelector('button[type=submit]'); b.disabled = true;
+    try {
+      await q(sb.auth.updateUser({ password: f.mdp.value }));
+      await q(sb.rpc('mot_de_passe_definitif'));
+      await memoriserIdentifiants(f);
+      toast('Mot de passe enregistré'); await entrer();
+    } catch (err) {
+      b.disabled = false;
+      if (/different from the old/i.test(err?.message || '')) { f.mdp.focus(); return toast('Choisissez un mot de passe différent du mot de passe provisoire'); }
+      erreur(err);
+    }
   });
 }
 
@@ -2278,10 +2317,13 @@ function feuilleAcces(m) {
     : l.invitation
     ? `<div class="etat-acces"><span class="puce puce-partiel">Invitation en attente</span><span class="muted">${esc(l.invitation.email)}</span></div>
       <label class="champ">Fonction<select name="role">${options(l.invitation.role)}</select></label>
-      <p class="muted" style="margin:0">La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création.</p>`
+      <p class="muted" style="margin:0">La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création.</p>
+      <button type="button" class="btn-tonal" id="b-creer-direct">Créer le compte tout de suite</button>`
     : `<div class="etat-acces"><span class="puce puce-neutre">Sans accès</span></div>
       <label class="champ"><span class="obligatoire">E-mail de connexion</span><input name="email" type="email" required value="${esc(m.email || '')}" autocomplete="off"></label>
       <label class="champ">Fonction<select name="role">${options('adherent')}</select></label>
+      <button type="button" class="btn-tonal" id="b-creer-direct">Créer le compte tout de suite</button>
+      <p class="muted" style="margin:0">Sans e-mail d’invitation : mot de passe provisoire, à changer à la première connexion. « Donner l’accès » laisse plutôt la personne créer son compte elle-même.</p>
       ${comptesLibres.length ? `<label class="champ">Ou rattacher un compte déjà créé<select name="compte"><option value="">Aucun</option>${comptesLibres.map((p) => `<option value="${p.id}">${esc(p.nom)}</option>`).join('')}</select></label>` : ''}`;
   ouvrirFeuille(`<form id="f-acces" class="champs">
     <h2>Accès et fonction</h2>
@@ -2295,6 +2337,7 @@ function feuilleAcces(m) {
   </form>`, (root) => {
     const f = $('#f-acces', root);
     $('#b-annuler', root)?.addEventListener('click', fermerFeuille);
+    $('#b-creer-direct', root)?.addEventListener('click', () => feuilleCreerComptes([{ id: m.id, email: (f.email?.value || l.invitation?.email || m.email || '').trim(), role: f.role.value }], pageMembresEnFond));
     $('#b-annuler-invit', root)?.addEventListener('click', async () => {
       try { await q(sb.from('invitations').delete().eq('email', l.invitation.email)); await chargerAcces(); fermerFeuille(); toast('Invitation annulée'); pageMembres(); } catch (err) { erreur(err); }
     });
@@ -2333,6 +2376,100 @@ function feuilleAcces(m) {
     });
   });
 }
+// ---------- Création directe des comptes (fonction creer-comptes) ----------
+// Mot de passe provisoire lisible : trois syllabes, un tiret, quatre chiffres (« Bamoli-4827 ») ; même forme que motDePasseProvisoire d'Android
+function motDePasseProvisoire(alea = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n) {
+  const c = 'bcdfghjkmnprstvz', v = 'aeiou';
+  const syl = () => c[alea(c.length)] + v[alea(v.length)];
+  const mot = syl() + syl() + syl();
+  return mot[0].toUpperCase() + mot.slice(1) + '-' + String(1000 + alea(9000));
+}
+// Message à envoyer à chacun (même texte que messageCompte d'Android)
+const messageCompte = (m, email, mdp) => `Bonjour ${m.prenom},\n\nTon compte sur l’espace de ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'l’association'} est prêt.\n\n👉 ${adresseSite()}\n📧 Identifiant : ${email}\n🔑 Mot de passe provisoire : ${mdp}\n\nÀ ta première connexion, tu choisiras ton propre mot de passe.\n\nLe bureau de ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'l’association'}`;
+// Membres qui peuvent recevoir un compte : actifs, sans compte ; ceux qui ont une invitation ou une fonction au bureau d'abord
+function candidatsCompte() {
+  return S.membres.filter((m) => m.actif && !S.liens[m.id]?.profil)
+    .sort((a, b) => (S.liens[a.id]?.invitation ? 0 : 1) - (S.liens[b.id]?.invitation ? 0 : 1) || cmp(nomComplet(a).toLowerCase(), nomComplet(b).toLowerCase()));
+}
+// Appel d'une fonction Edge : le message d'erreur de la fonction plutôt que « non-2xx »
+async function appelerFonction(nom, body) {
+  const { data, error } = await sb.functions.invoke(nom, { body });
+  if (error) { let m = error.message; try { m = (await error.context.json()).erreur || m; } catch { /* réponse sans corps */ } throw new Error(m); }
+  return data;
+}
+// Créer des comptes : choix des membres (fonction, adresse), mot de passe provisoire commun, puis résultat et messages à envoyer
+function feuilleCreerComptes(preselection = [], apres = null) {
+  const candidats = candidatsCompte();
+  const choix = new Map(preselection.map((x) => [x.id, { email: x.email, role: x.role }]));
+  let mdp = motDePasseProvisoire(), recherche = '';
+  const rolesTries = [...S.roles].sort((a, b) => rangRole(a.code) - rangRole(b.code));
+  const options = (choisi) => rolesTries.map((r) => `<option value="${esc(r.code)}" ${r.code === choisi ? 'selected' : ''}>${esc(r.nom)}</option>`).join('');
+  const defaut = (m) => ({ email: S.liens[m.id]?.invitation?.email || m.email || '', role: S.liens[m.id]?.invitation?.role || 'adherent' });
+  const ligne = (m) => {
+    const c = choix.get(m.id), e = c ? c.email : defaut(m).email;
+    return `<li class="ligne-compte${c ? ' choisi' : ''}"><label class="case-compte"><input type="checkbox" data-choix="${m.id}" ${c ? 'checked' : ''}>
+      <span class="corps"><b>${esc(nomComplet(m))}</b><span class="${e ? 'muted' : 'texte-erreur'}">${e ? esc(e) : 'e-mail manquant'}${S.liens[m.id]?.invitation ? ' · invitation en attente' : ''}</span></span></label>
+      ${c ? `<div class="details-compte"><label class="champ"><span class="obligatoire">Adresse e-mail</span><input type="email" data-email="${m.id}" value="${esc(c.email)}" autocomplete="off" required></label>
+        <label class="champ">Fonction<select data-fonction="${m.id}">${options(c.role)}</select></label></div>` : ''}</li>`;
+  };
+  const visibles = () => candidats.filter((m) => !recherche || sansAccents(nomComplet(m) + ' ' + (m.email || '')).includes(sansAccents(recherche)));
+  const rendu = () => `<h2>Créer des comptes</h2>
+    <p class="muted">Le compte est prêt tout de suite : aucun e-mail d’invitation n’est envoyé. Chacun se connecte avec son adresse et le mot de passe provisoire, puis choisit son propre mot de passe.</p>
+    <label class="champ"><span class="obligatoire">Mot de passe provisoire</span><span class="champ-ligne"><input id="cc-mdp" value="${esc(mdp)}" minlength="8" autocomplete="off" spellcheck="false" autocapitalize="off"><button type="button" class="btn-tonal" id="cc-autre">Autre</button></span></label>
+    <p class="muted" style="margin-top:-6px">Le même pour les personnes cochées, à leur transmettre ; 8 caractères au moins. Chacun le remplace à sa première connexion.</p>
+    ${candidats.length > 8 ? `<label class="champ recherche"><input type="search" id="cc-recherche" placeholder="Rechercher un membre" value="${esc(recherche)}" aria-label="Rechercher un membre"></label>` : ''}
+    <div class="raccourcis"><span class="muted">${choix.size} coché${choix.size > 1 ? 's' : ''} sur ${candidats.length}</span><button type="button" class="btn-texte btn-petit" id="cc-tout">Tout cocher</button><button type="button" class="btn-texte btn-petit" id="cc-rien">Tout décocher</button></div>
+    ${candidats.length ? `<ul class="liste liste-comptes">${visibles().map(ligne).join('') || '<li class="muted">Aucun membre trouvé.</li>'}</ul>` : '<p class="muted">Tous les membres actifs ont déjà un compte.</p>'}
+    <div class="actions"><button type="button" class="btn-texte" id="cc-fermer">Fermer</button><button type="button" class="btn-primaire" id="cc-creer" ${choix.size ? '' : 'disabled'}>Créer ${choix.size || ''} compte${choix.size > 1 ? 's' : ''}</button></div>`;
+  const brancher = (root) => {
+    const redessiner = () => { const y = $('#sheet').scrollTop; root.innerHTML = rendu(); brancher(root); $('#sheet').scrollTop = y; };
+    $('#cc-mdp', root).addEventListener('input', (e) => { mdp = e.target.value.trim(); });
+    $('#cc-autre', root).addEventListener('click', () => { mdp = motDePasseProvisoire(); $('#cc-mdp', root).value = mdp; });
+    $('#cc-recherche', root)?.addEventListener('input', (e) => { recherche = e.target.value; const pos = e.target.selectionStart; redessiner(); const i = $('#cc-recherche', root); i.focus(); i.setSelectionRange(pos, pos); });
+    root.querySelectorAll('[data-choix]').forEach((c) => c.addEventListener('change', () => {
+      const m = candidats.find((x) => x.id === c.dataset.choix);
+      if (c.checked) choix.set(m.id, defaut(m)); else choix.delete(m.id);
+      redessiner();
+    }));
+    root.querySelectorAll('[data-email]').forEach((i) => i.addEventListener('input', () => { choix.get(i.dataset.email).email = i.value.trim(); }));
+    root.querySelectorAll('[data-fonction]').forEach((s) => s.addEventListener('change', () => { choix.get(s.dataset.fonction).role = s.value; }));
+    $('#cc-tout', root).addEventListener('click', () => { visibles().forEach((m) => { if (!choix.has(m.id)) choix.set(m.id, defaut(m)); }); redessiner(); });
+    $('#cc-rien', root).addEventListener('click', () => { choix.clear(); redessiner(); });
+    $('#cc-fermer', root).addEventListener('click', fermerFeuille);
+    $('#cc-creer', root).addEventListener('click', async (e) => {
+      if (mdp.length < 8) { $('#cc-mdp', root).focus(); return toast('Mot de passe provisoire : 8 caractères au moins'); }
+      const manque = [...choix].find(([, c]) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email));
+      if (manque) { const m = candidats.find((x) => x.id === manque[0]); return toast(`Adresse e-mail à compléter pour ${m.prenom}`); }
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Création…';
+      try {
+        const r = await appelerFonction('creer-comptes', { mot_de_passe: mdp, comptes: [...choix].map(([id, c]) => ({ member_id: id, email: c.email, role: c.role })) });
+        await chargerAcces();
+        resultatComptes(r.resultats || [], mdp, apres);
+      } catch (err) { b.disabled = false; b.textContent = `Créer ${choix.size} compte${choix.size > 1 ? 's' : ''}`; erreur(err); }
+    });
+  };
+  ouvrirFeuille(rendu(), brancher);
+}
+// Résultat : comptes prêts (message à envoyer par WhatsApp, un appui par personne, ou à copier) et refus avec leur motif
+function resultatComptes(resultats, mdp, apres) {
+  const membre = (id) => S.membres.find((m) => m.id === id) || { prenom: '', nom: '' };
+  const oks = resultats.filter((r) => r.ok), kos = resultats.filter((r) => !r.ok);
+  ouvrirFeuille(`<h2>${oks.length ? `${oks.length} compte${oks.length > 1 ? 's' : ''} créé${oks.length > 1 ? 's' : ''}` : 'Aucun compte créé'}</h2>
+    ${oks.length ? `<div class="info">Mot de passe provisoire : <b>${esc(mdp)}</b>. Envoyez à chacun son message : à la première connexion, il choisit son propre mot de passe.</div>
+      <ul class="liste liste-comptes">${oks.map((r) => { const m = membre(r.member_id), wa = numeroWa(m.whatsapp || '');
+        return `<li><span class="corps"><b>${esc(nomComplet(m))}</b><span class="muted">${esc(r.email)}</span></span>
+          ${wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" data-envoye href="https://wa.me/${wa}?text=${encodeURIComponent(messageCompte(m, r.email, mdp))}">WhatsApp</a>` : '<span class="muted">sans WhatsApp</span>'}</li>`; }).join('')}</ul>` : ''}
+    ${kos.length ? `<h3>Non créés</h3><ul class="liste liste-comptes">${kos.map((r) => `<li><span class="corps"><b>${esc(nomComplet(membre(r.member_id)))}</b><span class="texte-erreur">${esc(r.erreur)}</span></span></li>`).join('')}</ul>` : ''}
+    <div class="actions">${oks.length ? '<button type="button" class="btn-tonal" id="cr-copier">Copier les messages</button>' : ''}<button type="button" class="btn-primaire" id="cr-fermer">Terminé</button></div>`, (root) => {
+    root.querySelectorAll('[data-envoye]').forEach((a) => a.addEventListener('click', () => { a.textContent = '✓ Envoyé'; a.classList.replace('btn-tonal', 'btn-texte'); }));
+    $('#cr-copier', root)?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(oks.map((r) => messageCompte(membre(r.member_id), r.email, mdp)).join('\n\n———\n\n')); toast('Messages copiés'); } catch { toast('Copie impossible sur ce navigateur'); }
+    });
+    $('#cr-fermer', root).addEventListener('click', () => { fermerFeuille(); apres?.(); });
+  });
+  apres?.();
+}
+
 // Rafraîchit la liste sous la feuille ouverte
 function pageMembresEnFond() { if ((location.hash.slice(1) || 'tableau') === 'membres') pageMembres(); }
 
@@ -3911,8 +4048,8 @@ async function paramPersonnes(zone) {
   ]);
   const optionsRoles = (choisi) => S.roles.map((r) => `<option value="${esc(r.code)}" ${r.code === choisi ? 'selected' : ''}>${esc(r.nom)}</option>`).join('');
   zone.innerHTML = `<section class="carte">
-    <div class="page-titre"><h2 style="flex:1">Comptes et accès</h2><a class="btn btn-tonal btn-petit" href="#membres">Donner un accès</a></div>
-    <p class="muted" style="margin:0">Vue d’ensemble des comptes. Pour donner un accès à quelqu’un, ouvrez sa fiche dans Membres, puis « Fonction » : on est d’abord membre, puis on reçoit une fonction.</p>
+    <div class="page-titre"><h2 style="flex:1">Comptes et accès</h2><button class="btn-primaire btn-petit" id="b-creer-comptes">Créer des comptes</button></div>
+    <p class="muted" style="margin:0">Vue d’ensemble des comptes. « Créer des comptes » ouvre tout de suite l’accès aux membres choisis, sans e-mail d’invitation, avec un mot de passe provisoire qu’ils remplacent à la première connexion. La fonction de chacun se règle ici ou dans Membres › sa fiche › Fonction.</p>
     <ul class="liste">
       ${profils.map((p) => `<li>
         <span class="avatar" aria-hidden="true">${esc(initiales({ prenom: p.nom.split(' ')[0], nom: p.nom.split(' ')[1] || '' }))}</span>
@@ -3927,6 +4064,7 @@ async function paramPersonnes(zone) {
         <span class="puce puce-neutre">${esc(nomRole(i.role))}</span>
         <button class="btn-texte btn-petit" data-retirer="${esc(i.email)}">Retirer</button></li>`).join('')}
     </ul></section>`;
+  $('#b-creer-comptes', zone)?.addEventListener('click', () => feuilleCreerComptes([], () => paramPersonnes(zone)));
   zone.querySelectorAll('[data-role]').forEach((s) => s.addEventListener('change', async () => {
     try {
       await q(sb.from('profiles').update({ role: s.value }).eq('id', s.dataset.role)); await chargerAcces(); toast('Rôle attribué');

@@ -36,7 +36,15 @@ object Demo {
     val profilsAjoutes = mutableListOf<Profil>()
     val invitations = mutableListOf<Invitation>()
 
+    // Comptes créés par l'administrateur pendant la démonstration (fonction creer-comptes) : adresse et mot de passe
+    class CompteCree(val email: String, var mdp: String, val id: String)
+    val comptesCrees = mutableListOf<CompteCree>()
+
     fun connecter(email: String, motDePasse: String): Profil {
+        comptesCrees.firstOrNull { it.email == email.trim().lowercase() }?.let { c ->
+            if (motDePasse != c.mdp) throw IllegalStateException("Invalid login credentials")
+            return profilsActuels().first { it.id == c.id }
+        }
         val c = comptesTest.firstOrNull { it.email.equals(email.trim(), ignoreCase = true) }
         if (c == null || motDePasse != MOT_DE_PASSE) throw IllegalStateException("Invalid login credentials")
         val p = profils.first { it.id == c.profil.id }
@@ -137,7 +145,46 @@ object Demo {
         if (i >= 0) profils[i] = profils[i].copy(nom = nom.trim().take(80))
     }
 
-    fun emailDe(id: String?): String = comptesTest.firstOrNull { it.profil.id == id }?.email ?: ""
+    fun emailDe(id: String?): String = comptesTest.firstOrNull { it.profil.id == id }?.email ?: comptesCrees.firstOrNull { it.id == id }?.email ?: ""
+
+    // Mêmes contrôles que la fonction creer-comptes : droit administrer, 8 caractères, adresse valide, fonction connue,
+    // pas de compte déjà lié, adresse libre ; profil créé avec le mot de passe provisoire à changer
+    fun creerComptes(mdp: String, demandes: List<DemandeCompte>, profil: Profil?): List<ResultatCompte> {
+        exiger(profil, "administrer")
+        if (mdp.length < 8) throw IllegalStateException("Le mot de passe provisoire doit faire au moins 8 caractères")
+        return demandes.take(100).map { dm ->
+            val email = dm.email.trim().lowercase()
+            val r = ResultatCompte(dm.memberId, email)
+            val i = membres.indexOfFirst { it.id == dm.memberId }
+            when {
+                !Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$").matches(email) -> r.copy(erreur = "Adresse e-mail invalide")
+                roles.none { it.code == dm.role } -> r.copy(erreur = "Fonction inconnue")
+                i < 0 -> r.copy(erreur = "Membre introuvable")
+                profilsActuels().any { it.memberId == dm.memberId } -> r.copy(erreur = "A déjà un compte")
+                email.endsWith("@demo.jp") || comptesCrees.any { it.email == email } || profilsActuels().any { it.nom.lowercase() == email } ->
+                    r.copy(erreur = "Cette adresse a déjà un compte : rattachez-le dans Paramètres › Comptes et accès")
+                else -> {
+                    val m = membres[i]; val id = "u-${m.id}-${comptesCrees.size + 1}"
+                    comptesCrees += CompteCree(email, mdp, id)
+                    invitations.removeAll { it.membreId == m.id || it.email == email }
+                    profilsAjoutes += Profil(id, m.nomComplet, dm.role, memberId = m.id, mdpProvisoire = true)
+                    if (m.email.isNullOrBlank()) membres[i] = m.copy(email = email)
+                    r.copy(ok = true)
+                }
+            }
+        }
+    }
+
+    fun motDePasseDefinitif(profil: Profil?) {
+        val i = profilsAjoutes.indexOfFirst { it.id == profil?.id }
+        if (i >= 0) profilsAjoutes[i] = profilsAjoutes[i].copy(mdpProvisoire = false)
+    }
+
+    fun changerMotDePasse(profil: Profil?, mdp: String) {
+        val c = comptesCrees.firstOrNull { it.id == profil?.id } ?: return
+        if (mdp == c.mdp) throw IllegalStateException("New password should be different from the old password.")
+        c.mdp = mdp
+    }
 
     fun inviter(i: Invitation, profil: Profil?) {
         exiger(profil, "administrer")

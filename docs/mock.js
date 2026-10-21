@@ -467,7 +467,9 @@ export function createMockClient() {
       return t[nom] || [];
     },
   };
-  const session = (id) => ({ user: { id, email: id.replace('u-', '') + '@demo.jp' } });
+  const session = (id) => ({ user: { id, email: comptesCrees[id]?.email || id.replace('u-', '') + '@demo.jp' } });
+  // Comptes créés par l'administrateur pendant la démonstration (fonction creer-comptes) : adresse et mot de passe provisoire
+  const comptesCrees = {};
   const ok = (data) => ({ data, error: null });
   const ko = (message) => ({ data: null, error: { message } });
   const soldePointe = (compte) => {
@@ -570,6 +572,7 @@ export function createMockClient() {
       if (!db.session) return ko('Non connecté');
       const d = db.droits();
       if (nom === 'mes_droits') return ok([...d].sort());
+      if (nom === 'mot_de_passe_definitif') { const p = t.profiles.find((x) => x.id === db.moi()); if (p) p.mdp_provisoire = false; return ok(null); }
       if (nom === 'lien_membre') {
         if (!(d.has('gerer_membres') || d.has('gerer_cotisations'))) return ko('Droit « gérer les membres » requis');
         let l = t.liens_membres.find((x) => x.member_id === args.p_member);
@@ -860,9 +863,46 @@ export function createMockClient() {
         async download(chemin) { const r = await fetch(fichiers[bucket + '/' + chemin] || DOC_DEMO); return ok(await r.blob()); },
       }),
     },
+    // Fonction creer-comptes : mêmes contrôles que supabase/functions/creer-comptes (droit administrer, 8 caractères,
+    // adresse valide, fonction connue, pas de compte déjà lié, adresse libre), sans e-mail envoyé
+    functions: {
+      async invoke(nom, { body } = {}) {
+        if (nom !== 'creer-comptes') return ko('Fonction inconnue');
+        if (!db.droits().has('administrer')) return ko('Réservé à l’administrateur de la plateforme');
+        const mdp = String(body?.mot_de_passe || '');
+        if (mdp.length < 8) return ko('Le mot de passe provisoire doit faire au moins 8 caractères');
+        const t = tables;
+        const resultats = (body?.comptes || []).slice(0, 100).map((d) => {
+          const email = String(d.email || '').trim().toLowerCase();
+          const r = { member_id: d.member_id, email, ok: false, erreur: '' };
+          const m = t.members.find((x) => x.id === d.member_id);
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) r.erreur = 'Adresse e-mail invalide';
+          else if (!t.roles.some((x) => x.code === d.role)) r.erreur = 'Fonction inconnue';
+          else if (!m) r.erreur = 'Membre introuvable';
+          else if (t.profiles.some((p) => p.member_id === m.id)) r.erreur = 'A déjà un compte';
+          else if (t.profiles.some((p) => p.nom.toLowerCase() === email) || Object.values(comptesCrees).some((c) => c.email === email) || /@demo\.jp$/.test(email)) r.erreur = 'Cette adresse a déjà un compte : rattachez-le dans Paramètres › Comptes et accès';
+          else {
+            const id = 'u-' + m.id + '-' + Date.now().toString(36);
+            comptesCrees[id] = { email, mdp };
+            t.invitations = t.invitations.filter((i) => i.member_id !== m.id && i.email !== email);
+            t.profiles.push({ id, nom: `${m.prenom} ${m.nom || ''}`.trim(), role: d.role, member_id: m.id, actif: true, mdp_provisoire: true, created_at: new Date().toISOString(), vus: {} });
+            if (!m.email) m.email = email;
+            r.ok = true;
+          }
+          return r;
+        });
+        db.emettre('profiles');
+        return ok({ resultats });
+      },
+    },
     auth: {
       async getSession() { return ok({ session: db.session }); },
       async signInWithPassword({ email, password }) {
+        const cree = Object.entries(comptesCrees).find(([, c]) => c.email === String(email).trim().toLowerCase());
+        if (cree) {
+          if (password !== cree[1].mdp) return { data: { session: null }, error: { message: 'Invalid login credentials' } };
+          db.session = session(cree[0]); return ok({ session: db.session });
+        }
         const cle = { 'tresorier@demo.jp': 't', 'president@demo.jp': 'p', 'bureau@demo.jp': 'b', 'adherent@demo.jp': 'a', 'nouveau@demo.jp': 'n' }[String(email).toLowerCase()];
         if (!cle || password !== MOT_DE_PASSE) return { data: { session: null }, error: { message: 'Invalid login credentials' } };
         db.session = session(ids[cle]); return ok({ session: db.session });
@@ -870,7 +910,11 @@ export function createMockClient() {
       async signUp() { return ok({ session: null }); },
       async signOut() { db.session = null; ecouteurs.forEach((f) => f('SIGNED_OUT', null)); return { error: null }; },
       async resetPasswordForEmail() { return ok({}); },
-      async updateUser() { return ok({}); },
+      async updateUser({ password } = {}) {
+        const c = comptesCrees[db.moi()];
+        if (c && password) { if (password === c.mdp) return ko('New password should be different from the old password.'); c.mdp = password; }
+        return ok({});
+      },
       onAuthStateChange(f) { ecouteurs.push(f); return { data: { subscription: { unsubscribe() {} } } }; },
     },
   };

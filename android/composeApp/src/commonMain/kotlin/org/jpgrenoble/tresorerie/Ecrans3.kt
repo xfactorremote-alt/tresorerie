@@ -108,7 +108,7 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
             "comptes" -> ParamComptes(d, message, recharger)
             "categories" -> ParamCategories(d, message, recharger)
             "regles" -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) { item { BlocMontants(message) } }
-            "personnes" -> ParamPersonnes(d, message, recharger) { onCible("membres") }
+            "personnes" -> ParamPersonnes(d, message, recharger)
             "roles" -> ParamRoles(d, message, recharger)
             "corbeille" -> ParamCorbeille(d, message, recharger)
             "sauvegarde" -> ParamSauvegarde(message)
@@ -485,8 +485,9 @@ private fun ParamRoles(d: Donnees, message: (String) -> Unit, recharger: () -> U
 }
 
 @Composable
-private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = {}, onMembres: () -> Unit = {}) {
+private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = {}) {
     var version by remember { mutableStateOf(0) }
+    var creer by remember { mutableStateOf(false) }
     var roles by remember { mutableStateOf(d.roles) }
     var profils by remember { mutableStateOf<List<Profil>>(emptyList()) }
     var invitations by remember { mutableStateOf<List<Invitation>>(emptyList()) }
@@ -496,16 +497,17 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () 
         try { roles = Repo.roles(); profils = Repo.profilsComplets().sortedBy { it.nom.lowercase() }; invitations = Repo.invitations() } catch (e: Exception) { message(traduireErreur(e)) }
     }
     fun nomRole(c: String) = roles.firstOrNull { it.code == c }?.nom ?: c
-    // Même carte que paramPersonnes du site : bouton « Donner un accès » (vers Membres), texte, puis une ligne par compte
+    // Même carte que paramPersonnes du site : bouton « Créer des comptes », texte, puis une ligne par compte
     // (avatar, nom, état, fiche de membre, rôle, case Actif) et les invitations en attente atténuées
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Vue d’ensemble des comptes. Pour donner un accès à quelqu’un, ouvrez sa fiche dans Membres, puis «${NBSP}Fonction${NBSP}» : on est d’abord membre, puis on reçoit une fonction.",
-                        color = Couleurs.Texte2, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    FilledTonalButton(onClick = onMembres) { Text("Donner un accès") }
+                    Text("Comptes et accès", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Button(onClick = { creer = true }) { Text("Créer des comptes") }
                 }
+                Text("Vue d’ensemble des comptes. «${NBSP}Créer des comptes${NBSP}» ouvre tout de suite l’accès aux membres choisis, sans e-mail d’invitation, avec un mot de passe provisoire qu’ils remplacent à la première connexion. La fonction de chacun se règle ici ou dans Membres › sa fiche › Fonction.",
+                    color = Couleurs.Texte2, fontSize = 14.sp)
                 profils.forEachIndexed { i, p ->
                     key(p.id) {
                         if (i > 0) HorizontalDivider(color = Color(0xFFEDEBEA))
@@ -551,6 +553,7 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () 
             }
         }
     }
+    if (creer) FeuilleCreerComptes(d, profils, invitations, emptyList(), message) { ok -> creer = false; if (ok) { version++; recharger() } }
     if (inviter) {
         var email by remember { mutableStateOf("") }
         var nomI by remember { mutableStateOf("") }
@@ -677,6 +680,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
     var profils by remember { mutableStateOf<List<Profil>>(emptyList()) }
     var invitations by remember { mutableStateOf<List<Invitation>>(emptyList()) }
     var fonction by remember { mutableStateOf<Membre?>(null) }
+    var creerComptes by remember { mutableStateOf<List<DemandeCompte>?>(null) }
     var maFiche by remember { mutableStateOf(false) }
     val admin = d.peut("administrer")
     var recherche by remember { mutableStateOf("") }
@@ -890,8 +894,10 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
             onExcel = { choix -> exporter = false; scope.launch { try { enregistrer("membres.csv", "text/csv", csvMembres(d, membres, vue, choix).encodeToByteArray()) } catch (e: Exception) { message(traduireErreur(e)) } } })
     }
     fonction?.let { m ->
-        FeuilleFonction(d, m, profils, invitations, onFini = { msg -> fonction = null; if (msg != null) { message(msg); version++; if (profils.any { it.id == d.profil.id && it.memberId == m.id }) recharger() } }, message = message)
+        FeuilleFonction(d, m, profils, invitations, onFini = { msg -> fonction = null; if (msg != null) { message(msg); version++; if (profils.any { it.id == d.profil.id && it.memberId == m.id }) recharger() } }, message = message,
+            onCreerDirect = { dc -> fonction = null; creerComptes = listOf(dc) })
     }
+    creerComptes?.let { pre -> FeuilleCreerComptes(d, profils, invitations, pre, message) { ok -> creerComptes = null; if (ok) version++ } }
     // Import : explication, choix du fichier, modèle, puis le résultat dans la même feuille (comme feuilleImport du site)
     if (importer) ModalBottomSheet(onDismissRequest = { importer = false; aImporter = null; erreurImport = null }) {
         var enCours by remember { mutableStateOf(false) }
@@ -1053,7 +1059,8 @@ internal fun rangRole(r: String): Int = ORDRE_ROLES.indexOf(r).let { if (it >= 0
 // Accès et fonction d'un membre : donner un accès (invitation), changer sa fonction, couper l'accès
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FeuilleFonction(d: Donnees, m: Membre, profils: List<Profil>, invitations: List<Invitation>, onFini: (String?) -> Unit, message: (String) -> Unit) {
+private fun FeuilleFonction(d: Donnees, m: Membre, profils: List<Profil>, invitations: List<Invitation>, onFini: (String?) -> Unit, message: (String) -> Unit,
+                            onCreerDirect: (DemandeCompte) -> Unit = {}) {
     val compte = profils.firstOrNull { it.memberId == m.id }
     val invitation = invitations.firstOrNull { it.membreId == m.id }
     val roles = d.roles.sortedBy { rangRole(it.code) }
@@ -1092,6 +1099,11 @@ private fun FeuilleFonction(d: Donnees, m: Membre, profils: List<Profil>, invita
                 Checkbox(if (compte.id == d.profil.id) true else actif, { actif = it }, enabled = compte.id != d.profil.id); Text("Accès à la plateforme", fontSize = 14.sp)
             }
             if (invitation != null) Text("La personne crée son compte sur le site avec cette adresse ; sa fonction s’applique dès la création.", fontSize = 14.sp, color = Couleurs.Texte2)
+            // Création directe (comme « Créer le compte tout de suite » du site) : sans e-mail d'invitation, mot de passe provisoire
+            if (compte == null && !envoye && lier == null) {
+                FilledTonalButton(onClick = { onCreerDirect(DemandeCompte(m.id, (invitation?.email ?: email).trim(), role)) }, modifier = Modifier.fillMaxWidth()) { Text("Créer le compte tout de suite") }
+                if (invitation == null) Text("Sans e-mail d’invitation : mot de passe provisoire, à changer à la première connexion. «${NBSP}Donner l’accès${NBSP}» laisse plutôt la personne créer son compte elle-même.", fontSize = 13.sp, color = Couleurs.Texte2)
+            }
             if (compte == null && invitation == null && libres.isNotEmpty() && !envoye)
                 ChoixListe("Ou rattacher un compte déjà créé", lier?.nom ?: "Aucun", listOf("Aucun") + libres.map { it.nom }) { lier = if (it == 0) null else libres[it - 1] }
             if (envoye) {
