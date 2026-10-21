@@ -1121,7 +1121,7 @@ function listeAnniversaires(anniv, mois) {
   const jour = new Date().getDate();
   return anniv.length ? `<ul class="liste">${anniv.map((a) => {
     const libelle = a.jour === jour ? '<span class="puce puce-partiel">Aujourd’hui</span>' : a.jour < jour ? '<span class="puce puce-neutre">Passé</span>' : '';
-    return `<li>${avatar({ ...a })}<div class="corps"><b>${esc(a.prenom)} ${esc(a.nom)}</b><span>${a.jour} ${MOIS[mois]}${a.profession ? ' · ' + esc(a.profession) : ''}</span></div>${libelle}</li>`;
+    return `<li>${avatar({ ...a })}<div class="corps"><b>${esc(a.prenom)} ${esc(a.nom)}</b><span>${a.jour} ${MOIS[mois]}</span></div>${libelle}</li>`;
   }).join('')}</ul>` : '<div class="vide">Aucun anniversaire ce mois-ci.</div>';
 }
 
@@ -2385,7 +2385,8 @@ function motDePasseProvisoire(alea = (n) => crypto.getRandomValues(new Uint32Arr
   return mot[0].toUpperCase() + mot.slice(1) + '-' + String(1000 + alea(9000));
 }
 // Message à envoyer à chacun (même texte que messageCompte d'Android)
-const messageCompte = (m, email, mdp) => `Bonjour ${m.prenom},\n\nTon compte sur l’espace de ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'l’association'} est prêt.\n\n👉 ${adresseSite()}\n📧 Identifiant : ${email}\n🔑 Mot de passe provisoire : ${mdp}\n\nÀ ta première connexion, tu choisiras ton propre mot de passe.\n\nLe bureau de ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'l’association'}`;
+// existant : la personne avait déjà un compte (relié à sa fiche), elle garde son mot de passe
+const messageCompte = (m, email, mdp, existant = false) => `Bonjour ${m.prenom},\n\nTon compte sur l’espace de ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'l’association'} est prêt.\n\n👉 ${adresseSite()}\n📧 Identifiant : ${email}\n${existant ? '🔑 Mot de passe : celui que tu as déjà choisi (sinon « Mot de passe oublié »)' : `🔑 Mot de passe provisoire : ${mdp}\n\nÀ ta première connexion, tu choisiras ton propre mot de passe.`}\n\nLe bureau de ${S.org?.nom ? nomAssoLisible(S.org.nom) : 'l’association'}`;
 // Membres qui peuvent recevoir un compte : actifs, sans compte ; ceux qui ont une invitation ou une fonction au bureau d'abord
 function candidatsCompte() {
   return S.membres.filter((m) => m.actif && !S.liens[m.id]?.profil)
@@ -2455,15 +2456,15 @@ function resultatComptes(resultats, mdp, apres) {
   const membre = (id) => S.membres.find((m) => m.id === id) || { prenom: '', nom: '' };
   const oks = resultats.filter((r) => r.ok), kos = resultats.filter((r) => !r.ok);
   ouvrirFeuille(`<h2>${oks.length ? `${oks.length} compte${oks.length > 1 ? 's' : ''} créé${oks.length > 1 ? 's' : ''}` : 'Aucun compte créé'}</h2>
-    ${oks.length ? `<div class="info">Mot de passe provisoire : <b>${esc(mdp)}</b>. Envoyez à chacun son message : à la première connexion, il choisit son propre mot de passe.</div>
+    ${oks.length ? `<div class="info">${oks.some((r) => !r.existant) ? `Mot de passe provisoire : <b>${esc(mdp)}</b>. Envoyez à chacun son message : à la première connexion, il choisit son propre mot de passe.` : 'Ces personnes avaient déjà un compte : il est relié à leur fiche et elles gardent leur mot de passe. Envoyez-leur leur message.'}</div>
       <ul class="liste liste-comptes">${oks.map((r) => { const m = membre(r.member_id), wa = numeroWa(m.whatsapp || '');
-        return `<li><span class="corps"><b>${esc(nomComplet(m))}</b><span class="muted">${esc(r.email)}</span></span>
-          ${wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" data-envoye href="https://wa.me/${wa}?text=${encodeURIComponent(messageCompte(m, r.email, mdp))}">WhatsApp</a>` : '<span class="muted">sans WhatsApp</span>'}</li>`; }).join('')}</ul>` : ''}
+        return `<li><span class="corps"><b>${esc(nomComplet(m))}</b><span class="muted">${esc(r.email)}${r.existant ? ' · compte existant relié, garde son mot de passe' : ''}</span></span>
+          ${wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" data-envoye href="https://wa.me/${wa}?text=${encodeURIComponent(messageCompte(m, r.email, mdp, r.existant))}">WhatsApp</a>` : '<span class="muted">sans WhatsApp</span>'}</li>`; }).join('')}</ul>` : ''}
     ${kos.length ? `<h3>Non créés</h3><ul class="liste liste-comptes">${kos.map((r) => `<li><span class="corps"><b>${esc(nomComplet(membre(r.member_id)))}</b><span class="texte-erreur">${esc(r.erreur)}</span></span></li>`).join('')}</ul>` : ''}
     <div class="actions">${oks.length ? '<button type="button" class="btn-tonal" id="cr-copier">Copier les messages</button>' : ''}<button type="button" class="btn-primaire" id="cr-fermer">Terminé</button></div>`, (root) => {
     root.querySelectorAll('[data-envoye]').forEach((a) => a.addEventListener('click', () => { a.textContent = '✓ Envoyé'; a.classList.replace('btn-tonal', 'btn-texte'); }));
     $('#cr-copier', root)?.addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(oks.map((r) => messageCompte(membre(r.member_id), r.email, mdp)).join('\n\n———\n\n')); toast('Messages copiés'); } catch { toast('Copie impossible sur ce navigateur'); }
+      try { await navigator.clipboard.writeText(oks.map((r) => messageCompte(membre(r.member_id), r.email, mdp, r.existant)).join('\n\n———\n\n')); toast('Messages copiés'); } catch { toast('Copie impossible sur ce navigateur'); }
     });
     $('#cr-fermer', root).addEventListener('click', () => { fermerFeuille(); apres?.(); });
   });

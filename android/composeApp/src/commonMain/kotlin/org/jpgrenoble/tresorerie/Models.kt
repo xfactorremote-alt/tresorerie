@@ -329,7 +329,8 @@ data class DemandeCompte(@SerialName("member_id") val memberId: String, val emai
 
 /** Résultat de la fonction creer-comptes pour un membre : créé, ou refusé avec le motif. */
 @Serializable
-data class ResultatCompte(@SerialName("member_id") val memberId: String? = null, val email: String = "", val ok: Boolean = false, val erreur: String = "")
+// existant : l'adresse avait déjà un compte, relié à la fiche ; la personne garde son mot de passe
+data class ResultatCompte(@SerialName("member_id") val memberId: String? = null, val email: String = "", val ok: Boolean = false, val existant: Boolean = false, val erreur: String = "")
 
 @Serializable
 data class Invitation(

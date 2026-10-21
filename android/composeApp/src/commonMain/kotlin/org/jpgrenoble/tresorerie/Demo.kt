@@ -161,8 +161,20 @@ object Demo {
                 roles.none { it.code == dm.role } -> r.copy(erreur = "Fonction inconnue")
                 i < 0 -> r.copy(erreur = "Membre introuvable")
                 profilsActuels().any { it.memberId == dm.memberId } -> r.copy(erreur = "A déjà un compte")
-                email.endsWith("@demo.jp") || comptesCrees.any { it.email == email } || profilsActuels().any { it.nom.lowercase() == email } ->
-                    r.copy(erreur = "Cette adresse a déjà un compte : rattachez-le dans Paramètres › Comptes et accès")
+                // Adresse déjà inscrite : compte relié à la fiche s'il n'appartient pas à un autre membre (il garde son mot de passe)
+                comptesTest.any { it.email == email } || comptesCrees.any { it.email == email } -> {
+                    val id = comptesTest.firstOrNull { it.email == email }?.profil?.id ?: comptesCrees.first { it.email == email }.id
+                    val p = profilsActuels().firstOrNull { it.id == id }
+                    if (p?.memberId != null && p.memberId != dm.memberId) r.copy(erreur = "Cette adresse est déjà celle du compte d’un autre membre")
+                    else {
+                        val m = membres[i]
+                        val j = profils.indexOfFirst { it.id == id }; val k = profilsAjoutes.indexOfFirst { it.id == id }
+                        if (j >= 0) profils[j] = profils[j].copy(memberId = m.id, role = dm.role, nom = m.nomComplet)
+                        else if (k >= 0) profilsAjoutes[k] = profilsAjoutes[k].copy(memberId = m.id, role = dm.role, nom = m.nomComplet)
+                        if (m.email.isNullOrBlank()) membres[i] = m.copy(email = email)
+                        r.copy(ok = true, existant = true)
+                    }
+                }
                 else -> {
                     val m = membres[i]; val id = "u-${m.id}-${comptesCrees.size + 1}"
                     comptesCrees += CompteCree(email, mdp, id)
@@ -644,7 +656,7 @@ object Demo {
     fun anniversaires(profil: Profil?, mois: Int? = null): List<Anniversaire> {
         val bureau = droitsDe(profil).let { "voir_membres" in it || "gerer_membres" in it }
         return membres.filter { it.actif && it.mois == (mois ?: moisCourant) && (bureau || it.consentement) }
-            .map { Anniversaire(it.prenom, if (bureau) it.nom else it.nom.take(1) + ".", it.jour, it.profession) }
+            .map { Anniversaire(it.prenom, if (bureau) it.nom else it.nom.take(1) + ".", it.jour, null) }   // profession plus transmise, comme la base
             .sortedBy { it.jour }
     }
 

@@ -398,7 +398,7 @@ internal fun ListeAnniversaires(anniv: List<Anniversaire>, mois: Int) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("${a.prenom} ${a.nom}", fontWeight = FontWeight.SemiBold)
-                Text("${a.jour} ${MOIS[mois - 1]}" + (a.profession?.let { " · $it" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)
+                Text("${a.jour} ${MOIS[mois - 1]}", fontSize = 13.sp, color = Couleurs.Texte2)
             }
             if (a.jour == jour) Pastille("Aujourd’hui", Couleurs.JauneClair, Couleurs.SurJaune)
             else if (a.jour < jour) Pastille("Passé", Couleurs.Surface2, Couleurs.Texte2)

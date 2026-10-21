@@ -628,7 +628,7 @@ export function createMockClient() {
         const bureau = d.has('voir_membres') || d.has('gerer_membres');
         const mois = args.p_mois || moisCourant;
         return ok(t.members.filter((m) => m.actif && m.naissance_mois === mois && (m.consent_anniversaire || bureau))
-          .map((m) => ({ prenom: m.prenom, nom: bureau ? m.nom : m.nom[0] + '.', jour: m.naissance_jour, photo_path: m.photo_path, profession: m.profession }))
+          .map((m) => ({ prenom: m.prenom, nom: bureau ? m.nom : m.nom[0] + '.', jour: m.naissance_jour, photo_path: m.photo_path, profession: null }))  // profession plus transmise, comme la base
           .sort((a, b) => a.jour - b.jour));
       }
       if (nom === 'ma_cotisation') {
@@ -874,14 +874,21 @@ export function createMockClient() {
         const t = tables;
         const resultats = (body?.comptes || []).slice(0, 100).map((d) => {
           const email = String(d.email || '').trim().toLowerCase();
-          const r = { member_id: d.member_id, email, ok: false, erreur: '' };
+          const r = { member_id: d.member_id, email, ok: false, existant: false, erreur: '' };
           const m = t.members.find((x) => x.id === d.member_id);
           if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) r.erreur = 'Adresse e-mail invalide';
           else if (!t.roles.some((x) => x.code === d.role)) r.erreur = 'Fonction inconnue';
           else if (!m) r.erreur = 'Membre introuvable';
           else if (t.profiles.some((p) => p.member_id === m.id)) r.erreur = 'A déjà un compte';
-          else if (t.profiles.some((p) => p.nom.toLowerCase() === email) || Object.values(comptesCrees).some((c) => c.email === email) || /@demo\.jp$/.test(email)) r.erreur = 'Cette adresse a déjà un compte : rattachez-le dans Paramètres › Comptes et accès';
-          else {
+          else if (/@demo\.jp$/.test(email) || Object.values(comptesCrees).some((c) => c.email === email)) {
+            // Adresse déjà inscrite : compte relié à la fiche s'il n'appartient pas à un autre membre (la personne garde son mot de passe)
+            const id = Object.entries(comptesCrees).find(([, c]) => c.email === email)?.[0] || 'u-' + email.split('@')[0];
+            const p = t.profiles.find((x) => x.id === id);
+            if (!p && !/@demo\.jp$/.test(email)) r.erreur = 'Adresse déjà enregistrée mais compte introuvable';
+            else if (p?.member_id && p.member_id !== m.id) r.erreur = 'Cette adresse est déjà celle du compte d’un autre membre';
+            else { if (p) Object.assign(p, { member_id: m.id, role: d.role, nom: `${m.prenom} ${m.nom || ''}`.trim() }); else t.profiles.push({ id, nom: `${m.prenom} ${m.nom || ''}`.trim(), role: d.role, member_id: m.id, actif: true, mdp_provisoire: false, created_at: new Date().toISOString(), vus: {} });
+              if (!m.email) m.email = email; r.ok = true; r.existant = true; }
+          } else {
             const id = 'u-' + m.id + '-' + Date.now().toString(36);
             comptesCrees[id] = { email, mdp };
             t.invitations = t.invitations.filter((i) => i.member_id !== m.id && i.email !== email);

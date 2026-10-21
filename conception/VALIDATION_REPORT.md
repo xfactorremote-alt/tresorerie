@@ -78,6 +78,12 @@
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |
 
+## 0.41.0 — Comptes existants reliés, anniversaires sans profession (21 octobre 2026)
+
+- Constat en production (journaux) : création refusée pour une adresse déjà inscrite (« email_exists ») — compte ouvert seul le 7 octobre, sans profil ; le message renvoyait vers un rattachement impossible. Correction : `creer-comptes` relie ce compte à la fiche (fonction choisie, mot de passe gardé, adresse confirmée, audit `RELIER_COMPTE`) ; refus seulement si l'adresse appartient au compte d'un autre membre. En-têtes CORS demandés acceptés. Un compte créé normalement le même jour l'a bien été (profil Bureau, mot de passe provisoire).
+- Anniversaires du mois : la profession n'est plus transmise par la base ni affichée (site, Android, démos).
+- Contrôles : 33 tests d'audit + VersionTest ; `comptes3.mjs` (compte existant relié, adresse d'un autre membre refusée, anniversaires sans profession) ; `comptes.mjs`, `comptes2.mjs` ; a7 312 vues 0 problème ; a5 144 vues sans erreur.
+
 ## 0.40.0 — Comptes créés directement par l'administrateur (21 octobre 2026)
 
 - Base : `profiles.mdp_provisoire`, `mot_de_passe_definitif()` (testés sur PostgreSQL local, appliqués en production) ; fonction Edge `creer-comptes` (droit `administrer` vérifié avec le jeton de l'appelant, création sans e-mail, profil relié à la fiche, journal d'audit `CREER_COMPTE`) ; appel sans droit refusé (403) vérifié en production.

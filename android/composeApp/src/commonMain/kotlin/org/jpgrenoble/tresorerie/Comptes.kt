@@ -50,10 +50,11 @@ fun motDePasseProvisoire(alea: (Int) -> Int = ::aleaSur): String {
 }
 
 /** Message à envoyer à chacun (même texte que messageCompte du site). */
-fun messageCompte(asso: String, m: Membre, email: String, mdp: String): String {
+fun messageCompte(asso: String, m: Membre, email: String, mdp: String, existant: Boolean = false): String {
     val nom = if (asso.isNotBlank()) nomAssoLisible(asso) else "l’association"
-    return "Bonjour ${m.prenom},\n\nTon compte sur l’espace de $nom est prêt.\n\n👉 ${Config.SITE_URL}\n📧 Identifiant : $email\n🔑 Mot de passe provisoire : $mdp\n\n" +
-        "À ta première connexion, tu choisiras ton propre mot de passe.\n\nLe bureau de $nom"
+    return "Bonjour ${m.prenom},\n\nTon compte sur l’espace de $nom est prêt.\n\n👉 ${Config.SITE_URL}\n📧 Identifiant : $email\n" +
+        (if (existant) "🔑 Mot de passe : celui que tu as déjà choisi (sinon « Mot de passe oublié »)"
+        else "🔑 Mot de passe provisoire : $mdp\n\nÀ ta première connexion, tu choisiras ton propre mot de passe.") + "\n\nLe bureau de $nom"
 }
 
 /** Membres qui peuvent recevoir un compte : actifs, sans compte ; ceux qui ont une invitation d'abord (comme candidatsCompte du site). */
@@ -154,8 +155,10 @@ private fun ResultatComptes(d: Donnees, resultats: List<ResultatCompte>, mdp: St
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     if (oks.isNotEmpty()) {
         Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.XGrand) {
-            Text(buildAnnotatedString { append("Mot de passe provisoire : "); withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(mdp) }
-                append(". Envoyez à chacun son message : à la première connexion, il choisit son propre mot de passe.") }, fontSize = 14.sp, modifier = Modifier.padding(16.dp).fillMaxWidth())
+            Text(if (oks.any { !it.existant }) buildAnnotatedString { append("Mot de passe provisoire : "); withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(mdp) }
+                append(". Envoyez à chacun son message : à la première connexion, il choisit son propre mot de passe.") }
+                else AnnotatedString("Ces personnes avaient déjà un compte : il est relié à leur fiche et elles gardent leur mot de passe. Envoyez-leur leur message."),
+                fontSize = 14.sp, modifier = Modifier.padding(16.dp).fillMaxWidth())
         }
         CarteBlanche {
             oks.forEachIndexed { i, r ->
@@ -164,13 +167,13 @@ private fun ResultatComptes(d: Donnees, resultats: List<ResultatCompte>, mdp: St
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text(m.nomComplet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(r.email, fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(r.email + if (r.existant) " · compte existant relié, garde son mot de passe" else "", fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     val wa = numeroWa(m.whatsapp ?: "")
                     when {
                         wa == null -> Text("sans WhatsApp", fontSize = 13.sp, color = Couleurs.Texte2)
-                        r.email in envoyes -> TextButton(onClick = { uri.openUri("https://wa.me/$wa?text=" + encoderUrl(messageCompte(d.organisation.nom, m, r.email, mdp))) }) { Text("✓ Envoyé") }
-                        else -> OutlinedButton(onClick = { envoyes += r.email; uri.openUri("https://wa.me/$wa?text=" + encoderUrl(messageCompte(d.organisation.nom, m, r.email, mdp))) }) { Text("WhatsApp") }
+                        r.email in envoyes -> TextButton(onClick = { uri.openUri("https://wa.me/$wa?text=" + encoderUrl(messageCompte(d.organisation.nom, m, r.email, mdp, r.existant))) }) { Text("✓ Envoyé") }
+                        else -> OutlinedButton(onClick = { envoyes += r.email; uri.openUri("https://wa.me/$wa?text=" + encoderUrl(messageCompte(d.organisation.nom, m, r.email, mdp, r.existant))) }) { Text("WhatsApp") }
                     }
                 }
             }
@@ -188,7 +191,7 @@ private fun ResultatComptes(d: Donnees, resultats: List<ResultatCompte>, mdp: St
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Spacer(Modifier.weight(1f))
         if (oks.isNotEmpty()) OutlinedButton(onClick = {
-            presse.setText(AnnotatedString(oks.joinToString("\n\n———\n\n") { messageCompte(d.organisation.nom, membre(it.memberId), it.email, mdp) }))
+            presse.setText(AnnotatedString(oks.joinToString("\n\n———\n\n") { messageCompte(d.organisation.nom, membre(it.memberId), it.email, mdp, it.existant) }))
         }) { Text("Copier les messages") }
         Button(onClick = onFermer) { Text("Terminé") }
     }

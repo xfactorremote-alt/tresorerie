@@ -612,7 +612,7 @@ returns table(prenom text, nom text, jour int, photo_path text, profession text)
 language sql stable security definer set search_path = public as $$
   select m.prenom,
          case when a_droit('voir_membres') or a_droit('gerer_membres') then m.nom else left(m.nom, 1) || '.' end,
-         m.naissance_jour::int, m.photo_path, m.profession
+         m.naissance_jour::int, m.photo_path, null::text   -- profession plus transmise (colonne gardée pour la signature)
   from members m
   where est_connecte() and m.actif and m.naissance_mois = coalesce(p_mois, extract(month from now())::int)
     and (m.consent_anniversaire or a_droit('voir_membres') or a_droit('gerer_membres'))

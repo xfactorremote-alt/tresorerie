@@ -13,8 +13,22 @@ const cors = {
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Compte d'authentification existant pour une adresse (parcours des pages de l'annuaire des comptes)
+// deno-lint-ignore no-explicit-any
+async function utilisateurParEmail(sb: any, email: string) {
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await sb.auth.admin.listUsers({ page, perPage: 200 });
+    if (error || !data?.users?.length) return null;
+    const u = data.users.find((x: { email?: string }) => (x.email || '').toLowerCase() === email);
+    if (u) return u;
+    if (data.users.length < 200) return null;
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  // Pré-vérification du navigateur : on accepte les en-têtes demandés (la bibliothèque Supabase en ajoute selon les versions)
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...cors, 'Access-Control-Allow-Headers': req.headers.get('Access-Control-Request-Headers') || cors['Access-Control-Allow-Headers'] } });
   if (req.method !== 'POST') return json({ erreur: 'Méthode non prise en charge' }, 405);
   // La personne qui appelle doit avoir le droit « administrer » (vérifié par la base avec son propre jeton)
   const appelant = createClient(URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
@@ -36,7 +50,7 @@ Deno.serve(async (req) => {
   const resultats = [];
   for (const d of demandes) {
     const email = String(d.email || '').trim().toLowerCase();
-    const r = { member_id: d.member_id, email, ok: false, erreur: '' };
+    const r = { member_id: d.member_id, email, ok: false, existant: false, erreur: '' };
     resultats.push(r);
     if (!EMAIL.test(email)) { r.erreur = 'Adresse e-mail invalide'; continue; }
     if (!codes.has(String(d.role))) { r.erreur = 'Fonction inconnue'; continue; }
@@ -52,9 +66,22 @@ Deno.serve(async (req) => {
     const { data: cree, error } = await sb.auth.admin.createUser({ email, password: mdp, email_confirm: true, user_metadata: { nom } });
     if (error || !cree?.user) {
       await sb.from('invitations').delete().eq('email', email);
-      r.erreur = /already|registered|exists/i.test(error?.message || '')
-        ? 'Cette adresse a déjà un compte : rattachez-le dans Paramètres › Comptes et accès'
-        : 'Création refusée : ' + (error?.message || 'raison inconnue');
+      if (!/already|registered|exists/i.test(error?.message || '')) { r.erreur = 'Création refusée : ' + (error?.message || 'raison inconnue'); continue; }
+      // Adresse déjà inscrite (par exemple « Créer mon mot de passe » sans invitation) : on relie ce compte à la fiche,
+      // la personne garde le mot de passe qu'elle a choisi
+      const existant = await utilisateurParEmail(sb, email);
+      if (!existant) { r.erreur = 'Adresse déjà enregistrée mais compte introuvable'; continue; }
+      const { data: p } = await sb.from('profiles').select('id, member_id').eq('id', existant.id).maybeSingle();
+      if (p?.member_id && p.member_id !== m.id) { r.erreur = 'Cette adresse est déjà celle du compte d’un autre membre'; continue; }
+      if (p) await sb.from('profiles').update({ member_id: m.id, role: d.role, nom }).eq('id', p.id);
+      else {
+        const { error: eP } = await sb.from('profiles').insert({ id: existant.id, nom, role: d.role, member_id: m.id, mdp_provisoire: false });
+        if (eP) { r.erreur = 'Rattachement impossible : ' + eP.message; continue; }
+      }
+      if (!existant.email_confirmed_at) await sb.auth.admin.updateUserById(existant.id, { email_confirm: true });
+      if (!m.email) await sb.from('members').update({ email }).eq('id', m.id);
+      await sb.from('audit_log').insert({ user_id: moi.user.id, action: 'RELIER_COMPTE', table_name: 'profiles', row_id: existant.id, detail: { email, role: d.role, member_id: m.id } });
+      r.ok = true; r.existant = true;
       continue;
     }
     const id = cree.user.id;
