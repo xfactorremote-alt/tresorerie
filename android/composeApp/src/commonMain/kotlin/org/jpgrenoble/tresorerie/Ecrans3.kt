@@ -1567,74 +1567,80 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
 
     // Une seule bannière forte : la photo, avec les annonces posées dessus, une à la fois (comme banniereAnnonces du site)
     val (annonces, rotation) = remember(planning, cotis, parts, communiques, regles) { annoncesBanniere(planning, cotis, parts, communiques, regles) }
-    @Composable fun Tete() = Banniere(d, onReglages, onCloche) {
+    @Composable fun Tete() = Banniere(d, onReglages, onCloche, expressif = true) {
         Spacer(Modifier.height(16.dp))
         BanniereAnnonces(annonces, rotation, onEvt = { detail = it }, onAgenda = agenda,
             onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(if (communiquesActifs(communiques).isNotEmpty()) 4 else 3) } }, onCommunique = { communiqueLu = it })
     }
     val etatCotis = if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour"
     val nomMois = MOIS[mois - 1]
-    @Composable fun Suite() = Rubrique("m-planning", "Au programme",
-        "${if (suite.isEmpty()) "Rien" else "${suite.size} rendez-vous"} ${periodePlanning(vuePlanning).resume}") {
+    @Composable fun Suite() = RubriqueMembre("m-planning", "Au programme",
+        "${if (suite.isEmpty()) "Rien" else "${suite.size} rendez-vous"} ${periodePlanning(vuePlanning).resume}", Teintes.Bleu, Icons.Outlined.EditCalendar) {
         FiltrePlanning(vuePlanning) { vuePlanning = it; garderPreference("planning.membre", it) }
         if (suite.isEmpty()) Text("${periodePlanning(vuePlanning).vide} Le bouton de filtre montre une période plus longue.", color = Couleurs.Texte2)
-        if (vuePlanning == "semaine" || vuePlanning == "mois") suite.forEach { p -> LigneRendezVous(p) { detail = p } }
+        if (vuePlanning == "semaine" || vuePlanning == "mois") suite.forEachIndexed { k, p -> TuileRendezVous(p, k, suite.size) { detail = p } }
         else suite.groupBy { maxOf(it.debut!!.take(10), aujourdhui().toString()).take(7) }.forEach { (m, ps) ->
             Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(MOIS[m.drop(5).toInt() - 1].replaceFirstChar { it.uppercase() } + if (m.take(4) != aujourdhui().year.toString()) " " + m.take(4) else "",
-                    fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2)
+                    fontWeight = FontWeight.Bold, color = Couleurs.M3Bleu)
                 Text("${ps.size}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Couleurs.Texte2,
                     modifier = Modifier.background(Couleurs.Surface2, RoundedCornerShape(50)).padding(horizontal = 7.dp))
             }
-            ps.forEach { p -> LigneRendezVous(p) { detail = p } }
+            ps.forEachIndexed { k, p -> TuileRendezVous(p, k, ps.size) { detail = p } }
         }
     }
     // Ma cotisation : l'état coloré dans le titre (icône verte ou rouge), la grille de l'année et sa légende (comme le site)
-    @Composable fun Cotisation() = Rubrique("m-cotisation", "Ma cotisation", etatCotis, alerte = retard > 0.005,
-        icone = if (retard > 0.005) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle,
-        teinteIcone = if (retard > 0.005) Couleurs.Erreur else if (cotis.isNotEmpty()) Couleurs.Vert else Couleurs.Texte) {
+    @Composable fun Cotisation() = RubriqueMembre("m-cotisation", "Ma cotisation", etatCotis,
+        if (retard > 0.005) Teintes.Erreur else if (cotis.isNotEmpty()) Teintes.Vert else Teintes.Primaire,
+        if (retard > 0.005) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle) {
         val regle = cotis.filter { it.statut == "regle" || it.statut == "dispense" }.maxOfOrNull { it.periode }
         Text(buildAnnotatedString {
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = if (retard > 0.005) Couleurs.Erreur else Couleurs.Texte)) { append(etatCotis) }
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (retard > 0.005) Couleurs.Erreur else if (cotis.isNotEmpty()) Couleurs.M3Vert else Couleurs.Texte)) { append(etatCotis) }
             withStyle(SpanStyle(color = Couleurs.Texte)) {
                 if (retard > 0.005) append(" · périodes commencées et non réglées") else if (regle != null) append(" · réglée jusqu’à ${nomPeriode(regle, pas)}")
             }
         }, fontSize = 15.sp)
         val l = cotis.filter { it.annee == aujourdhui().year }.sortedBy { it.periode }
         if (l.isNotEmpty()) {
-            GrillePeriodes(l.map { it.periode to it.statut }, pas)
+            GrillePeriodes(l.map { it.periode to it.statut }, pas, expressif = true)
             // Légende : seulement les états présents dans la grille
             val libelles = listOf("regle" to "Réglé", "partiel" to "Partiel", "impaye" to "Impayé", "a_venir" to "À venir", "dispense" to "Dispensé")
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 libelles.filter { (k, _) -> l.any { it.statut == k } }.forEach { (k, lib) ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Box(Modifier.width(14.dp)) { GrillePeriodes(listOf("2026-01-01" to k), 12) }
+                        // Pastille ronde de la couleur de l'état (comme .vue-membre .legende .case-p du site)
+                        Box(Modifier.size(14.dp).background(when (k) { "regle" -> Couleurs.M3Vert; "partiel" -> Couleurs.Jaune; "impaye" -> Couleurs.ErreurClair; else -> Couleurs.Surface2 }, CircleShape))
                         Text(lib, fontSize = 12.sp, color = Couleurs.Texte2)
                     }
                 }
             }
         }
     }
-    @Composable fun Regler() { if (du) Rubrique("m-regler", "Comment régler", "À régler") { Text(infos ?: "Adressez-vous au trésorier.", fontSize = 14.sp) } }
-    @Composable fun Participations() { if (parts.isNotEmpty()) Rubrique("m-participations", "Mes participations", if (resteParts > 0.005) "${euros(resteParts)} à régler" else "${parts.size}") { ListeParticipations(parts) } }
-    @Composable fun Anniversaires() = Rubrique("m-anniversaires", "Anniversaires ${deMois(mois)}", if (anniv.isEmpty()) "Aucun" else "${anniv.size}", ouverteParDefaut = false) { ListeAnniversaires(anniv, mois) }
+    @Composable fun Regler() { if (du) RubriqueMembre("m-regler", "Comment régler", "À régler", Teintes.Primaire, Icons.Outlined.Payments) {
+        Text(infos ?: "Adressez-vous au trésorier.", fontSize = 14.sp, color = Couleurs.M3SurPrimaireConteneur,
+            modifier = Modifier.fillMaxWidth().background(Couleurs.M3PrimaireConteneur, Formes.M3M).padding(horizontal = 14.dp, vertical = 12.dp)) } }
+    @Composable fun Participations() { if (parts.isNotEmpty()) RubriqueMembre("m-participations", "Mes participations", if (resteParts > 0.005) "${euros(resteParts)} à régler" else "${parts.size}",
+        Teintes.Primaire, Icons.Outlined.Event) { ListeParticipations(parts, tuiles = true) } }
+    @Composable fun Anniversaires() = RubriqueMembre("m-anniversaires", "Anniversaires ${deMois(mois)}", if (anniv.isEmpty()) "Aucun" else "${anniv.size}", Teintes.Rose,
+        Icons.Outlined.Cake, ouverteParDefaut = false) { ListeAnniversaires(anniv, mois) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val large = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxWidth > maxHeight)
-        if (large) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Tete()
+        // Fond chaud de la page des membres (Material 3 Expressive) ; les cartes arrivent en cascade avec un léger rebond
+        if (large) Column(Modifier.fillMaxSize().background(Couleurs.M3Fond).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            ArriveeM3(0) { Tete() }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it }; Apparition(1) { Suite() } }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { Apparition(2) { Cotisation() }; Regler(); Participations(); Anniversaires() }
+                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { ArriveeM3(1) { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } }; ArriveeM3(2) { Suite() } }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { ArriveeM3(2) { Cotisation() }; ArriveeM3(3) { Regler() }; ArriveeM3(3) { Participations() }; ArriveeM3(4) { Anniversaires() } }
             }
-        } else LazyColumn(Modifier.fillMaxSize(), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Tete() }
-            if (communiquesActifs(communiques).isNotEmpty()) item { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } }
-            item { Apparition(1) { Suite() } }
-            item { Apparition(2) { Cotisation() } }
-            item { Regler() }
-            item { Participations() }
-            item { Anniversaires() }
+        } else LazyColumn(Modifier.fillMaxSize().background(Couleurs.M3Fond), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { ArriveeM3(0) { Tete() } }
+            if (communiquesActifs(communiques).isNotEmpty()) item { ArriveeM3(1) { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } } }
+            item { ArriveeM3(2) { Suite() } }
+            item { ArriveeM3(3) { Cotisation() } }
+            item { ArriveeM3(3) { Regler() } }
+            item { ArriveeM3(4) { Participations() } }
+            item { ArriveeM3(4) { Anniversaires() } }
         }
     }
     communiqueLu?.let { c -> FeuilleCommunique(c, mesReponses[c.id], onRepondu = { mesReponses = mesReponses + (c.id to it); message("Merci pour votre réponse") }, message = message) { communiqueLu = null } }

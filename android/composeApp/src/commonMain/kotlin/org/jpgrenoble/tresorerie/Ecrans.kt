@@ -323,15 +323,21 @@ private fun DeuxColonnes(large: Boolean, gauche: @Composable ColumnScope.() -> U
 
 // Bannière : photo de l'association si elle existe, sinon aplat neutre ; voile sombre pour la lisibilité
 @Composable
-internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: (() -> Unit)? = null, compacte: Boolean = false, contenu: @Composable ColumnScope.() -> Unit) {
+// expressif : page des membres (Material 3 Expressive) — grands arrondis, aplat vivant aux couleurs de l'association sans photo
+internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: (() -> Unit)? = null, compacte: Boolean = false, expressif: Boolean = false, contenu: @Composable ColumnScope.() -> Unit) {
     val octets by Repo.banniere.collectAsState()
     val photo = remember(octets) { octets?.let { imageDepuisOctets(it) } }
-    val forme = Formes.XGrand
+    val forme = if (expressif) Formes.M3XL else Formes.XGrand
     Box(Modifier.fillMaxWidth().heightIn(min = if (compacte) 0.dp else 200.dp).clip(forme)
-        .background(Brush.radialGradient(listOf(Couleurs.Texte2, Color(0xFF2B2826), Couleurs.Texte), center = Offset(2000f, 0f), radius = 2200f))) {
+        .background(if (expressif) FondBanniereMembre else Brush.radialGradient(listOf(Couleurs.Texte2, Color(0xFF2B2826), Couleurs.Texte), center = Offset(2000f, 0f), radius = 2200f))) {
+        // Formes douces en fond (comme les dégradés ronds du site)
+        if (expressif && photo == null) {
+            Box(Modifier.align(Alignment.TopEnd).offset(x = 60.dp, y = (-50).dp).size(220.dp).background(Color(0x8CFFB394), CircleShape))
+            Box(Modifier.align(Alignment.BottomStart).offset(x = (-40).dp, y = 60.dp).size(170.dp).background(Color(0x61FF8A5B), CircleShape))
+        }
         if (photo != null) {
             Image(photo, null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
-            Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x40141211), Color(0x8C141211), Color(0xD1141211)))))
+            Box(Modifier.matchParentSize().background(Brush.verticalGradient(if (expressif) listOf(Color(0x2E3B0A00), Color(0x733B0A00), Color(0xDB280814)) else listOf(Color(0x40141211), Color(0x8C141211), Color(0xD1141211)))))
         }
         Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -40,6 +40,29 @@ object Couleurs {
     val Bord = Color(0xFFD9D3D0)               // --bord
     val BordDoux = Color(0xFFE8E3E1)           // --bord-doux
     val BordFort = Color(0xFF5A5350)           // --bord-fort
+    // Page des membres en Material 3 Expressive : mêmes valeurs que les variables --m3-* du site
+    val M3Fond = Color(0xFFFFF8F6)             // --m3-fond
+    val M3SurfaceBasse = Color(0xFFFFF1EC)     // --m3-surface-basse
+    val M3Primaire = Color(0xFFC23E10)         // --m3-primaire
+    val M3PrimaireConteneur = Color(0xFFFFDBCF); val M3SurPrimaireConteneur = Color(0xFF3B0A00)
+    val M3Bleu = Color(0xFF1B6EA8); val M3BleuConteneur = Color(0xFFD3E6FF); val M3SurBleuConteneur = Color(0xFF001D35)
+    val M3Orange = Color(0xFFA3560A); val M3OrangeConteneur = Color(0xFFFFDCC0); val M3SurOrangeConteneur = Color(0xFF2F1500)
+    val M3Vert = Color(0xFF2C7A4B); val M3VertConteneur = Color(0xFFC3EFCF); val M3SurVertConteneur = Color(0xFF00210E)
+    val M3Violet = Color(0xFF6A4FA3); val M3VioletConteneur = Color(0xFFEADDFF); val M3SurVioletConteneur = Color(0xFF22005D)
+    val M3Rose = Color(0xFFA0306B); val M3RoseConteneur = Color(0xFFFFD8E8); val M3SurRoseConteneur = Color(0xFF3E0022)
+    val M3Drapeau = Color(0xFFFFE08A); val M3SurDrapeau = Color(0xFF4A2E00)   // « Important » sur la bannière
+}
+
+/** Teinte d'une rubrique de la page des membres : couleur forte, conteneur, texte sur conteneur (--g-fort, --g-clair, --g-sur du site). */
+data class Teinte(val fort: Color, val conteneur: Color, val sur: Color)
+object Teintes {
+    val Bleu = Teinte(Couleurs.M3Bleu, Couleurs.M3BleuConteneur, Couleurs.M3SurBleuConteneur)
+    val Orange = Teinte(Couleurs.M3Orange, Couleurs.M3OrangeConteneur, Couleurs.M3SurOrangeConteneur)
+    val Vert = Teinte(Couleurs.M3Vert, Couleurs.M3VertConteneur, Couleurs.M3SurVertConteneur)
+    val Violet = Teinte(Couleurs.M3Violet, Couleurs.M3VioletConteneur, Couleurs.M3SurVioletConteneur)
+    val Rose = Teinte(Couleurs.M3Rose, Couleurs.M3RoseConteneur, Couleurs.M3SurRoseConteneur)
+    val Primaire = Teinte(Couleurs.M3Primaire, Couleurs.M3PrimaireConteneur, Couleurs.M3SurPrimaireConteneur)
+    val Erreur = Teinte(Couleurs.Erreur, Couleurs.ErreurClair, Couleurs.SurErreurClair)
 }
 
 // Formes Fluent 2 du site (--r-petit 2, --r-moyen 4, --r-grand 6, --r-xgrand 8 ; --r-rond pour puces et +)
@@ -49,6 +72,11 @@ object Formes {
     val Grand = RoundedCornerShape(6.dp)
     val XGrand = RoundedCornerShape(8.dp)     // cartes, fenêtres, feuilles
     val Rond = RoundedCornerShape(50)         // puces d'état, bouton +
+    // Page des membres (Material 3 Expressive) : --m3-forme-s / m / l / xl du site
+    val M3S = RoundedCornerShape(12.dp)
+    val M3M = RoundedCornerShape(16.dp)
+    val M3L = RoundedCornerShape(24.dp)
+    val M3XL = RoundedCornerShape(28.dp)
 }
 
 private val schema = lightColorScheme(

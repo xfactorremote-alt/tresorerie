@@ -123,7 +123,8 @@ fun communiquesActifs(l: List<Communique>): List<Communique> { val auj = aujourd
 /** Une annonce à la fois, en fondu, posée sur la photo ; défile seule, se met en pause quand on la touche ; glisser pour changer. */
 @Composable
 fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> Unit, onAgenda: (Projet) -> Unit, onRegler: () -> Unit, onCommunique: (Communique) -> Unit) {
-    val panneau = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0x6B141211)).border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
+    // Verre clair à grands arrondis (Material 3 Expressive, comme .accueil-membre .annonces du site)
+    val panneau = Modifier.fillMaxWidth().clip(Formes.M3L).background(Color.White.copy(alpha = 0.16f)).border(1.dp, Color.White.copy(alpha = 0.32f), Formes.M3L)
     if (annonces.isEmpty()) {
         Column(panneau.padding(14.dp)) {
             Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.9f))
@@ -151,7 +152,7 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
     val eclat = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(i) { eclat.snapTo(1f); eclat.animateTo(0f, androidx.compose.animation.core.tween(900)) }
     Box(panneau.drawBehind {
-        if (eclat.value > 0f) drawRoundRect(Color.White.copy(alpha = 0.55f * eclat.value), cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+        if (eclat.value > 0f) drawRoundRect(Color.White.copy(alpha = 0.55f * eclat.value), cornerRadius = androidx.compose.ui.geometry.CornerRadius(24.dp.toPx()),
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = (2.dp + 6.dp * (1f - eclat.value)).toPx()))
     }.pointerInput(Unit) {
         // Pause au toucher, reprise 4 secondes après (comme le site : touchstart / touchend)
@@ -185,11 +186,12 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
                 launch { kotlinx.coroutines.delay(250); reflet.animateTo(1.4f, androidx.compose.animation.core.tween(1000)) }
             }
             val a = annonces[k]
-            val (accent, puce) = when (a) {
-                is Annonce.Rdv -> couleurEvt(a.e.id).third to couleurEvt(a.e.id).third
-                is Annonce.Cotisation -> Color(0xFFFF8A80) to Color(0xBFBA1A1A)
-                is Annonce.Participations -> Color(0xFFFFD54F) to Color(0xCCC58A00)
-                is Annonce.Info -> (if (a.c.priorite == "haute") Color.White else Color(0xFF8EC9F0)) to Color(0xCC1B77B0)
+            // Pastille en galet : fond clair, icône colorée (date blanche à la couleur du rendez-vous, comme le site)
+            val (puce, encrePuce) = when (a) {
+                is Annonce.Rdv -> Color.White to couleurEvt(a.e.id).third
+                is Annonce.Cotisation -> Couleurs.ErreurClair to Couleurs.Erreur
+                is Annonce.Participations -> Couleurs.M3OrangeConteneur to Couleurs.M3Orange
+                is Annonce.Info -> if (a.c.priorite == "haute") Couleurs.M3Drapeau to Couleurs.M3SurDrapeau else Color.White to Couleurs.M3Bleu
             }
             Row(Modifier.fillMaxWidth().drawWithContent {
                 drawContent()
@@ -200,18 +202,18 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
                 }
             }.clickable {
                 when (a) { is Annonce.Rdv -> onEvt(a.e); is Annonce.Cotisation, is Annonce.Participations -> onRegler(); is Annonce.Info -> onCommunique(a.c) }
-            }.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }.padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(44.dp).graphicsLayer { scaleX = saut.value; scaleY = saut.value; rotationZ = (1f - saut.value) * -24f }
-                    .clip(Formes.XGrand).background(puce), contentAlignment = Alignment.Center) {
+            }.padding(start = 14.dp, end = 10.dp, top = 12.dp, bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.size(48.dp).graphicsLayer { scaleX = saut.value; scaleY = saut.value; rotationZ = (1f - saut.value) * -24f }
+                    .clip(Formes.M3M).background(puce), contentAlignment = Alignment.Center) {
                     when (a) {
                         is Annonce.Rdv -> { val j = LocalDate.parse(a.e.debut!!.take(10))
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(MOIS_COURTS[j.monthNumber - 1].uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, lineHeight = 11.sp)
-                                Text("${j.dayOfMonth}", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, lineHeight = 21.sp) } }
-                        is Annonce.Cotisation -> Icon(Icons.Outlined.Payments, null, tint = Color.White)
-                        is Annonce.Participations -> Icon(Icons.Outlined.Event, null, tint = Color.White)
-                        is Annonce.Info -> Icon(genreDe(a.c).icone, null, tint = Color.White)
+                                Text(MOIS_COURTS[j.monthNumber - 1].uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = encrePuce, lineHeight = 11.sp)
+                                Text("${j.dayOfMonth}", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = encrePuce, lineHeight = 21.sp) } }
+                        is Annonce.Cotisation -> Icon(Icons.Outlined.Payments, null, tint = encrePuce)
+                        is Annonce.Participations -> Icon(Icons.Outlined.Event, null, tint = encrePuce)
+                        is Annonce.Info -> Icon(genreDe(a.c).icone, null, tint = encrePuce)
                     }
                 }
                 Column(Modifier.weight(1f)) {
@@ -220,10 +222,15 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
                             listOfNotNull(if (a.e.heureDebut != null) heureFr(a.e.heureDebut) + (a.e.heureFin?.let { " – " + heureFr(it) } ?: "") else "Toute la journée", a.e.lieu).joinToString(" · "))
                         is Annonce.Cotisation -> Triple("Rappel · cotisation", "${euros(a.montant)} en retard", "Touchez pour voir comment régler")
                         is Annonce.Participations -> Triple("Rappel · participation", "${euros(a.dues.sumOf { it.montantAttendu!! - it.donne })} à régler", a.dues.joinToString(", ") { it.nom })
-                        is Annonce.Info -> Triple((if (a.c.priorite == "haute") "Important · " else "") + genreDe(a.c).sur, a.c.titre,
+                        is Annonce.Info -> Triple(genreDe(a.c).sur, a.c.titre,
                             a.c.texte?.lineSequence()?.firstOrNull()?.takeIf { it.isNotBlank() } ?: genreDe(a.c).action)
                     }
-                    Text(sur, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.92f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // « Important » en drapeau lisible (comme .ann-drapeau du site)
+                        if (a is Annonce.Info && a.c.priorite == "haute") Text("IMPORTANT", fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.ExtraBold, color = Couleurs.M3SurDrapeau,
+                            modifier = Modifier.background(Couleurs.M3Drapeau, Formes.Rond).padding(horizontal = 8.dp))
+                        Text(sur, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.92f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                     Text(titre, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (sous.isNotEmpty()) Text(sous, fontSize = 13.sp, color = Color.White.copy(alpha = 0.88f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -276,35 +283,10 @@ fun RubriqueCommuniques(liste: List<Communique>, mesReponses: Map<String, JsonOb
 private fun RubriqueGenre(id: String, g: GenreCommunique, l: List<Communique>, mesReponses: Map<String, JsonObject>, onOuvrir: (Communique) -> Unit) {
     val nouveaux = l.count { !CommuniquesVus.vu(it.id) && !aRepondre(it, mesReponses) }
     val aRep = l.count { aRepondre(it, mesReponses) }
-    Rubrique(id, g.rubrique, when { aRep > 0 -> "$aRep à répondre"; nouveaux > 0 -> "$nouveaux nouveau" + (if (nouveaux > 1) "x" else ""); else -> "${l.size}" },
-        accent = g.fort, icone = g.icone, forcee = nouveaux + aRep > 0, halo = nouveaux + aRep > 0) {
-        l.forEach { c ->
-            val nouveau = !CommuniquesVus.vu(c.id) && !aRepondre(c, mesReponses)
-            Row(Modifier.fillMaxWidth().clip(Formes.XGrand).clickable { onOuvrir(c) }.padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                // Date de publication aux couleurs de la rubrique (orange si Important), comme le site
-                val (fond, encre) = if (c.priorite == "haute") Couleurs.OrangeClair to Couleurs.SurOrangeClair else g.clair to g.fort
-                Column(Modifier.width(44.dp).clip(Formes.XGrand).background(fond).padding(vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${c.debut.substring(8, 10).toInt()}", fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = encre)
-                    Text(MOIS_COURTS[c.debut.substring(5, 7).toInt() - 1].uppercase(), fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = encre)
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(c.titre, fontWeight = FontWeight.SemiBold, color = if (nouveau) Couleurs.SurBleuClair else Couleurs.Texte, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    c.texte?.lineSequence()?.firstOrNull()?.let { Text(it, fontSize = 14.sp, color = Couleurs.Texte2, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                    if (c.genre == "photos") Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        c.photos.take(4).forEach { PhotoPartage(it, Modifier.size(44.dp).clip(Formes.Moyen)) }
-                    }
-                    if (c.genre == "lien") Text(hoteDe(c.lien), fontSize = 12.sp, color = Couleurs.Texte2)
-                    c.fin?.let { Text((if (c.genre == "sondage") "Répondre avant le " else "Jusqu’au ") + dateFr(it), fontSize = 12.sp, color = Couleurs.Texte2) }
-                }
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (c.priorite == "haute") Puce("Important", Couleurs.ErreurClair, Couleurs.SurErreurClair)
-                    EtiquetteCommunique(c, mesReponses)
-                    if (nouveau) Puce("Nouveau", Couleurs.BleuClair, Couleurs.SurBleuClair)
-                }
-            }
-        }
+    val resume = when { aRep > 0 -> "$aRep à répondre"; nouveaux > 0 -> "$nouveaux nouveau" + (if (nouveaux > 1) "x" else ""); else -> "${l.size}" }
+    // Page des membres en Material 3 Expressive : rubrique teintée de son genre, badge des nouveautés, tuiles segmentées (comme le site)
+    RubriqueMembre(id, g.rubrique, resume, g.teinte, g.icone, forcee = nouveaux + aRep > 0, badge = if (nouveaux + aRep > 0) resume else null, fondTeinte = true) {
+        l.forEachIndexed { k, c -> TuileCommunique(c, g, k, l.size, nonLu = !CommuniquesVus.vu(c.id), nouveau = !CommuniquesVus.vu(c.id) && !aRepondre(c, mesReponses), mesReponses) { onOuvrir(c) } }
     }
 }
 

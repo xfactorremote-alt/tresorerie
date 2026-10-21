@@ -71,6 +71,16 @@ Les tailles littérales d'Android (331 occurrences) suivent déjà cette échell
 | Document en sections | `tableDocument(colonnes, lignes, totaux, largeurs)` | `table(…, largeurs)` | Une section par groupe « valeur — N · part % », colonnes de largeur fixe pour qu'elles s'alignent d'une section à l'autre, À l'italienne au-delà de 6 colonnes ; mots jamais coupés au milieu ; dates insécables. |
 | Ligne de liste | `li.ligne-…` | `Row … clickable` dans une carte | Sobre : titre, une ligne d'infos, montant/état, chevron ; **jamais de boutons empilés sur la ligne** ; la fiche porte les actions. |
 
+### Page des membres — Material 3 Expressive
+
+| Élément | Site | Android | Contrat |
+|---|---|---|---|
+| Palette | `--m3-fond`, `--m3-primaire(-conteneur)`, `--m3-bleu/orange/vert/violet/rose(-conteneur)` | `Couleurs.M3*`, `Teintes` | Une teinte par rubrique : Communiqués bleu, Sondages orange, Photos vert, Liens violet, Au programme bleu, Cotisation vert (rouge si retard), Régler et Participations primaire, Anniversaires rose |
+| Formes | `--m3-forme-s/m/l/xl` 12/16/24/28 | `Formes.M3S/M/L/XL` | Bannière 28, rubrique 24, galet de date 16, tuiles segmentées 24 aux extrémités et 12 aux jointures, pilules rondes |
+| Rubrique | `.vue-membre details.rubrique` + `.rub-ic` + `.rub-badge` | `RubriqueMembre` | Pastille d'icône teintée (galet → rond à l'ouverture), titre 18 gras, badge « N nouveaux » / « N à répondre » de la couleur forte, chevron dans un rond teinté |
+| Communiqué | `.liste-communiques li` | `TuileCommunique` | Tuile blanche, date en galet (rempli orange si Important), étiquettes sur une ligne sous le titre (Important rempli, • Nouveau, À répondre, Répondu, N photos), chevron ; non lu : liseré 2 px et reflet une fois |
+| Mouvement | `--m3-ressort`, `m3-arrivee`, `m3-galet`, `m3-reflet`, `m3-point` | `ressort()`, `ArriveeM3`, `Animatable` | Courts (220–560 ms), en `backwards`, coupés par « réduire les animations » |
+
 ## 5. Modèles d'écran
 
 1. **Liste + fiche** (Demandes, Membres, Matériel, Opérations, Tiers) : titre et résumé, recherche / filtres, une carte avec nombre et total, lignes sobres → fiche dans une feuille avec informations, historique, pièces, actions.

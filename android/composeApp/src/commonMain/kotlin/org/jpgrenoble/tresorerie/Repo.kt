@@ -36,7 +36,9 @@ import kotlinx.serialization.json.put
 // en mode démonstration (données fictives en mémoire, comptes de test).
 // Avec Supabase, les droits sont vérifiés par la base (règles RLS).
 object Repo {
-    val demo: Boolean = Config.SUPABASE_URL.contains("VOTRE") || Config.SUPABASE_ANON_KEY.contains("VOTRE")
+    // Modifiable seulement depuis les tests du module (captures d'écran en démonstration)
+    var demo: Boolean = Config.SUPABASE_URL.contains("VOTRE") || Config.SUPABASE_ANON_KEY.contains("VOTRE")
+        internal set
 
     // Session du mode démonstration (avec Supabase, la session vient de client.auth)
     val profilDemo = MutableStateFlow<Profil?>(null)

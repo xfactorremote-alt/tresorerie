@@ -51,8 +51,8 @@ android {
         applicationId = "org.jpgrenoble.tresorerie"
         minSdk = 26
         targetSdk = 35
-        versionCode = 48
-        versionName = "0.41.0"
+        versionCode = 49
+        versionName = "0.42.0"
     }
     buildTypes {
         getByName("release") { isMinifyEnabled = false }
@@ -62,10 +62,23 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    // Captures d'écran de contrôle (Robolectric + Roborazzi), lancées seulement avec CAPTURES=1
+    testOptions { unitTests { isIncludeAndroidResources = true } }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4:1.8.2")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.43.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.43.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest:1.8.2")
 }
 
 // VersionTest lit la version du site : le test se relance quand index.html ou ce fichier changent
 tasks.withType<Test>().configureEach {
+    environment("CAPTURES", System.getenv("CAPTURES") ?: "")
+    systemProperty("roborazzi.test.record", "true")
     inputs.file(rootProject.file("../docs/index.html"))
     inputs.file(project.file("build.gradle.kts"))
 }

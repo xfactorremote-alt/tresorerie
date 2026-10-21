@@ -149,22 +149,25 @@ fun ChampTiers(valeur: String, onChange: (String) -> Unit, suggestions: List<Pai
 
 // Une case par période, colorée selon l'état
 @Composable
-fun GrillePeriodes(cases: List<Pair<String, String?>>, pas: Int, modifier: Modifier = Modifier, uneLigne: Boolean = false) {
+// expressif : page des membres (Material 3 Expressive) — mois en pilules, « réglé » en vert, comme .vue-membre .case-p du site
+fun GrillePeriodes(cases: List<Pair<String, String?>>, pas: Int, modifier: Modifier = Modifier, uneLigne: Boolean = false, expressif: Boolean = false) {
     // Douze mois : deux lignes de six sur téléphone pour que les noms restent lisibles ; une ligne sur grand écran (comme le site)
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) { cases.chunked(if (cases.size == 12 && !uneLigne) 6 else cases.size.coerceAtLeast(1)).forEach { rangee ->
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+    val ecart = if (expressif) 4.dp else 3.dp
+    val forme = if (expressif) RoundedCornerShape(50) else RoundedCornerShape(5.dp)
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ecart)) { cases.chunked(if (cases.size == 12 && !uneLigne) 6 else cases.size.coerceAtLeast(1)).forEach { rangee ->
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ecart)) {
         rangee.forEach { (p, st) ->
             val (fond, texte) = when (st) {
-                "regle" -> Couleurs.Bleu to Color.White
+                "regle" -> (if (expressif) Couleurs.M3Vert else Couleurs.Bleu) to Color.White
                 "partiel" -> Couleurs.Jaune to Couleurs.SurJaune
                 "impaye" -> Couleurs.ErreurClair to Couleurs.SurErreurClair
                 null -> Color.Transparent to Couleurs.Texte2
                 else -> Couleurs.Surface2 to Couleurs.Texte2
             }
             val etat = when (st) { "regle" -> "réglé"; "partiel" -> "partiel"; "impaye" -> "impayé"; "a_venir" -> "à venir"; "dispense" -> "dispensé"; null -> "non dû"; else -> st }
-            Box(Modifier.weight(1f).height(22.dp).clip(RoundedCornerShape(5.dp)).background(fond)
+            Box(Modifier.weight(1f).height(if (expressif) 26.dp else 22.dp).clip(forme).background(fond)
                 .semantics { contentDescription = "${nomPeriode(p, pas)} : $etat" }
-                .then(if (st == "impaye") Modifier.border(1.dp, Couleurs.Erreur, RoundedCornerShape(5.dp)) else if (st == null) Modifier.border(1.dp, Couleurs.Bord, RoundedCornerShape(5.dp)) else Modifier),
+                .then(if (st == "impaye") Modifier.border(1.dp, Couleurs.Erreur, forme) else if (st == null) Modifier.border(1.dp, Couleurs.Bord, forme) else Modifier),
                 contentAlignment = Alignment.Center) {
                 if (pas == 1) Text(MOIS_COURTS[p.substring(5, 7).toInt() - 1], fontSize = 10.sp, fontWeight = FontWeight.Bold, color = texte, maxLines = 1)
             }
@@ -1587,10 +1590,12 @@ fun BlocMaCotisation(periodes: List<PeriodeCotisation>, pas: Int) {
 }
 
 @Composable
-fun ListeParticipations(parts: List<Participation>) {
+// tuiles : page des membres (Material 3 Expressive), chaque participation dans une tuile douce
+fun ListeParticipations(parts: List<Participation>, tuiles: Boolean = false) {
     if (parts.isEmpty()) { Text("Aucune participation demandée", color = Couleurs.Texte2); return }
-    parts.forEach { p ->
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    parts.forEachIndexed { k, p ->
+        Row(Modifier.fillMaxWidth().then(if (tuiles) Modifier.clip(formeSegment(k, parts.size)).background(Couleurs.M3SurfaceBasse).padding(horizontal = 12.dp, vertical = 10.dp) else Modifier.padding(vertical = 4.dp)),
+            verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(p.nom, fontWeight = FontWeight.SemiBold)
                 Text("Donné$NBSP: ${euros(p.donne)}" + (p.dateLimite?.let { " · avant le ${dateFr(it)}" } ?: ""), fontSize = 13.sp, color = Couleurs.Texte2)

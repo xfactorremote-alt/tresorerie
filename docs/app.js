@@ -967,12 +967,13 @@ const rendre = (html) => {
 // Rubriques dépliables : l'état de chacune est mémorisé sur l'appareil.
 const RUB_CLE = 'rubriquesAccueil';
 const etatRubriques = () => { try { return JSON.parse(localStorage.getItem(RUB_CLE) || '{}'); } catch { return {}; } };
-function rubrique(id, titre, resume, contenu, { ouverte = true, classe = '', forcee = false } = {}) {
+// ic : icône posée dans une pastille de forme (page membre) ; badge : nombre de nouveautés, visible même rubrique ouverte
+function rubrique(id, titre, resume, contenu, { ouverte = true, classe = '', forcee = false, ic = '', badge = '' } = {}) {
   const etat = etatRubriques()[id];
   const ouvert = forcee || (etat === undefined ? ouverte : etat);
   return `<details class="carte rubrique ${classe}" data-rub="${id}" ${ouvert ? 'open' : ''}>
-    <summary><span class="rub-titre"><h2>${titre}</h2>${resume ? `<span class="rub-resume">${resume}</span>` : ''}</span>
-      ${icone('chevron')}</summary>
+    <summary>${ic ? `<span class="rub-ic" aria-hidden="true">${icone(ic, 20)}</span>` : ''}<span class="rub-titre"><h2>${titre}</h2>${resume ? `<span class="rub-resume">${resume}</span>` : ''}</span>
+      ${badge ? `<span class="rub-badge">${badge}</span>` : ''}${icone('chevron')}</summary>
     <div class="rub-corps">${contenu}</div></details>`;
 }
 function brancherRubriques() {
@@ -1141,22 +1142,22 @@ function vueMembre(o) {
   const an = new Date().getFullYear();
   const deLAnnee = cot.filter((p) => p.annee === an).sort((a, b) => (a.periode > b.periode ? 1 : -1));
   const etatCotis = !cot.length ? 'Non commencée' : retard > 0 ? `${eur(retard)} en retard` : 'À jour';
-  const carteCotis = rubrique('m-cotisation', `<span class="statut-titre ${retard > 0 ? 'statut-alerte' : cot.length ? 'statut-ok' : ''}">${icone(retard > 0 ? 'attention' : 'valide', 18)} Ma cotisation</span>`,
+  const carteCotis = rubrique('m-cotisation', 'Ma cotisation',
     etatCotis, `<p style="margin:0"><b class="${retard > 0 ? 'negatif' : ''}">${etatCotis}</b>${retard > 0 ? ' · périodes commencées et non réglées' : regles.length ? ` · réglée jusqu’à ${esc(nomPeriode(regles[regles.length - 1]))}` : ''}</p>
       ${deLAnnee.length ? `<div class="grille-periodes" style="grid-template-columns:repeat(${deLAnnee.length},1fr)">${deLAnnee.map((p) => `<i class="case-p p-${p.statut}" role="img" title="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}" aria-label="${esc(nomPeriode(p.periode))} : ${STATUT_PERIODE[p.statut][1]}"><small>${pasCotis() === 1 ? MOIS_COURTS[Number(p.periode.slice(5, 7)) - 1] : ''}</small></i>`).join('')}</div>
         <div class="legende muted">${Object.entries(STATUT_PERIODE).filter(([k]) => deLAnnee.some((p) => p.statut === k)).map(([k, [, l]]) => `<span><i class="case-p p-${k}"></i>${l}</span>`).join('')}</div>` : ''}
       ${montant != null || avance > 0 ? `<p class="muted" style="margin:0">${montant != null ? `${eur(montant)} par ${{ 1: 'mois', 3: 'trimestre', 6: 'semestre', 12: 'an' }[pasCotis()] || 'période'}` : ''}${avance > 0 ? ` · avance ${eur(avance)}` : ''}</p>` : ''}`,
-    { classe: retard > 0 ? 'rubrique-alerte' : '' });
+    { classe: `rub-cotisation ${retard > 0 ? 'rubrique-alerte' : cot.length ? 'rub-a-jour' : ''}`, ic: retard > 0 ? 'attention' : 'valide' });
   const du = retard > 0 || resteParts > 0;
-  const carteRegler = infos && (du || !connecte) ? rubrique('m-regler', 'Comment régler', du ? 'À régler' : '', `<p class="texte-libre" style="margin:0">${esc(infos)}</p>`, { ouverte: du, classe: 'rub-regler' })
-    : du ? rubrique('m-regler', 'Comment régler', '', '<p style="margin:0">Adressez-vous au trésorier.</p>', { classe: 'rub-regler' }) : '';
-  const carteParts = parts.length ? rubrique('m-participations', 'Mes participations', resteParts > 0 ? `${eur(resteParts)} à régler` : `${parts.length}`, listeParticipations(parts)) : '';
-  const carteAnniv = anniv ? rubrique('m-anniversaires', `Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}`, anniv.length ? `${anniv.length}` : 'Aucun', listeAnniversaires(anniv, mois), { ouverte: false }) : '';
+  const carteRegler = infos && (du || !connecte) ? rubrique('m-regler', 'Comment régler', du ? 'À régler' : '', `<p class="texte-libre" style="margin:0">${esc(infos)}</p>`, { ouverte: du, classe: 'rub-regler', ic: 'caisse' })
+    : du ? rubrique('m-regler', 'Comment régler', '', '<p style="margin:0">Adressez-vous au trésorier.</p>', { classe: 'rub-regler', ic: 'caisse' }) : '';
+  const carteParts = parts.length ? rubrique('m-participations', 'Mes participations', resteParts > 0 ? `${eur(resteParts)} à régler` : `${parts.length}`, listeParticipations(parts), { classe: 'rub-participations', ic: 'activites' }) : '';
+  const carteAnniv = anniv ? rubrique('m-anniversaires', `Anniversaires ${/^[aeiouéâ]/.test(MOIS[mois]) ? 'd’' : 'de '}${MOIS[mois]}`, anniv.length ? `${anniv.length}` : 'Aucun', listeAnniversaires(anniv, mois), { ouverte: false, classe: 'rub-anniv', ic: 'nouveau' }) : '';
   const carteVersements = versements?.length ? rubrique('m-versements', 'Mes versements', `${versements.length} dernier${versements.length > 1 ? 's' : ''}`,
-    `<ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul>`, { ouverte: false }) : '';
+    `<ul class="liste">${versements.map((v) => `<li><div class="corps"><b>${esc(v.objet)}</b><span>${dateFr(v.date)}</span></div><span class="num recette">${eur(v.montant)}</span></li>`).join('')}</ul>`, { ouverte: false, ic: 'historique' }) : '';
   return `<div class="vue-membre">
     <div class="vm-suite">${rubriqueCommuniques(communiques)}${rubrique('m-planning', 'Au programme', resumePlanningMembre(), `${filtrePlanningMembre()}
-      <div id="m-planning-liste">${listePlanningMembre()}</div>`)}</div>
+      <div id="m-planning-liste">${listePlanningMembre()}</div>`, { classe: 'rub-programme', ic: 'agenda' })}</div>
     <div class="vm-cote">${carteCotis}${carteRegler}${carteParts}${carteAnniv}${carteVersements}</div>
   </div>`;
 }
@@ -1211,7 +1212,7 @@ function htmlAnnonce(a) {
   const sous = c.genre === 'sondage' && c.ma_reponse ? 'Merci, vous avez répondu' : (c.texte ? c.texte.split('\n')[0] : g.action);
   return `<div class="annonce ann-info ${c.priorite === 'haute' ? 'ann-important' : ''}" data-type="communique" data-communique="${c.id}" tabindex="0" role="button">
       <span class="ann-puce">${icone(g.icone, 20)}</span>
-      <span class="ann-corps"><small>${c.priorite === 'haute' ? 'Important · ' : ''}${g.sur}</small><b>${esc(c.titre)}</b>${sous ? `<span>${esc(sous)}</span>` : ''}</span>${icone('suivant', 18)}</div>`;
+      <span class="ann-corps"><small>${c.priorite === 'haute' ? '<em class="ann-drapeau">Important</em>' : ''}${g.sur}</small><b>${esc(c.titre)}</b>${sous ? `<span>${esc(sous)}</span>` : ''}</span>${icone('suivant', 18)}</div>`;
 }
 // Une annonce à la fois, en fondu ; défile seule (sauf « réduire les animations »), se met en pause au survol ou au toucher
 function banniereAnnonces(donnees) {
@@ -1387,7 +1388,11 @@ function majRubriquesPartages() {
     const rub = $(`[data-rub=m-${g}]`); if (!rub) return;
     const l = (S.communiquesMembre || []).filter((c) => (c.genre || 'annonce') === g);
     const r = rub.querySelector('.rub-resume'); if (r) r.textContent = resumeCommuniques(l);
-    if (!l.some((c) => !communiqueVu(c.id) || aRepondre(c))) rub.classList.remove('a-du-nouveau');
+    // Badge des nouveautés : mis à jour (ou retiré) dès qu'un communiqué est lu ou qu'un sondage est répondu
+    const nb = l.filter((c) => !communiqueVu(c.id) || aRepondre(c)).length, rep = l.filter(aRepondre).length;
+    const badge = rub.querySelector('.rub-badge');
+    if (badge) { if (nb) badge.textContent = rep ? `${rep} à répondre` : `${nb} nouveau${nb > 1 ? 'x' : ''}`; else badge.remove(); }
+    if (!nb) rub.classList.remove('a-du-nouveau');
   });
 }
 function marquerCommuniqueVu(id) {
@@ -1411,14 +1416,18 @@ function rubriqueCommuniques(liste) {
     const l = tous.filter((c) => (c.genre || 'annonce') === g);
     if (!l.length) return '';
     const nouveaux = l.some((c) => !communiqueVu(c.id) || aRepondre(c));
-    return rubrique(`m-${g}`, `<span class="statut-titre titre-partage">${icone(def.icone, 18)} ${def.rubrique}</span>`, resumeCommuniques(l),
-      `<ul class="liste liste-communiques">${l.map((c) => `<li class="cliquable${c.priorite === 'haute' ? ' cq-important' : ''}${communiqueVu(c.id) ? '' : ' cq-nouveau'}" data-communique="${esc(c.id)}" tabindex="0" role="button">
+    const nb = l.filter((c) => !communiqueVu(c.id) || aRepondre(c)).length;
+    return rubrique(`m-${g}`, def.rubrique, resumeCommuniques(l),
+      `<ul class="liste liste-communiques">${l.map((c) => {
+        const etiquettes = `${c.priorite === 'haute' ? '<span class="puce puce-important">Important</span>' : ''}${communiqueVu(c.id) || aRepondre(c) ? '' : '<span class="puce puce-nouveau">Nouveau</span>'}${etiquetteCommunique(c)}`;
+        return `<li class="cliquable${c.priorite === 'haute' ? ' cq-important' : ''}${communiqueVu(c.id) ? '' : ' cq-nouveau'}" data-communique="${esc(c.id)}" tabindex="0" role="button">
         <span class="cq-date" aria-hidden="true"><b>${Number(c.debut.slice(8, 10))}</b>${MOIS_COURTS[Number(c.debut.slice(5, 7)) - 1]}</span>
-        <div class="corps"><b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}
+        <div class="corps">${etiquettes ? `<span class="cq-etiquettes">${etiquettes}</span>` : ''}<b>${esc(c.titre)}</b>${c.texte ? `<span>${esc(c.texte.split('\n')[0])}</span>` : ''}
           ${g === 'photos' ? `<span class="cq-vignettes">${(c.photos || []).slice(0, 4).map((p) => `<img src="${esc(urlPhotoPartage(p))}" alt="" loading="lazy">`).join('')}</span>` : ''}
           ${g === 'lien' ? `<small>${esc(hoteDe(c.lien))}</small>` : ''}${c.fin ? `<small>${g === 'sondage' ? 'Répondre avant le' : 'Jusqu’au'} ${dateFr(c.fin)}</small>` : ''}</div>
-        <span class="cq-etiquettes">${c.priorite === 'haute' ? '<span class="puce puce-ko">Important</span>' : ''}${etiquetteCommunique(c)}${communiqueVu(c.id) || aRepondre(c) ? '' : '<span class="puce puce-nouveau">Nouveau</span>'}</span></li>`).join('')}</ul>`,
-      { classe: `rub-communiques c-${def.couleur}` + (nouveaux ? ' a-du-nouveau' : ''), forcee: nouveaux });
+        ${icone('suivant', 18)}</li>`; }).join('')}</ul>`,
+      { classe: `rub-communiques c-${def.couleur}` + (nouveaux ? ' a-du-nouveau' : ''), forcee: nouveaux, ic: def.icone,
+        badge: nb ? (l.some(aRepondre) ? `${l.filter(aRepondre).length} à répondre` : `${nb} nouveau${nb > 1 ? 'x' : ''}`) : '' });
   }).join('');
 }
 function feuilleCommunique(c) {

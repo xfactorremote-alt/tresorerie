@@ -1020,7 +1020,7 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .liste-evt li{box-shadow:inset 4px 0 0 var(--evt-accent);padding-left:12px}
 .liste-evt .date-evt{background:var(--evt-accent);color:#fff;box-shadow:none}
 .dans-evt{flex:none;font-size:12.5px;font-weight:700;color:var(--evt-texte);background:var(--evt-fond);border-radius:999px;padding:2px 10px}
-.vue-membre>*,.vm-cote>*{animation:entree var(--d-doux) var(--c-decel-moy) both}
+.vue-membre>*,.vm-cote>*{animation:entree var(--d-doux) var(--c-decel-moy) backwards}
 .vm-suite{animation-delay:80ms}.vm-cote>*:nth-child(2){animation-delay:120ms}.vm-cote>*:nth-child(n+3){animation-delay:160ms}
 @media (prefers-reduced-motion:reduce){.hero-imminent .hero-compte{animation:none}.vue-membre>*,.vm-cote>*{animation:none}}
 
@@ -1403,3 +1403,172 @@ dialog.scanner::backdrop{background:var(--texte)}
 @media (min-width:600px){.details-compte{grid-template-columns:2fr 1fr}}
 .case-compte .texte-erreur{color:var(--erreur)}
 .raccourcis{align-items:center;flex-wrap:wrap}
+
+/* =====================================================================
+   Page des membres (connecté et lien personnel) — Material 3 Expressive
+   Même palette que Theme.kt (Couleurs.M3*) : conteneurs tonals par genre,
+   formes généreuses (16 / 24 / 28), mouvements « ressort » courts, tout
+   coupé par « réduire les animations ». Le reste du site reste en Fluent 2.
+   ===================================================================== */
+:root{
+  --m3-fond:#FFF8F6; --m3-surface:#FFFFFF; --m3-surface-basse:#FFF1EC; --m3-contour:#E7D7D1;
+  --m3-primaire:#C23E10; --m3-sur-primaire:#FFFFFF; --m3-primaire-conteneur:#FFDBCF; --m3-sur-primaire-conteneur:#3B0A00;
+  --m3-bleu:#1B6EA8; --m3-bleu-conteneur:#D3E6FF; --m3-sur-bleu-conteneur:#001D35;
+  --m3-orange:#A3560A; --m3-orange-conteneur:#FFDCC0; --m3-sur-orange-conteneur:#2F1500;
+  --m3-vert:#2C7A4B; --m3-vert-conteneur:#C3EFCF; --m3-sur-vert-conteneur:#00210E;
+  --m3-violet:#6A4FA3; --m3-violet-conteneur:#EADDFF; --m3-sur-violet-conteneur:#22005D;
+  --m3-rose:#A0306B; --m3-rose-conteneur:#FFD8E8; --m3-sur-rose-conteneur:#3E0022;
+  --m3-forme-s:12px; --m3-forme-m:16px; --m3-forme-l:24px; --m3-forme-xl:28px;
+  --m3-ressort:cubic-bezier(.34,1.36,.64,1); --m3-ressort-doux:cubic-bezier(.22,1.18,.36,1); --m3-sortie:cubic-bezier(.3,0,.8,.15);
+  --m3-d-court:220ms; --m3-d-moyen:380ms; --m3-d-long:560ms;
+}
+/* Genre d'une rubrique : couleur forte, conteneur et texte sur conteneur */
+.vue-membre .c-bleu,.vue-membre .rub-programme{--g-fort:var(--m3-bleu);--g-clair:var(--m3-bleu-conteneur);--g-sur:var(--m3-sur-bleu-conteneur)}
+.vue-membre .c-orange{--g-fort:var(--m3-orange);--g-clair:var(--m3-orange-conteneur);--g-sur:var(--m3-sur-orange-conteneur)}
+.vue-membre .c-vert,.vue-membre .rub-a-jour{--g-fort:var(--m3-vert);--g-clair:var(--m3-vert-conteneur);--g-sur:var(--m3-sur-vert-conteneur)}
+.vue-membre .c-violet{--g-fort:var(--m3-violet);--g-clair:var(--m3-violet-conteneur);--g-sur:var(--m3-sur-violet-conteneur)}
+.vue-membre .rub-regler,.vue-membre .rub-participations,.vue-membre .rub-cotisation{--g-fort:var(--m3-primaire);--g-clair:var(--m3-primaire-conteneur);--g-sur:var(--m3-sur-primaire-conteneur)}
+.vue-membre .rubrique-alerte{--g-fort:var(--erreur);--g-clair:var(--erreur-clair);--g-sur:var(--sur-erreur-clair)}
+.vue-membre .rub-anniv{--g-fort:var(--m3-rose);--g-clair:var(--m3-rose-conteneur);--g-sur:var(--m3-sur-rose-conteneur)}
+.vue-membre .rub-a-jour{--g-fort:var(--m3-vert)}
+
+body:has(.accueil-membre),body:has(.espace-membre){background:var(--m3-fond)}
+.accueil-membre,.espace-membre{--fond:var(--m3-fond)}
+
+/* Bannière : sans photo, un aplat vivant aux couleurs de l'association (formes douces en fond) ; avec photo, voile chaud */
+.accueil-membre .banniere,.espace-membre .banniere{border-radius:var(--m3-forme-xl);box-shadow:0 1px 2px rgba(59,10,0,.12),0 8px 24px -6px rgba(194,62,16,.35);
+  background:radial-gradient(60% 70% at 92% 8%,rgba(255,179,148,.55) 0 38%,transparent 39%),
+    radial-gradient(45% 55% at 6% 100%,rgba(255,138,91,.38) 0 45%,transparent 46%),
+    radial-gradient(30% 30% at 70% 85%,rgba(160,48,107,.35) 0 50%,transparent 51%),
+    linear-gradient(135deg,#D44A16 0%,#B3360C 45%,#7E2347 100%)}
+.accueil-membre .banniere.avec-photo,.espace-membre .banniere.avec-photo{background:linear-gradient(180deg,rgba(59,10,0,.18) 0%,rgba(59,10,0,.45) 50%,rgba(40,8,20,.86) 100%),var(--photo) center/cover no-repeat}
+.accueil-membre .banniere-tete b,.espace-membre .banniere-tete b{letter-spacing:-.01em}
+.accueil-membre .banniere-tete b,.espace-membre .banniere-tete b{font-size:22px;font-weight:700}
+.accueil-membre .banniere-tete img,.espace-membre .banniere-tete img{width:48px;height:48px;box-shadow:0 0 0 3px rgba(255,255,255,.9),0 4px 10px rgba(0,0,0,.2)}
+.accueil-membre .banniere-reglages,.espace-membre .banniere-reglages{border-radius:var(--m3-forme-m) !important}
+/* Annonces : verre clair et arrondi, pastille en forme de galet, drapeau « Important » lisible */
+.accueil-membre .annonces,.espace-membre .annonces{border-radius:var(--m3-forme-l);background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32);box-shadow:0 8px 24px -10px rgba(0,0,0,.35)}
+.accueil-membre .annonce,.espace-membre .annonce{box-shadow:none;padding:12px 14px;gap:14px}
+.accueil-membre .ann-puce,.espace-membre .ann-puce{width:48px;height:48px;border-radius:var(--m3-forme-m);background:rgba(255,255,255,.22)}
+.accueil-membre .ann-date,.espace-membre .ann-date{background:#fff;color:var(--evt-accent,var(--m3-primaire))}
+.accueil-membre .ann-alerte .ann-puce,.espace-membre .ann-alerte .ann-puce{background:#FFDAD6;color:var(--erreur)}
+.accueil-membre .ann-attention .ann-puce,.espace-membre .ann-attention .ann-puce{background:var(--m3-orange-conteneur);color:var(--m3-orange)}
+.accueil-membre .ann-info .ann-puce,.espace-membre .ann-info .ann-puce{background:#fff;color:var(--m3-bleu)}
+.accueil-membre .ann-important .ann-puce,.espace-membre .ann-important .ann-puce{background:#FFE08A;color:#5A3A00}
+.ann-drapeau{display:inline-block;font-style:normal;font-size:11px;line-height:16px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+  padding:0 8px;margin-right:6px;border-radius:var(--r-rond);background:#FFE08A;color:#4A2E00;vertical-align:1px}
+.accueil-membre .annonces-points button::before,.accueil-membre .annonces-points button i,.espace-membre .annonces-points button::before,.espace-membre .annonces-points button i{border-radius:var(--r-rond)}
+
+/* Rubriques : cartes douces à grands arrondis, en-tête avec pastille d'icône colorée et badge des nouveautés */
+.vue-membre details.rubrique{border-radius:var(--m3-forme-l);border:0;background:var(--m3-surface);
+  box-shadow:0 1px 2px rgba(59,10,0,.06),0 2px 8px -2px rgba(59,10,0,.08);overflow:hidden;transition:box-shadow var(--m3-d-moyen) var(--m3-ressort-doux)}
+.vue-membre details.rubrique.rub-communiques{background:color-mix(in srgb,var(--g-clair) 38%,#fff);box-shadow:0 1px 2px rgba(59,10,0,.06),0 2px 8px -2px rgba(59,10,0,.08)}
+.vue-membre details.rubrique>summary{border-radius:var(--m3-forme-l);padding:14px 16px;gap:14px;min-height:64px}
+.vue-membre details.rubrique[open]>summary{border-radius:var(--m3-forme-l) var(--m3-forme-l) 0 0}
+@media (hover:hover){.vue-membre details.rubrique>summary:hover{background:color-mix(in srgb,var(--g-clair,var(--surface-2)) 40%,transparent)}}
+.rub-ic{flex:none;width:44px;height:44px;border-radius:var(--m3-forme-m);display:flex;align-items:center;justify-content:center;position:relative;
+  background:var(--g-clair,var(--surface-2));color:var(--g-fort,var(--texte-2));transition:border-radius var(--m3-d-moyen) var(--m3-ressort),transform var(--m3-d-moyen) var(--m3-ressort)}
+.vue-membre details.rubrique[open] .rub-ic{border-radius:50%}
+.vue-membre .rub-titre h2{font-size:18px;line-height:24px;font-weight:700;color:var(--texte)}
+.vue-membre .rub-resume{font-size:13px;color:var(--texte-2)}
+.rub-badge{flex:none;display:inline-flex;align-items:center;min-height:26px;padding:0 10px;border-radius:var(--r-rond);font-size:12.5px;font-weight:700;
+  background:var(--g-fort,var(--m3-primaire));color:#fff;white-space:nowrap;animation:m3-badge var(--m3-d-long) var(--m3-ressort) .25s backwards}
+@keyframes m3-badge{from{transform:scale(.4);opacity:0}}
+.vue-membre details.rubrique>summary>.ic{width:32px;height:32px;padding:6px;border-radius:50%;background:color-mix(in srgb,var(--g-clair,var(--surface-2)) 55%,transparent);color:var(--g-fort,var(--texte-2));
+  transition:transform var(--m3-d-moyen) var(--m3-ressort)}
+.vue-membre .rub-corps{padding:4px 16px 16px;gap:10px}
+@media (min-width:640px){.vue-membre details.rubrique>summary{padding:16px 20px}.vue-membre .rub-corps{padding:4px 20px 20px}}
+/* Ouverture et fermeture qui glissent (navigateurs récents), sinon instantanées */
+.vue-membre{interpolate-size:allow-keywords}
+.vue-membre details.rubrique::details-content{block-size:0;overflow-y:clip;transition:block-size var(--m3-d-moyen) var(--m3-ressort-doux),content-visibility var(--m3-d-moyen) allow-discrete}
+.vue-membre details.rubrique[open]::details-content{block-size:auto}
+.vue-membre details.rubrique[open]>.rub-corps{animation:m3-contenu var(--m3-d-moyen) var(--m3-ressort-doux) backwards}
+@keyframes m3-contenu{from{opacity:0;transform:translateY(-6px)}}
+/* Nouveautés : pastille d'icône qui palpite, halo doux sur la carte */
+.vue-membre .a-du-nouveau .rub-ic::after{content:"";position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;background:var(--g-fort);box-shadow:0 0 0 3px #fff;
+  animation:m3-point 1.6s var(--m3-ressort-doux) .6s 3 backwards}
+@keyframes m3-point{0%{transform:scale(.4)}35%{transform:scale(1.25)}70%,100%{transform:scale(1)}}
+.vue-membre .rub-communiques.a-du-nouveau{animation:m3-halo 2.4s ease-out .5s 1 backwards}
+@keyframes m3-halo{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--g-fort) 45%,transparent)}60%{box-shadow:0 0 0 10px color-mix(in srgb,var(--g-fort) 0%,transparent)}100%{box-shadow:0 1px 2px rgba(59,10,0,.06),0 2px 8px -2px rgba(59,10,0,.08)}}
+
+/* Communiqués : chaque publication est une tuile blanche (liste segmentée), date en galet coloré, étiquettes sur une ligne */
+.vue-membre .liste-communiques{display:flex;flex-direction:column;gap:4px}
+.vue-membre .liste-communiques li{background:var(--m3-surface);border:0;border-radius:var(--m3-forme-s);padding:12px;margin:0;gap:14px;align-items:center;min-height:72px;
+  transition:transform var(--m3-d-court) var(--m3-ressort),box-shadow var(--m3-d-court) linear,border-radius var(--m3-d-moyen) var(--m3-ressort)}
+.vue-membre .liste-communiques li:first-child{border-top-left-radius:var(--m3-forme-l);border-top-right-radius:var(--m3-forme-l)}
+.vue-membre .liste-communiques li:last-child{border-bottom-left-radius:var(--m3-forme-l);border-bottom-right-radius:var(--m3-forme-l)}
+@media (hover:hover){.vue-membre .liste-communiques li:hover{background:#fff;box-shadow:0 2px 10px -2px color-mix(in srgb,var(--g-fort) 35%,transparent);border-radius:var(--m3-forme-l)}}
+.vue-membre .liste-communiques li:active{transform:scale(.985)}
+.vue-membre .liste-communiques li>.ic{color:var(--g-fort);opacity:.7;flex:none}
+.vue-membre .liste-communiques .cq-date{width:52px;height:56px;padding:0;justify-content:center;border-radius:var(--m3-forme-m);background:var(--g-clair);color:var(--g-sur);font-size:11px;letter-spacing:.02em}
+.vue-membre .liste-communiques .cq-date b{font-size:20px;line-height:24px;font-weight:800}
+.vue-membre .liste-communiques .cq-important .cq-date{background:var(--m3-primaire);color:#fff}
+.vue-membre .liste-communiques .corps{display:flex;flex-direction:column;gap:2px}
+.vue-membre .liste-communiques .corps b{font-size:15.5px;line-height:21px;color:var(--texte);white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vue-membre .liste-communiques .cq-nouveau .corps b{color:var(--texte)}
+.vue-membre .cq-etiquettes{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:2px}
+.vue-membre .cq-etiquettes:empty{display:none}
+.vue-membre .cq-etiquettes .puce{min-height:22px;padding:0 9px;font-size:11.5px;line-height:20px;font-weight:700;border-radius:var(--r-rond);border:0}
+.puce-important{background:var(--m3-primaire);color:#fff}
+.vue-membre .puce-nouveau{background:transparent;color:var(--g-fort);padding-left:14px !important;position:relative}
+.vue-membre .puce-nouveau::before{content:"";position:absolute;left:3px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:currentColor;animation:m3-point 1.6s var(--m3-ressort-doux) .8s 3 backwards}
+.vue-membre .puce-a-repondre{background:var(--m3-orange-conteneur);color:var(--m3-sur-orange-conteneur)}
+.vue-membre .cq-etiquettes .puce-ok{background:var(--m3-vert-conteneur);color:var(--m3-sur-vert-conteneur)}
+.vue-membre .cq-etiquettes .puce-neutre{background:var(--g-clair);color:var(--g-sur)}
+/* Un communiqué pas encore lu : liseré de sa couleur et reflet qui passe une fois */
+.vue-membre .liste-communiques .cq-nouveau{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--g-fort) 55%,transparent);position:relative;overflow:hidden}
+.vue-membre .liste-communiques .cq-nouveau::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(105deg,transparent 30%,color-mix(in srgb,var(--g-clair) 85%,#fff) 50%,transparent 70%);transform:translateX(-110%);animation:m3-reflet 1.4s ease-in-out .9s 1 backwards}
+@keyframes m3-reflet{to{transform:translateX(110%)}}
+.vue-membre .liste-communiques .cq-nouveau .cq-date{animation:m3-galet var(--m3-d-long) var(--m3-ressort) .35s backwards}
+@keyframes m3-galet{from{transform:scale(.55) rotate(-12deg);border-radius:50%}}
+.vue-membre .cq-vignettes img{width:48px;height:48px;border-radius:var(--m3-forme-s)}
+
+/* Au programme : rendez-vous en tuiles de leur couleur, date en galet */
+.vue-membre .liste-evt{display:flex;flex-direction:column;gap:4px}
+.vue-membre .liste-evt li{border-radius:var(--m3-forme-s);background:color-mix(in srgb,var(--evt-fond,var(--m3-bleu-conteneur)) 45%,#fff);border:0;padding:12px;margin:0;box-shadow:none;min-height:72px;
+  transition:transform var(--m3-d-court) var(--m3-ressort),border-radius var(--m3-d-moyen) var(--m3-ressort)}
+.vue-membre .liste-evt li:first-child{border-top-left-radius:var(--m3-forme-l);border-top-right-radius:var(--m3-forme-l)}
+.vue-membre .liste-evt li:last-child{border-bottom-left-radius:var(--m3-forme-l);border-bottom-right-radius:var(--m3-forme-l)}
+.vue-membre .liste-evt li:active{transform:scale(.985)}
+.vue-membre .liste-evt .date-evt{border-radius:var(--m3-forme-m);width:52px;min-height:56px}
+.vue-membre .liste-evt .dans-evt{border-radius:var(--r-rond)}
+.vue-membre .filtre-planning #b-periode{border-radius:var(--r-rond);padding:0 14px;background:var(--m3-bleu-conteneur);color:var(--m3-sur-bleu-conteneur);border-color:transparent;font-weight:600}
+.vue-membre .mois-planning{font-size:14px;color:var(--m3-bleu)}
+
+/* Ma cotisation : état en grand, mois en pilules */
+.vue-membre .rub-cotisation .rub-corps>p:first-child b{font-size:18px;color:var(--g-fort)}
+.vue-membre .grille-periodes{gap:4px;max-width:none}
+.vue-membre .case-p{height:26px;border-radius:var(--r-rond)}
+.vue-membre .case-p.p-regle{background:var(--m3-vert);color:#fff}
+.vue-membre .legende .case-p{width:14px;height:14px}
+/* Participations, anniversaires, versements : lignes en tuiles douces */
+.vue-membre .rub-corps>.liste>li{border-radius:var(--m3-forme-s);background:var(--m3-surface-basse);border:0;padding:10px 12px;margin:0 0 4px}
+.vue-membre .rub-corps>.liste>li:last-child{margin-bottom:0}
+.vue-membre .rub-regler .texte-libre{background:var(--m3-primaire-conteneur);color:var(--m3-sur-primaire-conteneur);border-radius:var(--m3-forme-m);padding:12px 14px}
+.vue-membre .puce{border-radius:var(--r-rond)}
+
+/* Arrivée de la page : les cartes montent en cascade avec un léger rebond (backwards : rien ne reste transformé) */
+.vue-membre>*,.vm-suite>*,.vm-cote>*{animation:m3-arrivee var(--m3-d-long) var(--m3-ressort-doux) backwards}
+.vm-suite>*:nth-child(2){animation-delay:60ms}.vm-suite>*:nth-child(3){animation-delay:120ms}.vm-suite>*:nth-child(4){animation-delay:180ms}.vm-suite>*:nth-child(n+5){animation-delay:240ms}
+.vm-cote>*:nth-child(1){animation-delay:140ms}.vm-cote>*:nth-child(2){animation-delay:200ms}.vm-cote>*:nth-child(n+3){animation-delay:260ms}
+@keyframes m3-arrivee{from{opacity:0;transform:translateY(18px) scale(.98)}}
+.accueil-membre .banniere,.espace-membre .banniere{animation:m3-banniere var(--m3-d-long) var(--m3-ressort-doux) backwards}
+@keyframes m3-banniere{from{opacity:0;transform:scale(.97);border-radius:48px}}
+.sans-anim .vue-membre *,.sans-anim .banniere{animation:none !important}
+@media (prefers-reduced-motion:reduce){
+  .vue-membre *,.accueil-membre .banniere,.espace-membre .banniere,.rub-badge{animation:none !important;transition:none !important}
+  .vue-membre details.rubrique::details-content{transition:none}
+}
+/* Étiquettes : pilules à leur taille, jamais étirées (l'ancienne règle des résumés sur deux lignes ne s'applique pas) */
+.vue-membre .liste-communiques .corps .cq-etiquettes{display:flex;-webkit-line-clamp:unset;overflow:visible;white-space:nowrap}
+.vue-membre .liste-communiques .corps .cq-etiquettes .puce{display:inline-flex;align-items:center;flex:none;width:auto;white-space:nowrap;overflow:visible;-webkit-line-clamp:unset}
+.vue-membre .liste-communiques li.cliquable{background:#fff;margin:0}
+.vue-membre .liste-communiques .corps>span:not(.cq-etiquettes):not(.cq-vignettes){color:var(--texte-2);font-size:13.5px;line-height:19px}
+.vue-membre .liste-communiques .corps .cq-etiquettes .puce-important{background:var(--m3-primaire);color:#fff}
+.vue-membre .liste-communiques .corps .cq-etiquettes .puce-nouveau{color:var(--g-fort);background:transparent}
+.vue-membre .liste-communiques .corps .cq-etiquettes .puce-a-repondre{color:var(--m3-sur-orange-conteneur)}
+:root:has(.accueil-membre),:root:has(.espace-membre){--fond:var(--m3-fond);--volet:#FBEFEA}
+.vue-membre .grille-periodes{grid-template-columns:repeat(6,minmax(0,1fr)) !important}
+.vue-membre .rub-cotisation.rub-a-jour{--g-fort:var(--m3-vert);--g-clair:var(--m3-vert-conteneur);--g-sur:var(--m3-sur-vert-conteneur)}
+.vue-membre .rub-cotisation.rubrique-alerte{--g-fort:var(--erreur);--g-clair:var(--erreur-clair);--g-sur:var(--sur-erreur-clair)}

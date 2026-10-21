@@ -78,6 +78,12 @@
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |
 
+## 0.42.0 — Page des membres en Material 3 Expressive (21 octobre 2026)
+
+- Constat : les teintes des rubriques (`--g-fort`, `--g-clair`) n'étaient définies nulle part (toutes les rubriques retombaient sur la même couleur), étiquettes empilées à droite, rien ne signalait un nouveau communiqué.
+- Site (`.vue-membre`) et Android (`MembreM3.kt`) : palette et formes M3 Expressive, rubriques teintées avec pastille d'icône et badge des nouveautés, tuiles segmentées, étiquettes sur une ligne, bannière vivante sans photo, annonces en verre clair avec drapeau « Important », arrivée en cascade, galet de date qui éclot, reflet et liseré sur un non-lu ; tout respecte « réduire les animations » ; animations d'entrée passées de `both` à `backwards` (règle 10).
+- Contrôles : 33 tests d'audit + VersionTest ; captures Android Robolectric/Roborazzi (téléphone, tablette) comparées au site ; `membre-lien.mjs` (page du lien, badge retiré à la lecture, sondage « Répondu », aucune animation avec réduction) ; a7 312 vues 0 problème ; a5 144 vues sans erreur.
+
 ## 0.41.0 — Comptes existants reliés, anniversaires sans profession (21 octobre 2026)
 
 - Constat en production (journaux) : création refusée pour une adresse déjà inscrite (« email_exists ») — compte ouvert seul le 7 octobre, sans profil ; le message renvoyait vers un rattachement impossible. Correction : `creer-comptes` relie ce compte à la fiche (fonction choisie, mot de passe gardé, adresse confirmée, audit `RELIER_COMPTE`) ; refus seulement si l'adresse appartient au compte d'un autre membre. En-têtes CORS demandés acceptés. Un compte créé normalement le même jour l'a bien été (profil Bureau, mot de passe provisoire).

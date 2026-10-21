@@ -49,14 +49,14 @@ import kotlinx.serialization.json.jsonPrimitive
 // (GENRES_COMMUNIQUE, libelleLien, calculResultats, blocResultats, rendreSondage, visionneuse).
 // =====================================================================
 data class GenreCommunique(val libelle: String, val sur: String, val action: String, val icone: ImageVector,
-                           val rubrique: String, val fort: Color, val clair: Color)
+                           val rubrique: String, val fort: Color, val clair: Color, val teinte: Teinte)
 
 // Une rubrique par genre sur la page des membres, avec sa couleur (mêmes couleurs que les groupes des Paramètres et le site)
 val GENRES_COMMUNIQUE = linkedMapOf(
-    "annonce" to GenreCommunique("Annonce", "Communiqué", "", Icons.Outlined.Campaign, "Communiqués", Couleurs.Bleu, Color(0xFFE3F1FB)),
-    "sondage" to GenreCommunique("Sondage", "Votre avis", "Touchez pour répondre", Icons.Outlined.Poll, "Sondages", Couleurs.Orange, Color(0xFFFFEDE5)),
-    "photos" to GenreCommunique("Photos", "Photos", "Touchez pour voir", Icons.Outlined.Image, "Photos", Couleurs.Vert, Color(0xFFE4F5E8)),
-    "lien" to GenreCommunique("Lien", "À voir", "Touchez pour ouvrir", Icons.Outlined.Link, "Liens", Color(0xFF7048B8), Color(0xFFEFE9FA)),
+    "annonce" to GenreCommunique("Annonce", "Communiqué", "", Icons.Outlined.Campaign, "Communiqués", Couleurs.M3Bleu, Couleurs.M3BleuConteneur, Teintes.Bleu),
+    "sondage" to GenreCommunique("Sondage", "Votre avis", "Touchez pour répondre", Icons.Outlined.Poll, "Sondages", Couleurs.M3Orange, Couleurs.M3OrangeConteneur, Teintes.Orange),
+    "photos" to GenreCommunique("Photos", "Photos", "Touchez pour voir", Icons.Outlined.Image, "Photos", Couleurs.M3Vert, Couleurs.M3VertConteneur, Teintes.Vert),
+    "lien" to GenreCommunique("Lien", "À voir", "Touchez pour ouvrir", Icons.Outlined.Link, "Liens", Couleurs.M3Violet, Couleurs.M3VioletConteneur, Teintes.Violet),
 )
 fun genreDe(c: Communique) = GENRES_COMMUNIQUE[c.genre] ?: GENRES_COMMUNIQUE.getValue("annonce")
 

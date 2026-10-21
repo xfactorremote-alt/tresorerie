@@ -46,6 +46,15 @@ dates à taper. Ces causes racines sont corrigées au niveau du thème et des co
 - Rendu Android sur un appareil réel ou un émulateur (aucun dans l'environnement) : formes, boutons et calendrier vérifiés à la compilation et dans le bytecode seulement.
 - Lecteurs d'écran (TalkBack, NVDA), mode sombre (le produit est en thème clair uniquement : `color-scheme: light`).
 
+## Page des membres — 21 octobre 2026 (version 0.42.0)
+
+| Constat (retour utilisateur) | Correction |
+|---|---|
+| Couleurs des rubriques approximatives : variables de teinte jamais définies | Palette M3 Expressive par genre, mêmes jetons des deux côtés |
+| « Important » et « Nouveau » en bulles empilées à droite, peu lisibles | Pilules sur une ligne sous le titre ; Important rempli, Nouveau en point coloré |
+| Un nouveau communiqué passe inaperçu | Badge « N nouveaux » sur la rubrique, point qui palpite, liseré et reflet sur la tuile, date qui éclot |
+| Transitions approximatives, animations d'entrée en `both` | Mouvements ressort courts, `backwards`, ouverture des rubriques qui glisse |
+
 ## Choix des colonnes exportées — 18 octobre 2026 (version 0.39.0)
 
 | Constat (retour utilisateur) | Correction |
