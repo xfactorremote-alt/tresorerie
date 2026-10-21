@@ -79,7 +79,9 @@ Les tailles littérales d'Android (331 occurrences) suivent déjà cette échell
 | Formes | `--m3-forme-s/m/l/xl` 12/16/24/28 | `Formes.M3S/M/L/XL` | Bannière 28, rubrique 24, galet de date 16, tuiles segmentées 24 aux extrémités et 12 aux jointures, pilules rondes |
 | Rubrique | `.vue-membre details.rubrique` + `.rub-ic` + `.rub-badge` | `RubriqueMembre` | Pastille d'icône teintée (galet → rond à l'ouverture), titre 18 gras, badge « N nouveaux » / « N à répondre » de la couleur forte, chevron dans un rond teinté |
 | Communiqué | `.liste-communiques li` | `TuileCommunique` | Tuile blanche, date en galet (rempli orange si Important), étiquettes sur une ligne sous le titre (Important rempli, • Nouveau, À répondre, Répondu, N photos), chevron ; non lu : liseré 2 px et reflet une fois |
-| Mouvement | `--m3-ressort`, `m3-arrivee`, `m3-galet`, `m3-reflet`, `m3-point` | `ressort()`, `ArriveeM3`, `Animatable` | Courts (220–560 ms), en `backwards`, coupés par « réduire les animations » |
+| Mouvement | `m3-arrivee` 320 ms, `m3-galet`, `m3-reflet`, `m3-point` ; ouverture des rubriques par `brancherRubriques` (Web Animations sur la hauteur) | `glisse()` 280 ms, `ArriveeM3`, `DejaJoue` | Ouvrir / fermer : 280 ms `cubic-bezier(.2,0,0,1)`, jamais de rebond sur une hauteur ; rebond réservé aux petits éléments (badge, galet) ; joué une fois ; coupé par « réduire les animations » |
+| Fond | `--m3-fond` #FFFFFF, `--m3-contour` #E7E7E9 | `Couleurs.M3Fond`, `M3Contour` | Page blanche neutre, cartes blanches cernées d'un filet gris ; la couleur vient des rubriques |
+| Bannière photo | `.banniere.avec-photo` | `Banniere(expressif = true)` | Hauteur 80 % de la largeur (320–440, 420 au-delà de 700), cadrage 38 %, voile neutre en haut et en bas |
 
 ## 5. Modèles d'écran
 

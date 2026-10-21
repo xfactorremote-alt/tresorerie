@@ -51,6 +51,15 @@ import kotlinx.serialization.json.JsonObject
 /** Ressorts de la page des membres (--m3-ressort, --m3-ressort-doux du site). */
 internal fun <T> ressort() = spring<T>(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow)
 internal fun <T> ressortDoux() = spring<T>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)
+/** Ouverture, fermeture, chevron : 280 ms décélérés, sans rebond (même courbe que le site : cubic-bezier(.2,0,0,1)). */
+private val Decelere = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)
+internal fun <T> glisse() = tween<T>(280, easing = Decelere)
+
+/** Animations d'arrivée et de nouveauté jouées une seule fois par ouverture de l'application (pas à chaque défilement). */
+object DejaJoue {
+    private val cles = mutableSetOf<String>()
+    fun premiereFois(cle: String): Boolean = cles.add(cle)
+}
 
 /** Forme d'une tuile dans une liste segmentée : extrémités arrondies à 24, jointures à 12 (comme le site). */
 fun formeSegment(index: Int, total: Int): RoundedCornerShape {
@@ -64,21 +73,23 @@ fun formeSegment(index: Int, total: Int): RoundedCornerShape {
 fun RubriqueMembre(id: String, titre: String, resume: String, teinte: Teinte, icone: ImageVector, ouverteParDefaut: Boolean = true,
                    forcee: Boolean = false, badge: String? = null, fondTeinte: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val ouverte = forcee || (EtatAccueil.ouvertes[id] ?: ouverteParDefaut)
-    val rotation by animateFloatAsState(if (ouverte) 180f else 0f, ressort(), label = "chevron")
+    val rotation by animateFloatAsState(if (ouverte) 180f else 0f, glisse(), label = "chevron")
     // La pastille d'icône passe du galet (16) au rond quand la rubrique est ouverte
-    val coin by animateDpAsState(if (ouverte) 22.dp else 16.dp, ressort(), label = "forme")
+    val coin by animateDpAsState(if (ouverte) 22.dp else 16.dp, glisse(), label = "forme")
     // Halo une fois à l'arrivée d'une nouveauté, point qui palpite sur la pastille
     val halo = remember { Animatable(0f) }
     val point = remember { Animatable(if (badge != null) 0.4f else 1f) }
     LaunchedEffect(badge != null) {
-        if (badge != null) {
+        if (badge != null && DejaJoue.premiereFois("halo:$id")) {
             launch { delay(500); halo.animateTo(1f, tween(900)); halo.snapTo(0f) }
             launch { repeat(3) { delay(600); point.snapTo(0.4f); point.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 300f)) } }
         }
     }
-    val fond = if (fondTeinte) lerp(Color.White, teinte.conteneur, 0.38f) else Color.White
+    // Carte blanche cernée d'un filet gris très doux (rubriques de partage : légère teinte de leur couleur)
+    val fond = if (fondTeinte) lerp(Color.White, teinte.conteneur, 0.30f) else Color.White
     Surface(color = fond, shape = Formes.M3L, shadowElevation = 1.dp,
-        border = if (halo.value > 0f) BorderStroke((2 + 8 * halo.value).dp, teinte.fort.copy(alpha = 0.45f * (1f - halo.value))) else null) {
+        border = if (halo.value > 0f) BorderStroke((2 + 8 * halo.value).dp, teinte.fort.copy(alpha = 0.45f * (1f - halo.value)))
+            else BorderStroke(1.dp, if (fondTeinte) lerp(Color.White, teinte.conteneur, 0.7f) else Couleurs.M3Contour)) {
         Column(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().clip(Formes.M3L).clickable(onClickLabel = if (ouverte) "Replier" else "Déplier") { EtatAccueil.ouvertes[id] = !ouverte }
                 .padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -94,8 +105,8 @@ fun RubriqueMembre(id: String, titre: String, resume: String, teinte: Teinte, ic
                     if (!ouverte && resume.isNotBlank()) Text(resume, fontSize = 13.sp, color = Couleurs.TexteFort2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (badge != null) {
-                    val entree = remember { Animatable(0.4f) }
-                    LaunchedEffect(Unit) { delay(250); entree.animateTo(1f, ressort()) }
+                    val entree = remember { Animatable(if (DejaJoue.premiereFois("badge:$id")) 0.4f else 1f) }
+                    LaunchedEffect(Unit) { if (entree.value < 1f) { delay(250); entree.animateTo(1f, ressort()) } }
                     Text(badge, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1,
                         modifier = Modifier.graphicsLayer { scaleX = entree.value; scaleY = entree.value; alpha = entree.value.coerceIn(0f, 1f) }
                             .background(teinte.fort, Formes.Rond).padding(horizontal = 10.dp, vertical = 3.dp))
@@ -104,7 +115,7 @@ fun RubriqueMembre(id: String, titre: String, resume: String, teinte: Teinte, ic
                     Icon(Icons.Outlined.ExpandMore, if (ouverte) "Replier" else "Déplier", tint = teinte.fort, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation })
                 }
             }
-            AnimatedVisibility(ouverte, enter = expandVertically(ressortDoux()) + fadeIn(tween(220)), exit = shrinkVertically(tween(200)) + fadeOut(tween(150))) {
+            AnimatedVisibility(ouverte, enter = expandVertically(glisse()) + fadeIn(tween(180)), exit = shrinkVertically(glisse()) + fadeOut(tween(180, delayMillis = 100))) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp), content = content)
             }
         }
@@ -135,10 +146,11 @@ fun TuileCommunique(c: Communique, g: GenreCommunique, index: Int, total: Int, n
     val forme = formeSegment(index, total)
     val t = g.teinte
     // Date qui « éclot » (galet qui tourne et grossit) et reflet qui passe une fois sur un communiqué pas encore lu
-    val eclosion = remember { Animatable(if (nonLu) 0.55f else 1f) }
+    val premiere = remember(c.id) { nonLu && DejaJoue.premiereFois("cq:${c.id}") }
+    val eclosion = remember { Animatable(if (premiere) 0.55f else 1f) }
     val reflet = remember { Animatable(-0.4f) }
-    LaunchedEffect(nonLu) {
-        if (nonLu) {
+    LaunchedEffect(premiere) {
+        if (premiere) {
             launch { delay(350); eclosion.animateTo(1f, ressort()) }
             launch { delay(900); reflet.animateTo(1.4f, tween(1400)) }
         }
@@ -209,9 +221,10 @@ fun TuileRendezVous(p: Projet, index: Int, total: Int, onClick: () -> Unit) {
 
 /** Entrée en cascade de la page des membres : montée avec léger rebond (comme m3-arrivee du site). */
 @Composable
-fun ArriveeM3(rang: Int, content: @Composable () -> Unit) {
-    val p = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { delay(rang * 60L); p.animateTo(1f, ressortDoux()) }
+fun ArriveeM3(rang: Int, cle: String = "arrivee:$rang", content: @Composable () -> Unit) {
+    // Une seule fois à l'ouverture : en revenant sur une carte en défilant, elle est déjà en place (pas de saccade)
+    val p = remember { Animatable(if (DejaJoue.premiereFois(cle)) 0f else 1f) }
+    LaunchedEffect(Unit) { if (p.value < 1f) { delay(rang * 50L); p.animateTo(1f, tween(320, easing = Decelere)) } }
     Box(Modifier.graphicsLayer { alpha = p.value.coerceIn(0f, 1f); translationY = (1f - p.value) * 18.dp.toPx(); scaleX = 0.98f + 0.02f * p.value; scaleY = scaleX }) { content() }
 }
 

@@ -983,6 +983,24 @@ function brancherRubriques() {
     const tout = $('#b-rubriques'); if (tout) tout.textContent = [...document.querySelectorAll('details[data-rub]')].every((x) => x.open) ? 'Tout replier' : 'Tout déplier';
   };
   document.querySelectorAll('details[data-rub]').forEach((x) => x.addEventListener('toggle', enregistrer));
+  // Ouverture et fermeture qui glissent : la hauteur est animée image par image (Web Animations, tous navigateurs),
+  // le contenu reste visible pendant la fermeture ; rien si « réduire les animations » ; un appui pendant l'animation est ignoré
+  const doux = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('details[data-rub]').forEach((d) => {
+    const s = d.querySelector(':scope>summary');
+    if (!s || doux || !d.animate) return;
+    s.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (d.enAnimation) return;
+      const ouvrir = !d.open, debut = d.offsetHeight;
+      if (ouvrir) d.open = true; else d.classList.add('se-ferme');
+      const fin = ouvrir ? d.offsetHeight : s.offsetHeight + (d.offsetHeight - d.clientHeight);
+      d.style.overflow = 'hidden'; d.enAnimation = true;
+      const a = d.animate({ height: [`${debut}px`, `${fin}px`] }, { duration: 280, easing: 'cubic-bezier(.2,0,0,1)' });
+      const finir = () => { if (!ouvrir) d.open = false; d.classList.remove('se-ferme'); d.style.overflow = ''; d.enAnimation = false; };
+      a.onfinish = finir; a.oncancel = finir;
+    });
+  });
   $('#b-rubriques')?.addEventListener('click', () => {
     const toutes = [...document.querySelectorAll('details[data-rub]')]; const ouvrir = !toutes.every((x) => x.open);
     toutes.forEach((x) => { x.open = ouvrir; }); enregistrer();

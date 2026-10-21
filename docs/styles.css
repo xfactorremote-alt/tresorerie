@@ -1478,10 +1478,6 @@ body:has(.accueil-membre),body:has(.espace-membre){background:var(--m3-fond)}
   transition:transform var(--m3-d-moyen) var(--m3-ressort)}
 .vue-membre .rub-corps{padding:4px 16px 16px;gap:10px}
 @media (min-width:640px){.vue-membre details.rubrique>summary{padding:16px 20px}.vue-membre .rub-corps{padding:4px 20px 20px}}
-/* Ouverture et fermeture qui glissent (navigateurs récents), sinon instantanées */
-.vue-membre{interpolate-size:allow-keywords}
-.vue-membre details.rubrique::details-content{block-size:0;overflow-y:clip;transition:block-size var(--m3-d-moyen) var(--m3-ressort-doux),content-visibility var(--m3-d-moyen) allow-discrete}
-.vue-membre details.rubrique[open]::details-content{block-size:auto}
 .vue-membre details.rubrique[open]>.rub-corps{animation:m3-contenu var(--m3-d-moyen) var(--m3-ressort-doux) backwards}
 @keyframes m3-contenu{from{opacity:0;transform:translateY(-6px)}}
 /* Nouveautés : pastille d'icône qui palpite, halo doux sur la carte */
@@ -1558,7 +1554,6 @@ body:has(.accueil-membre),body:has(.espace-membre){background:var(--m3-fond)}
 .sans-anim .vue-membre *,.sans-anim .banniere{animation:none !important}
 @media (prefers-reduced-motion:reduce){
   .vue-membre *,.accueil-membre .banniere,.espace-membre .banniere,.rub-badge{animation:none !important;transition:none !important}
-  .vue-membre details.rubrique::details-content{transition:none}
 }
 /* Étiquettes : pilules à leur taille, jamais étirées (l'ancienne règle des résumés sur deux lignes ne s'applique pas) */
 .vue-membre .liste-communiques .corps .cq-etiquettes{display:flex;-webkit-line-clamp:unset;overflow:visible;white-space:nowrap}
@@ -1572,3 +1567,35 @@ body:has(.accueil-membre),body:has(.espace-membre){background:var(--m3-fond)}
 .vue-membre .grille-periodes{grid-template-columns:repeat(6,minmax(0,1fr)) !important}
 .vue-membre .rub-cotisation.rub-a-jour{--g-fort:var(--m3-vert);--g-clair:var(--m3-vert-conteneur);--g-sur:var(--m3-sur-vert-conteneur)}
 .vue-membre .rub-cotisation.rubrique-alerte{--g-fort:var(--erreur);--g-clair:var(--erreur-clair);--g-sur:var(--sur-erreur-clair)}
+
+/* ---------- 0.43.0 : fond blanc neutre, ouvertures fluides, bannière photo plus grande ---------- */
+/* Fond blanc et neutre : les couleurs des rubriques ressortent ; cartes blanches cernées d'un filet gris très doux */
+:root{--m3-fond:#FFFFFF;--m3-surface-basse:#F4F4F5;--m3-contour:#E7E7E9}
+:root:has(.accueil-membre),:root:has(.espace-membre){--fond:#FFFFFF;--volet:#F7F7F8}
+.vue-membre details.rubrique{border:1px solid var(--m3-contour);box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 14px -6px rgba(0,0,0,.08);transition:none}
+.vue-membre details.rubrique.rub-communiques{background:color-mix(in srgb,var(--g-clair) 30%,#fff);border-color:color-mix(in srgb,var(--g-clair) 70%,#fff);box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 14px -6px rgba(0,0,0,.08)}
+.vue-membre .rub-corps>.liste>li{background:var(--m3-surface-basse)}
+.vue-membre .liste-communiques li.cliquable{box-shadow:0 1px 1px rgba(0,0,0,.03)}
+/* Ouverture et fermeture : une seule animation, la hauteur, en 280 ms décélérée (sans rebond ni contenu animé à part) */
+.vue-membre details.rubrique>.rub-corps,.vue-membre details.rubrique[open]>.rub-corps,.vue-membre details.rubrique[open] .rub-corps{animation:none}
+.vue-membre details.rubrique>summary>.ic{transition:transform 280ms cubic-bezier(.2,0,0,1)}
+.rub-ic{transition:border-radius 280ms cubic-bezier(.2,0,0,1)}
+.vue-membre details.rubrique>summary{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+/* Arrivée plus courte et sans rebond (la page est lisible tout de suite) */
+.vue-membre>*,.vm-suite>*,.vm-cote>*{animation:m3-arrivee 320ms cubic-bezier(.2,0,0,1) backwards}
+.accueil-membre .banniere,.espace-membre .banniere{animation:m3-arrivee 320ms cubic-bezier(.2,0,0,1) backwards}
+/* Bannière avec photo : plus haute et cadrée sur les visages, voile neutre seulement en haut (titre) et en bas (annonces) */
+.accueil-membre .banniere.avec-photo,.espace-membre .banniere.avec-photo{min-height:clamp(320px,80vw,440px);
+  background:linear-gradient(180deg,rgba(0,0,0,.5) 0%,rgba(0,0,0,0) 30%,rgba(0,0,0,0) 52%,rgba(0,0,0,.62) 100%),var(--photo) center 38%/cover no-repeat}
+@media (min-width:700px){.accueil-membre .banniere.avec-photo,.espace-membre .banniere.avec-photo{min-height:420px}}
+.accueil-membre .banniere.avec-photo .annonces,.espace-membre .banniere.avec-photo .annonces{background:rgba(20,20,22,.38)}
+/* Sans photo : pas de grand vide, la bannière prend la hauteur de son contenu */
+.accueil-membre .banniere:not(.avec-photo),.espace-membre .banniere:not(.avec-photo){min-height:0;gap:20px}
+
+/* Fermeture en cours (animation de hauteur pilotée par brancherRubriques) : chevron et pastille reviennent aussitôt */
+details.rubrique.se-ferme>summary>.ic{transform:none !important}
+.vue-membre details.rubrique.se-ferme .rub-ic{border-radius:var(--m3-forme-m)}
+.accueil-membre .banniere,.espace-membre .banniere{box-shadow:0 1px 2px rgba(0,0,0,.08),0 10px 28px -12px rgba(0,0,0,.3)}
+.vue-membre .rub-corps>.liste-communiques>li.cliquable{background:#fff}
+.vue-membre .rub-corps>.liste-evt>li{background:color-mix(in srgb,var(--evt-fond,var(--m3-bleu-conteneur)) 45%,#fff)}
+.vue-membre .rub-corps>.liste-communiques>li.cq-nouveau{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--g-fort) 55%,transparent)}

@@ -78,6 +78,14 @@
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |
 
+## 0.43.0 — Fluidité, fond blanc neutre, bannière photo (21 octobre 2026)
+
+- Mesure image par image de l'ouverture d'une rubrique (`fluidite.mjs`) : avant, la hauteur sautait d'un coup (fermeture retardée de 280 ms puis fermeture sèche) ; après, courbe continue 215 → 153 → 108 → 88 → 79 → 74 px, aucune image au-delà de 21 ms (60 images/s), dans les deux sens.
+- Fond de page blanc neutre (plus de teinte orangée), cartes blanches cernées d'un filet gris doux ; ombre de bannière neutre.
+- Bannière avec photo plus haute et cadrée sur les visages, voile seulement en haut et en bas ; sans photo, plus de grand vide.
+- Android : `glisse()` 280 ms pour ouvrir, fermer et tourner le chevron ; arrivées et effets de nouveauté joués une fois (`DejaJoue`), plus de relance au défilement ; captures avec et sans photo.
+- Contrôles : 33 tests d'audit + VersionTest ; a7 312 vues 0 problème ; a5 144 vues ; `membre-lien.mjs` ; captures Android comparées au site.
+
 ## 0.42.0 — Page des membres en Material 3 Expressive (21 octobre 2026)
 
 - Constat : les teintes des rubriques (`--g-fort`, `--g-clair`) n'étaient définies nulle part (toutes les rubriques retombaient sur la même couleur), étiquettes empilées à droite, rien ne signalait un nouveau communiqué.

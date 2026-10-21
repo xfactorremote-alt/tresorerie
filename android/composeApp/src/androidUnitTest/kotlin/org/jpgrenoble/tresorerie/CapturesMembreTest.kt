@@ -20,13 +20,15 @@ import org.robolectric.annotation.GraphicsMode
 class CapturesMembreTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun capturer(nom: String) {
+    private fun capturer(nom: String, photo: Boolean = false) {
         assumeTrue(System.getenv("CAPTURES") == "1")
         ContexteApp.contexte = ApplicationProvider.getApplicationContext()
         // Démonstration : le dépôt lit les données fictives (Demo) au lieu de la base
         Repo.demo = true
         val p = Demo.connecter("adherent@demo.jp", Demo.MOT_DE_PASSE)
         Repo.profilDemo.value = p
+        // Photo de bannière : celle de la démonstration du site (docs/demo/photo2.jpg)
+        Repo.banniere.value = if (photo) java.io.File("../../docs/demo/photo2.jpg").readBytes() else null
         val d = Donnees(p, Demo.organisation, emptyList(), Demo.categories, Demo.membres.toList(), Demo.droitsDe(p), Demo.roles.toList())
         compose.setContent { Theme { EcranAdherent(d) } }
         compose.mainClock.advanceTimeBy(4000)
@@ -36,6 +38,9 @@ class CapturesMembreTest {
 
     @Config(sdk = [34], qualifiers = "w411dp-h2400dp-xxhdpi")
     @Test fun pageMembreTelephone() = capturer("membre-telephone")
+
+    @Config(sdk = [34], qualifiers = "w411dp-h2400dp-xxhdpi")
+    @Test fun pageMembreTelephonePhoto() = capturer("membre-telephone-photo", photo = true)
 
     @Config(sdk = [34], qualifiers = "w1100dp-h1400dp-mdpi")
     @Test fun pageMembreTablette() = capturer("membre-tablette")

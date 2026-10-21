@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -328,7 +329,12 @@ internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: ((
     val octets by Repo.banniere.collectAsState()
     val photo = remember(octets) { octets?.let { imageDepuisOctets(it) } }
     val forme = if (expressif) Formes.M3XL else Formes.XGrand
-    Box(Modifier.fillMaxWidth().heightIn(min = if (compacte) 0.dp else 200.dp).clip(forme)
+    // Page des membres avec photo : bannière plus haute (80 % de la largeur, entre 320 et 440, 420 sur grand écran),
+    // cadrée sur les visages, annonces en bas ; sans photo : hauteur de son contenu (comme le site)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val hauteur = when { compacte -> 0.dp; expressif && photo != null -> if (maxWidth >= 700.dp) 420.dp else (maxWidth * 0.8f).coerceIn(320.dp, 440.dp)
+        expressif -> 0.dp; else -> 200.dp }
+    Box(Modifier.fillMaxWidth().heightIn(min = hauteur).then(if (expressif) Modifier.shadow(8.dp, forme, ambientColor = Color.Black.copy(alpha = 0.2f), spotColor = Color.Black.copy(alpha = 0.3f)) else Modifier).clip(forme)
         .background(if (expressif) FondBanniereMembre else Brush.radialGradient(listOf(Couleurs.Texte2, Color(0xFF2B2826), Couleurs.Texte), center = Offset(2000f, 0f), radius = 2200f))) {
         // Formes douces en fond (comme les dégradés ronds du site)
         if (expressif && photo == null) {
@@ -336,10 +342,12 @@ internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: ((
             Box(Modifier.align(Alignment.BottomStart).offset(x = (-40).dp, y = 60.dp).size(170.dp).background(Color(0x61FF8A5B), CircleShape))
         }
         if (photo != null) {
-            Image(photo, null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
-            Box(Modifier.matchParentSize().background(Brush.verticalGradient(if (expressif) listOf(Color(0x2E3B0A00), Color(0x733B0A00), Color(0xDB280814)) else listOf(Color(0x40141211), Color(0x8C141211), Color(0xD1141211)))))
+            Image(photo, null, contentScale = ContentScale.Crop, alignment = if (expressif) androidx.compose.ui.BiasAlignment(0f, -0.24f) else Alignment.Center, modifier = Modifier.matchParentSize())
+            // Voile neutre seulement en haut (titre) et en bas (annonces), la photo reste claire au milieu
+            Box(Modifier.matchParentSize().background(if (expressif) Brush.verticalGradient(0f to Color(0x80000000), 0.3f to Color.Transparent, 0.52f to Color.Transparent, 1f to Color(0x9E000000))
+                else Brush.verticalGradient(listOf(Color(0x40141211), Color(0x8C141211), Color(0xD1141211)))))
         }
-        Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.heightIn(min = hauteur).padding(20.dp).fillMaxWidth(), verticalArrangement = if (expressif && photo != null) Arrangement.SpaceBetween else Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(48.dp).clip(CircleShape).background(Color.White)) { LogoAsso(Modifier.fillMaxSize()) }
                 Column(Modifier.weight(1f)) {
@@ -353,8 +361,9 @@ internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: ((
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Settings, contentDescription = "Paramètres") }
                 }
             }
-            contenu()
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { contenu() }
         }
+    }
     }
 }
 

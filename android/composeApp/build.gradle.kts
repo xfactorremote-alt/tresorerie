@@ -51,8 +51,8 @@ android {
         applicationId = "org.jpgrenoble.tresorerie"
         minSdk = 26
         targetSdk = 35
-        versionCode = 49
-        versionName = "0.42.0"
+        versionCode = 50
+        versionName = "0.43.0"
     }
     buildTypes {
         getByName("release") { isMinifyEnabled = false }

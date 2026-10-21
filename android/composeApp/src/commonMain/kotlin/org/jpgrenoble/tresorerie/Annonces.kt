@@ -122,9 +122,10 @@ fun communiquesActifs(l: List<Communique>): List<Communique> { val auj = aujourd
 
 /** Une annonce à la fois, en fondu, posée sur la photo ; défile seule, se met en pause quand on la touche ; glisser pour changer. */
 @Composable
-fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> Unit, onAgenda: (Projet) -> Unit, onRegler: () -> Unit, onCommunique: (Communique) -> Unit) {
+fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> Unit, onAgenda: (Projet) -> Unit, onRegler: () -> Unit, onCommunique: (Communique) -> Unit, surPhoto: Boolean = false) {
     // Verre clair à grands arrondis (Material 3 Expressive, comme .accueil-membre .annonces du site)
-    val panneau = Modifier.fillMaxWidth().clip(Formes.M3L).background(Color.White.copy(alpha = 0.16f)).border(1.dp, Color.White.copy(alpha = 0.32f), Formes.M3L)
+    // Sur une photo, verre plus sombre pour rester lisible (comme .banniere.avec-photo .annonces du site)
+    val panneau = Modifier.fillMaxWidth().clip(Formes.M3L).background(if (surPhoto) Color(0x61141416) else Color.White.copy(alpha = 0.16f)).border(1.dp, Color.White.copy(alpha = 0.32f), Formes.M3L)
     if (annonces.isEmpty()) {
         Column(panneau.padding(14.dp)) {
             Text("Prochain rendez-vous", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.9f))

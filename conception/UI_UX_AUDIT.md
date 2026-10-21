@@ -46,6 +46,14 @@ dates à taper. Ces causes racines sont corrigées au niveau du thème et des co
 - Rendu Android sur un appareil réel ou un émulateur (aucun dans l'environnement) : formes, boutons et calendrier vérifiés à la compilation et dans le bytecode seulement.
 - Lecteurs d'écran (TalkBack, NVDA), mode sombre (le produit est en thème clair uniquement : `color-scheme: light`).
 
+## Page des membres, suite — 21 octobre 2026 (version 0.43.0)
+
+| Constat (retour utilisateur) | Cause trouvée | Correction |
+|---|---|---|
+| Petites latences en ouvrant ou fermant une rubrique | `::details-content` ne s'animait pas : saut de hauteur, et fermeture retardée par `content-visibility` ; rebond sur la hauteur côté Android ; arrivées rejouées au défilement | Hauteur animée par Web Animations (site) et `tween` 280 ms (Android), sans rebond ; arrivées une seule fois |
+| Fond jaune orangé déplaisant | Fond `#FFF8F6` et volet teinté | Blanc neutre, filet gris doux autour des cartes |
+| La photo de bannière couvre moins d'espace | Bannière basse (240), photo 4:3 rognée en bandeau et voilée | Bannière 80 % de la largeur (320–440), cadrage à 38 %, voile en haut et en bas seulement |
+
 ## Page des membres — 21 octobre 2026 (version 0.42.0)
 
 | Constat (retour utilisateur) | Correction |

@@ -41,8 +41,9 @@ object Couleurs {
     val BordDoux = Color(0xFFE8E3E1)           // --bord-doux
     val BordFort = Color(0xFF5A5350)           // --bord-fort
     // Page des membres en Material 3 Expressive : mêmes valeurs que les variables --m3-* du site
-    val M3Fond = Color(0xFFFFF8F6)             // --m3-fond
-    val M3SurfaceBasse = Color(0xFFFFF1EC)     // --m3-surface-basse
+    val M3Fond = Color(0xFFFFFFFF)             // --m3-fond : blanc neutre, les couleurs des rubriques ressortent
+    val M3SurfaceBasse = Color(0xFFF4F4F5)     // --m3-surface-basse
+    val M3Contour = Color(0xFFE7E7E9)          // --m3-contour : filet des cartes blanches
     val M3Primaire = Color(0xFFC23E10)         // --m3-primaire
     val M3PrimaireConteneur = Color(0xFFFFDBCF); val M3SurPrimaireConteneur = Color(0xFF3B0A00)
     val M3Bleu = Color(0xFF1B6EA8); val M3BleuConteneur = Color(0xFFD3E6FF); val M3SurBleuConteneur = Color(0xFF001D35)

@@ -187,7 +187,7 @@ function seed() {
     ids,
     tables: {
       permissions, roles, role_permissions,
-      organisation: [{ id: 1, nom: 'JP Grenoble', logo_path: null, banniere_path: null, devise: 'EUR', exercice_debut: `${an}-01-01`,
+      organisation: [{ id: 1, nom: 'JP Grenoble', logo_path: null, banniere_path: 'demo/photo2.jpg', devise: 'EUR', exercice_debut: `${an}-01-01`,
         sigle: 'JP', objet: 'Rassembler et accompagner les jeunes de tous pays à Grenoble', adresse: '12 rue de la Paix', code_postal: '38000', ville: 'Grenoble',
         email: 'contact@jp-grenoble.fr', telephone: '06 12 34 56 78', site_web: null, rna: 'W381000000', siret: null, date_creation: '2015-09-01', configuree: true }],
       exercices: [

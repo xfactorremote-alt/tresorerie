@@ -1570,7 +1570,8 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
     @Composable fun Tete() = Banniere(d, onReglages, onCloche, expressif = true) {
         Spacer(Modifier.height(16.dp))
         BanniereAnnonces(annonces, rotation, onEvt = { detail = it }, onAgenda = agenda,
-            onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(if (communiquesActifs(communiques).isNotEmpty()) 4 else 3) } }, onCommunique = { communiqueLu = it })
+            onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(if (communiquesActifs(communiques).isNotEmpty()) 4 else 3) } }, onCommunique = { communiqueLu = it },
+            surPhoto = Repo.banniere.collectAsState().value != null)
     }
     val etatCotis = if (cotis.isEmpty()) "Non commencée" else if (retard > 0.005) "${euros(retard)} en retard" else "À jour"
     val nomMois = MOIS[mois - 1]
@@ -1628,19 +1629,19 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
         val large = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxWidth > maxHeight)
         // Fond chaud de la page des membres (Material 3 Expressive) ; les cartes arrivent en cascade avec un léger rebond
         if (large) Column(Modifier.fillMaxSize().background(Couleurs.M3Fond).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            ArriveeM3(0) { Tete() }
+            ArriveeM3(0, "a:tete") { Tete() }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { ArriveeM3(1) { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } }; ArriveeM3(2) { Suite() } }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { ArriveeM3(2) { Cotisation() }; ArriveeM3(3) { Regler() }; ArriveeM3(3) { Participations() }; ArriveeM3(4) { Anniversaires() } }
+                Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { ArriveeM3(1, "a:communiques") { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } }; ArriveeM3(2, "a:programme") { Suite() } }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { ArriveeM3(2, "a:cotisation") { Cotisation() }; ArriveeM3(3, "a:regler") { Regler() }; ArriveeM3(3, "a:participations") { Participations() }; ArriveeM3(4, "a:anniversaires") { Anniversaires() } }
             }
         } else LazyColumn(Modifier.fillMaxSize().background(Couleurs.M3Fond), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { ArriveeM3(0) { Tete() } }
-            if (communiquesActifs(communiques).isNotEmpty()) item { ArriveeM3(1) { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } } }
-            item { ArriveeM3(2) { Suite() } }
-            item { ArriveeM3(3) { Cotisation() } }
-            item { ArriveeM3(3) { Regler() } }
-            item { ArriveeM3(4) { Participations() } }
-            item { ArriveeM3(4) { Anniversaires() } }
+            item { ArriveeM3(0, "a:tete") { Tete() } }
+            if (communiquesActifs(communiques).isNotEmpty()) item { ArriveeM3(1, "a:communiques") { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } } }
+            item { ArriveeM3(2, "a:programme") { Suite() } }
+            item { ArriveeM3(3, "a:cotisation") { Cotisation() } }
+            item { ArriveeM3(3, "a:regler") { Regler() } }
+            item { ArriveeM3(4, "a:participations") { Participations() } }
+            item { ArriveeM3(4, "a:anniversaires") { Anniversaires() } }
         }
     }
     communiqueLu?.let { c -> FeuilleCommunique(c, mesReponses[c.id], onRepondu = { mesReponses = mesReponses + (c.id to it); message("Merci pour votre réponse") }, message = message) { communiqueLu = null } }
