@@ -21,9 +21,9 @@ object Couleurs {
     val SurBleuClair = Color(0xFF00344F)
     val Erreur = Color(0xFFBA1A1A)
     val ErreurClair = Color(0xFFFFDAD6)
-    val Fond = Color(0xFFF6F6F6)
-    val Texte = Color(0xFF1C1B1A)
-    val Texte2 = Color(0xFF5A5350)
+    val Fond = Color(0xFFFFFFFF)
+    val Texte = Color(0xFF1B1B1F)
+    val Texte2 = Color(0xFF5B5D66)
     // Jetons repris un pour un des variables CSS du site (docs/styles.css, :root) — voir conception/DESIGN_SYSTEM.md
     val OrangeTrait = Color(0xFFF5B39C)        // --primaire-trait
     val JauneTrait = Color(0xFFF2C66A)         // --jaune-trait
@@ -31,15 +31,15 @@ object Couleurs {
     val ErreurTrait = Color(0xFFF2A8A0)        // --erreur-trait
     val SurErreurClair = Color(0xFF410002)     // --sur-erreur-clair
     val Vert = Color(0xFF2E8B4E)               // réglé, à jour
-    val Surface2 = Color(0xFFEFEDEC)           // --surface-2 : fonds neutres, puces grises
-    val Surface3 = Color(0xFFE7E3E1)           // --surface-3
-    val Survol = Color(0xFFF3F1F0)             // --survol
-    val Volet = Color(0xFFF0EEED)              // --volet
-    val TexteFort2 = Color(0xFF4A4543)         // --texte-2
-    val TexteDesactive = Color(0xFFA8A19E)     // --texte-desactive
-    val Bord = Color(0xFFD9D3D0)               // --bord
-    val BordDoux = Color(0xFFE8E3E1)           // --bord-doux
-    val BordFort = Color(0xFF5A5350)           // --bord-fort
+    val Surface2 = Color(0xFFF3F3F5)           // --surface-2 : fonds neutres, puces grises
+    val Surface3 = Color(0xFFE9E9EC)           // --surface-3
+    val Survol = Color(0xFFF3F3F5)             // --survol
+    val Volet = Color(0xFFF7F7F8)              // --volet
+    val TexteFort2 = Color(0xFF44464F)         // --texte-2
+    val TexteDesactive = Color(0xFFA4A5AC)     // --texte-desactive
+    val Bord = Color(0xFFDCDCE0)               // --bord
+    val BordDoux = Color(0xFFE7E7E9)           // --bord-doux
+    val BordFort = Color(0xFF74757E)           // --bord-fort
     // Page des membres en Material 3 Expressive : mêmes valeurs que les variables --m3-* du site
     val M3Fond = Color(0xFFFFFFFF)             // --m3-fond : blanc neutre, les couleurs des rubriques ressortent
     val M3SurfaceBasse = Color(0xFFF4F4F5)     // --m3-surface-basse
@@ -66,12 +66,12 @@ object Teintes {
     val Erreur = Teinte(Couleurs.Erreur, Couleurs.ErreurClair, Couleurs.SurErreurClair)
 }
 
-// Formes Fluent 2 du site (--r-petit 2, --r-moyen 4, --r-grand 6, --r-xgrand 8 ; --r-rond pour puces et +)
+// Formes Material 3 Expressive du site (--r-petit 8, --r-moyen 12, --r-grand 16, --r-xgrand 24 ; --r-rond pour boutons et puces)
 object Formes {
-    val Petit = RoundedCornerShape(2.dp)
-    val Moyen = RoundedCornerShape(4.dp)      // boutons, champs, puces de filtre
-    val Grand = RoundedCornerShape(6.dp)
-    val XGrand = RoundedCornerShape(8.dp)     // cartes, fenêtres, feuilles
+    val Petit = RoundedCornerShape(8.dp)      // puces de filtre, cases
+    val Moyen = RoundedCornerShape(12.dp)     // champs, menus, petites tuiles
+    val Grand = RoundedCornerShape(16.dp)     // bouton +, pastilles d'icône
+    val XGrand = RoundedCornerShape(24.dp)    // cartes et rubriques
     val Rond = RoundedCornerShape(50)         // puces d'état, bouton +
     // Page des membres (Material 3 Expressive) : --m3-forme-s / m / l / xl du site
     val M3S = RoundedCornerShape(12.dp)
@@ -84,7 +84,8 @@ private val schema = lightColorScheme(
     primary = Couleurs.Orange, onPrimary = Color.White,
     primaryContainer = Couleurs.OrangeClair, onPrimaryContainer = Couleurs.SurOrangeClair,
     secondary = Couleurs.Bleu, onSecondary = Color.White,
-    secondaryContainer = Couleurs.BleuClair, onSecondaryContainer = Couleurs.SurBleuClair,
+    // Conteneur « secondaire » = teinte douce de l'association : boutons tonals, indicateur de la barre d'onglets, puces choisies (comme le site)
+    secondaryContainer = Couleurs.OrangeClair, onSecondaryContainer = Couleurs.SurOrangeClair,
     tertiary = Couleurs.Jaune, onTertiary = Couleurs.SurJaune,
     tertiaryContainer = Couleurs.JauneClair, onTertiaryContainer = Couleurs.SurJaune,
     background = Couleurs.Fond, onBackground = Couleurs.Texte,
@@ -95,14 +96,13 @@ private val schema = lightColorScheme(
     error = Couleurs.Erreur, errorContainer = Couleurs.ErreurClair,
 )
 
-// Formes Fluent 2 (comme le site) : champs et menus 4, puces de filtre 4, cartes, fenêtres et feuilles 8.
-// (Avant : grands rayons « Material 3 Expressive », 8 à 36 dp, qui donnaient à l'application un autre aspect que le site.)
+// Formes Material 3 Expressive (comme le site depuis la 0.44.0) : champs 12, puces 8, cartes 24, fenêtres et feuilles 28.
 private val formes = Shapes(
     extraSmall = Formes.Moyen,
-    small = Formes.Moyen,
-    medium = Formes.XGrand,
+    small = Formes.Petit,
+    medium = Formes.Moyen,
     large = Formes.XGrand,
-    extraLarge = Formes.XGrand,
+    extraLarge = Formes.M3XL,
 )
 
 @Composable

@@ -46,6 +46,17 @@ dates à taper. Ces causes racines sont corrigées au niveau du thème et des co
 - Rendu Android sur un appareil réel ou un émulateur (aucun dans l'environnement) : formes, boutons et calendrier vérifiés à la compilation et dans le bytecode seulement.
 - Lecteurs d'écran (TalkBack, NVDA), mode sombre (le produit est en thème clair uniquement : `color-scheme: light`).
 
+## Tout le produit en Material 3 Expressive — 21 octobre 2026 (version 0.44.0)
+
+| Avant (Fluent 2) | Après (Material 3 Expressive) |
+|---|---|
+| Fond gris chaud #F6F6F6, cartes coins 8 | Fond blanc, cartes coins 24 cernées d'un filet gris doux |
+| Boutons rectangulaires coins 4 ; « tonal » blanc | Boutons en pilule ; « tonal » orange doux |
+| Champs soulignés (trait bas) | Champs au contour net coins 12, focus 2 px orange |
+| Onglet actif : trait orange au-dessus de l'icône | Indicateur en pilule orange doux derrière l'icône |
+| Bouton + rond | Carré arrondi 16 (FAB Material 3) |
+| Bannière du bureau gris foncé | Bannière vivante aux couleurs de l'association, ou photo |
+
 ## Page des membres, suite — 21 octobre 2026 (version 0.43.0)
 
 | Constat (retour utilisateur) | Cause trouvée | Correction |

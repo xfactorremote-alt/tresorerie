@@ -77,7 +77,7 @@ internal fun Titre(texte: String, resume: String? = null, action: (@Composable (
 // Bouton + flottant commun (.fab du site sur téléphone) : rond de 56 dp, orange de l'association, « + » blanc
 @Composable
 internal fun BoutonPlus(description: String, modifier: Modifier = Modifier, onClick: () -> Unit) =
-    FloatingActionButton(onClick = onClick, shape = androidx.compose.foundation.shape.CircleShape, containerColor = Couleurs.Orange, contentColor = Color.White,
+    FloatingActionButton(onClick = onClick, shape = Formes.Grand, containerColor = Couleurs.Orange, contentColor = Color.White,
         modifier = modifier.padding(16.dp).size(56.dp)) { Icon(Icons.Filled.Add, contentDescription = description) }
 
 @Composable
@@ -88,7 +88,8 @@ internal fun Puce(texte: String, fond: Color, couleur: Color, bord: Color? = nul
 
 @Composable
 internal fun CarteBlanche(onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) =
-    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large,
+    // Carte blanche cernée d'un filet gris doux, coins 24 (comme .carte du site)
+    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large, border = BorderStroke(1.dp, Couleurs.BordDoux), shadowElevation = 1.dp,
         modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onClick) else Modifier)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
     }

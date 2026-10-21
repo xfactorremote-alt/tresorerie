@@ -427,7 +427,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
             if (adherentSeul) NavigationBar {
                 listOf(Triple("Accueil", Icons.Outlined.Home, "cotisations"), Triple("Planning", Icons.Outlined.Event, "activites")).forEachIndexed { i, (l, ic, sec) ->
                     NavigationBarItem(selected = !enParametres && vueAdherent == i && sousEcran == null, onClick = { vueAdherent = i; sousEcran = null; avantParam = null; sectionParam = null },
-                        icon = { IconeAvecPastille(ic, c[sec] ?: 0, null) }, label = { Text(l) })
+                        icon = { IconeAvecPastille(ic, c[sec] ?: 0, null) }, label = { Text(l) }, colors = couleursOnglet())
                 }
             } else NavigationBar {
                 onglets.forEach { o ->
@@ -446,6 +446,7 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
                             }, null)
                         },
                         label = { Text(o.titre, maxLines = 1) },
+                        colors = couleursOnglet(),
                     )
                 }
             }
@@ -496,3 +497,8 @@ private fun Navigation(d: Donnees, recharger: () -> Unit, onAssistant: () -> Uni
         FeuilleMaFiche(d, message) { ok -> if (!ok && !ficheDemandee) { Rappels.repousser(d.profil.id, "fiche"); message("D’accord, on vous le rappellera plus tard") }; ficheRepoussee = true; ficheDemandee = false; if (ok) recharger() }
     if (miseEnRouteOuverte) etapes?.let { l -> FeuilleMiseEnRoute(l, onChoix = allerCible, onPlusTard = { Rappels.marquerDiscret(d.profil.id, "miseenroute"); miseEnRouteOuverte = false }) { miseEnRouteOuverte = false } }
 }
+
+/** Barre d'onglets : indicateur en pilule teintée de l'association, libellé foncé (comme .barre-nav du site). */
+@Composable
+internal fun couleursOnglet() = NavigationBarItemDefaults.colors(indicatorColor = Couleurs.OrangeClair, selectedIconColor = Couleurs.SurOrangeClair,
+    selectedTextColor = Couleurs.Texte, unselectedIconColor = Couleurs.Texte2, unselectedTextColor = Couleurs.Texte2)

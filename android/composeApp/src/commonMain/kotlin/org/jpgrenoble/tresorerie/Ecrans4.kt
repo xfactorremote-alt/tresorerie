@@ -153,7 +153,8 @@ fun ChampTiers(valeur: String, onChange: (String) -> Unit, suggestions: List<Pai
 fun GrillePeriodes(cases: List<Pair<String, String?>>, pas: Int, modifier: Modifier = Modifier, uneLigne: Boolean = false, expressif: Boolean = false) {
     // Douze mois : deux lignes de six sur téléphone pour que les noms restent lisibles ; une ligne sur grand écran (comme le site)
     val ecart = if (expressif) 4.dp else 3.dp
-    val forme = if (expressif) RoundedCornerShape(50) else RoundedCornerShape(5.dp)
+    // Mois en pilules partout (comme .case-p du site) ; « réglé » en vert sur la page des membres
+    val forme = RoundedCornerShape(50)
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ecart)) { cases.chunked(if (cases.size == 12 && !uneLigne) 6 else cases.size.coerceAtLeast(1)).forEach { rangee ->
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ecart)) {
         rangee.forEach { (p, st) ->

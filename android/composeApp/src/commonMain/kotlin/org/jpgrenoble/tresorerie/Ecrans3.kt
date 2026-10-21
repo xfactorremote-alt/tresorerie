@@ -1567,7 +1567,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
 
     // Une seule bannière forte : la photo, avec les annonces posées dessus, une à la fois (comme banniereAnnonces du site)
     val (annonces, rotation) = remember(planning, cotis, parts, communiques, regles) { annoncesBanniere(planning, cotis, parts, communiques, regles) }
-    @Composable fun Tete() = Banniere(d, onReglages, onCloche, expressif = true) {
+    @Composable fun Tete() = Banniere(d, onReglages, onCloche, pageMembre = true) {
         Spacer(Modifier.height(16.dp))
         BanniereAnnonces(annonces, rotation, onEvt = { detail = it }, onAgenda = agenda,
             onRegler = { EtatAccueil.ouvertes["m-regler"] = true; scope.launch { liste.animateScrollToItem(if (communiquesActifs(communiques).isNotEmpty()) 4 else 3) } }, onCommunique = { communiqueLu = it },

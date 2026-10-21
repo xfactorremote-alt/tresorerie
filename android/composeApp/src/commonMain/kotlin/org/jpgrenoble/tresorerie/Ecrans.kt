@@ -325,15 +325,16 @@ private fun DeuxColonnes(large: Boolean, gauche: @Composable ColumnScope.() -> U
 // Bannière : photo de l'association si elle existe, sinon aplat neutre ; voile sombre pour la lisibilité
 @Composable
 // expressif : page des membres (Material 3 Expressive) — grands arrondis, aplat vivant aux couleurs de l'association sans photo
-internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: (() -> Unit)? = null, compacte: Boolean = false, expressif: Boolean = false, contenu: @Composable ColumnScope.() -> Unit) {
+internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: (() -> Unit)? = null, compacte: Boolean = false, expressif: Boolean = true, pageMembre: Boolean = false, contenu: @Composable ColumnScope.() -> Unit) {
     val octets by Repo.banniere.collectAsState()
     val photo = remember(octets) { octets?.let { imageDepuisOctets(it) } }
     val forme = if (expressif) Formes.M3XL else Formes.XGrand
     // Page des membres avec photo : bannière plus haute (80 % de la largeur, entre 320 et 440, 420 sur grand écran),
     // cadrée sur les visages, annonces en bas ; sans photo : hauteur de son contenu (comme le site)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-    val hauteur = when { compacte -> 0.dp; expressif && photo != null -> if (maxWidth >= 700.dp) 420.dp else (maxWidth * 0.8f).coerceIn(320.dp, 440.dp)
-        expressif -> 0.dp; else -> 200.dp }
+    // Accueil du bureau : 200 au moins (comme .banniere du site)
+    val hauteur = when { compacte -> 0.dp; pageMembre && photo != null -> if (maxWidth >= 700.dp) 420.dp else (maxWidth * 0.8f).coerceIn(320.dp, 440.dp)
+        pageMembre -> 0.dp; else -> 200.dp }
     Box(Modifier.fillMaxWidth().heightIn(min = hauteur).then(if (expressif) Modifier.shadow(8.dp, forme, ambientColor = Color.Black.copy(alpha = 0.2f), spotColor = Color.Black.copy(alpha = 0.3f)) else Modifier).clip(forme)
         .background(if (expressif) FondBanniereMembre else Brush.radialGradient(listOf(Couleurs.Texte2, Color(0xFF2B2826), Couleurs.Texte), center = Offset(2000f, 0f), radius = 2200f))) {
         // Formes douces en fond (comme les dégradés ronds du site)
@@ -347,7 +348,7 @@ internal fun Banniere(d: Donnees, onReglages: (() -> Unit)? = null, onCloche: ((
             Box(Modifier.matchParentSize().background(if (expressif) Brush.verticalGradient(0f to Color(0x80000000), 0.3f to Color.Transparent, 0.52f to Color.Transparent, 1f to Color(0x9E000000))
                 else Brush.verticalGradient(listOf(Color(0x40141211), Color(0x8C141211), Color(0xD1141211)))))
         }
-        Column(Modifier.heightIn(min = hauteur).padding(20.dp).fillMaxWidth(), verticalArrangement = if (expressif && photo != null) Arrangement.SpaceBetween else Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.heightIn(min = hauteur).padding(20.dp).fillMaxWidth(), verticalArrangement = if (photo != null || hauteur > 0.dp) Arrangement.SpaceBetween else Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(48.dp).clip(CircleShape).background(Color.White)) { LogoAsso(Modifier.fillMaxSize()) }
                 Column(Modifier.weight(1f)) {
@@ -427,12 +428,14 @@ internal fun Rubrique(id: String, titre: String, resume: String, alerte: Boolean
                       accent: Color? = null, icone: androidx.compose.ui.graphics.vector.ImageVector? = null, forcee: Boolean = false, halo: Boolean = false,
                       teinteIcone: Color? = null, content: @Composable ColumnScope.() -> Unit) {
     val ouverte = forcee || (EtatAccueil.ouvertes[id] ?: ouverteParDefaut)
-    val rotation by androidx.compose.animation.core.animateFloatAsState(if (ouverte) 180f else 0f)
+    val rotation by androidx.compose.animation.core.animateFloatAsState(if (ouverte) 180f else 0f, glisse())
     // Halo à l'arrivée d'une nouveauté : deux pulsations douces autour de la carte (comme le site)
     val pulsation = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(halo) { if (halo) repeat(2) { kotlinx.coroutines.delay(400); pulsation.animateTo(1f, androidx.compose.animation.core.tween(640)); pulsation.animateTo(0f, androidx.compose.animation.core.tween(960)) } }
-    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large,
-        border = if (accent != null && pulsation.value > 0f) androidx.compose.foundation.BorderStroke(1.dp + 4.dp * pulsation.value, accent.copy(alpha = 0.35f * pulsation.value)) else null) {
+    // Carte blanche à grands arrondis cernée d'un filet doux (comme details.rubrique du site)
+    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large, shadowElevation = 1.dp,
+        border = if (accent != null && pulsation.value > 0f) androidx.compose.foundation.BorderStroke(1.dp + 4.dp * pulsation.value, accent.copy(alpha = 0.35f * pulsation.value))
+            else androidx.compose.foundation.BorderStroke(1.dp, Couleurs.BordDoux)) {
         // Alerte : filet rouge à gauche (rub-alerte du site), comme le filet de couleur d'une rubrique à accent
         val filet = if (alerte) Couleurs.Erreur else accent
         Column(Modifier.fillMaxWidth().then(if (filet != null) Modifier.drawBehind { drawRect(filet, size = androidx.compose.ui.geometry.Size((if (alerte) 3 else 4).dp.toPx(), size.height)) } else Modifier)) {
@@ -440,12 +443,15 @@ internal fun Rubrique(id: String, titre: String, resume: String, alerte: Boolean
                 .padding(horizontal = 20.dp, vertical = 16.dp).heightIn(min = 28.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (icone != null) { Icon(icone, null, tint = teinteIcone ?: accent ?: Couleurs.Texte2, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)) }
                 Column(Modifier.weight(1f)) {
-                    Text(titre, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(titre, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold)
                     if (!ouverte && resume.isNotBlank()) Text(resume, fontSize = 13.sp, color = Couleurs.Texte2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Icon(Icons.Outlined.ExpandMore, if (ouverte) "Replier" else "Déplier", tint = Couleurs.Texte2, modifier = Modifier.graphicsLayer { rotationZ = rotation })
+                Box(Modifier.size(32.dp).background(Couleurs.Surface2, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.ExpandMore, if (ouverte) "Replier" else "Déplier", tint = Couleurs.Texte2, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation })
+                }
             }
-            androidx.compose.animation.AnimatedVisibility(ouverte) {
+            androidx.compose.animation.AnimatedVisibility(ouverte, enter = androidx.compose.animation.expandVertically(glisse()) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)),
+                exit = androidx.compose.animation.shrinkVertically(glisse()) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180, delayMillis = 100))) {
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
             }
         }

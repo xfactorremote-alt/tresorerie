@@ -2,8 +2,8 @@
 
 Un seul produit, deux interfaces : le site (`docs/`, HTML + CSS) et l'application Android (`android/`, Compose Multiplatform).
 **La référence est le site** (`docs/styles.css`, bloc `:root`). Android reprend chaque valeur sous le même nom français.
-Fluent 2 (Microsoft) sert de **référence de conception** (formes, élévations, mouvements, tailles de commande) ; il n'existe pas de
-bibliothèque Fluent 2 pour Compose : Android l'applique par ses propres jetons (`Theme.kt`) au-dessus de Material 3.
+**Material 3 Expressive** (Google) est la référence de conception depuis la 0.44.0 (avant : Fluent 2), sur le site comme sur Android
+(`Theme.kt`, `Boutons.kt`, `MembreM3.kt`). Méthode, jetons et pièges : skill `louis-design-interface-m3-expressive`.
 
 ## 1. Jetons de couleur
 
@@ -15,28 +15,30 @@ bibliothèque Fluent 2 pour Compose : Android l'applique par ses propres jetons 
 | Bleu (information, recette) | `--bleu`, `--bleu-clair`, `--bleu-trait`, `--sur-bleu-clair` | `Bleu`, `BleuClair`, `BleuTrait`, `SurBleuClair` | #1B77B0 … |
 | Erreur | `--erreur`, `--erreur-clair`, `--erreur-trait`, `--sur-erreur-clair` | `Erreur`, `ErreurClair`, `ErreurTrait`, `SurErreurClair` | #BA1A1A … |
 | Réglé / à jour | (#2E8B4E en dur) | `Vert` | #2E8B4E |
-| Fond de page | `--fond` | `Fond` | #F6F6F6 |
-| Surfaces | `--surface`, `--surface-2`, `--surface-3`, `--survol`, `--volet` | `Color.White`, `Surface2`, `Surface3`, `Survol`, `Volet` | #FFF, #EFEDEC, #E7E3E1, #F3F1F0, #F0EEED |
-| Texte | `--texte`, `--texte-2`, `--texte-3`, `--texte-desactive` | `Texte`, `TexteFort2`, `Texte2`, `TexteDesactive` | #1C1B1A, #4A4543, #5A5350, #A8A19E |
-| Bords | `--bord`, `--bord-doux`, `--bord-fort` | `Bord`, `BordDoux`, `BordFort` | #D9D3D0, #E8E3E1, #5A5350 |
+| Fond de page | `--fond` | `Fond` | #FFFFFF (blanc neutre) |
+| Surfaces | `--surface`, `--surface-2`, `--surface-3`, `--survol`, `--volet` | `Color.White`, `Surface2`, `Surface3`, `Survol`, `Volet` | #FFF, #F3F3F5, #E9E9EC, #F3F3F5, #F7F7F8 |
+| Texte | `--texte`, `--texte-2`, `--texte-3`, `--texte-desactive` | `Texte`, `TexteFort2`, `Texte2`, `TexteDesactive` | #1B1B1F, #44464F, #5B5D66, #A4A5AC |
+| Bords | `--bord`, `--bord-doux`, `--bord-fort` | `Bord`, `BordDoux`, `BordFort` | #DCDCE0, #E7E7E9, #74757E (contour des champs ≥ 3:1) |
 
 Règles :
 - Contraste du texte ≥ 4,5:1 (couleurs du logo assombries pour cela). Contour d'un champ ≥ 3:1 : le site met un trait `--bord-fort` sous le champ, Android utilise `outline = BordFort`.
 - **Jamais de couleur écrite en dur** quand un jeton existe (`Color(0xFF…)` sur Android, `#…` hors `:root` sur le site). Restent en dur, par exception documentée : les couleurs de rendez-vous (`couleurEvt`, calculées), les dégradés et voiles blancs de la bannière photo.
 - La couleur n'est jamais le seul porteur d'information : chaque état a aussi un mot (« Réglé », « À valider », « Dépassé »).
 
-## 2. Formes (Fluent 2)
+## 2. Formes (Material 3 Expressive, depuis la 0.44.0)
 
 | Jeton | Site | Android (`Formes.`) | Usage |
 |---|---|---|---|
-| Petit | `--r-petit` 2 px | `Petit` | cases à cocher, barres de rendez-vous |
-| Moyen | `--r-moyen` 4 px | `Moyen` | **boutons**, champs, menus, encadrés d'information, puces de filtre |
-| Grand | `--r-grand` 6 px | `Grand` | — |
-| Très grand | `--r-xgrand` 8 px | `XGrand` | **cartes**, bannière, fenêtres, feuilles qui montent |
-| Rond | `--r-rond` | `Rond` | puces d'état, pastilles, bouton + |
+| Petit | `--r-petit` 8 px | `Petit` | puces de filtre |
+| Moyen | `--r-moyen` 12 px | `Moyen` | champs, menus, lignes cliquables, petites tuiles |
+| Grand | `--r-grand` 16 px | `Grand` | bouton + (56), pastilles d'icône, encadrés |
+| Très grand | `--r-xgrand` 24 px | `XGrand` | **cartes**, rubriques |
+| Fenêtres | 28 px | `M3XL` | fenêtres, feuilles qui montent, bannière |
+| Rond | `--r-rond` | `Rond` | **boutons**, puces d'état, groupes segmentés, mois des cotisations |
 
-Android : `MaterialTheme.shapes` est réglé sur ces valeurs (extraSmall/small = 4, medium/large/extraLarge = 8) ;
-les boutons Material 3 (pilules par défaut) sont rendus rectangulaires par `Boutons.kt` (voir § 4).
+Android : `MaterialTheme.shapes` = extraSmall 12, small 8, medium 12, large 24, extraLarge 28 ; `Boutons.kt` rend les boutons en pilule
+(`Formes.Rond`) ; contour des boutons « outlined » `BordFort`, texte foncé ; conteneur secondaire = orange doux (boutons tonals, indicateur
+de la barre d'onglets, puces choisies), comme `.btn-tonal`, `.barre-nav` et `.puce-filtre` du site.
 
 ## 3. Typographie
 

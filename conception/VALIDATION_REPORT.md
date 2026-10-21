@@ -78,6 +78,12 @@
 | Site : `a5.mjs` 144 vues, `a7.mjs` 312 vues | ✅ |
 | Android : compilation, 30 tests dont `importSansNomEtCorrection` | ✅ |
 
+## 0.44.0 — Material 3 Expressive sur tout le produit (21 octobre 2026)
+
+- Site : jetons neutres (fond blanc, gris sans teinte, contours #74757E pour les champs), formes 8/12/16/24/28, boutons en pilule, bouton tonal orange doux, champs au contour net (focus 2 px), cartes et rubriques à filet gris, barre d'onglets et volet à indicateur en pilule, bouton + carré arrondi, fenêtres 28, bannière du bureau vivante, mois en pilules, arrivée des pages 320 ms.
+- Android : mêmes neutres et formes (`Theme.kt`), boutons en pilule (`Boutons.kt`), cartes et rubriques à filet, barre d'onglets à indicateur orange doux, bouton + coins 16, bannière du bureau vivante ; captures `CapturesBureauTest` (accueil, opérations, demandes, cotisations, membres, paramètres) comparées au site.
+- Contrôles : 33 tests d'audit + VersionTest ; a7 312 vues 0 problème ; a5 144 vues sans erreur ; fluidité des rubriques 60 images/s ; scénarios membres, comptes, export : sans erreur ni débordement.
+
 ## 0.43.0 — Fluidité, fond blanc neutre, bannière photo (21 octobre 2026)
 
 - Mesure image par image de l'ouverture d'une rubrique (`fluidite.mjs`) : avant, la hauteur sautait d'un coup (fermeture retardée de 280 ms puis fermeture sèche) ; après, courbe continue 215 → 153 → 108 → 88 → 79 → 74 px, aucune image au-delà de 21 ms (60 images/s), dans les deux sens.
