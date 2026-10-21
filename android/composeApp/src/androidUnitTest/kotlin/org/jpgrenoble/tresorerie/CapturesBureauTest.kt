@@ -44,5 +44,6 @@ class CapturesBureauTest {
     @Test fun demandes() = capturer("demandes") { EcranDepenses(it, {}) }
     @Test fun cotisations() = capturer("cotisations") { EcranCotisations(it, {}) }
     @Test fun membres() = capturer("membres") { EcranMembres(it, {}) }
+    @Test fun planning() = capturer("planning") { EcranPlanning(it, {}) }
     @Test fun parametres() = capturer("parametres") { EcranParametres(it, {}, {}) }
 }

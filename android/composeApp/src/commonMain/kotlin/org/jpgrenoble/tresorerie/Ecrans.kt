@@ -147,7 +147,7 @@ fun EcranAccueil(d: Donnees, onAller: (String) -> Unit = {}) {
     // Grand écran (comme le site au-delà de 900 px) : chiffres sur trois colonnes, graphiques et dernières rubriques sur deux
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val large = maxWidth >= 840.dp
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         erreur?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         item {
             Banniere(d, onReglages = { onAller("parametres") }, onCloche = { onAller("nouveautes") }) {

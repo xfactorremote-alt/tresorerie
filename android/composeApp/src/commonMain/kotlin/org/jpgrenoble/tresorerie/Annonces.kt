@@ -386,7 +386,7 @@ fun ParamBanniere(d: Donnees, message: (String) -> Unit, enPage: Boolean = false
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val large = maxWidth >= 840.dp
     val admin = d.peut("administrer")
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // Page Plus › Communiqués : en-tête commun ; « Publier » = bouton + flottant au téléphone, bouton texte dans l'en-tête sur grand écran (règle 9 bis)
         if (enPage) item {
             Titre("Communiqués") { if (gere && large) Button(onClick = { nouveau = true }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Publier") } }

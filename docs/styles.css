@@ -520,26 +520,6 @@ details.rubrique[open] .rub-corps{animation:entree var(--d-doux) var(--c-decel-m
 .legende .case-p{width:14px;height:14px}
 @media (max-width:600px){.ligne-cotis .corps{flex-basis:calc(100% - 56px)}.ligne-cotis>.puce{margin-left:52px}.grille-periodes{max-width:none}}
 
-/* ---------- Planning (Fluent Calendar) ---------- */
-.cal-nav{margin:4px 0;gap:8px}
-.cal-nav h2{font-size:18px;line-height:24px}
-.cal{background:var(--surface);border-radius:var(--r-xgrand);padding:8px;overflow:hidden;box-shadow:var(--ombre4)}
-.cal-tete,.cal-grille{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
-.cal-tete span{text-align:center;font-size:12px;font-weight:600;color:var(--texte-3);padding:4px 0}
-.cal-jour{min-height:88px;border-radius:var(--r-moyen);background:var(--fond);padding:4px;display:flex;flex-direction:column;gap:2px;cursor:pointer;min-width:0;transition:background-color var(--d-plus-rapide) linear}
-@media (hover:hover){.cal-jour:hover{background:var(--surface-2)}}
-.cal-jour:active{background:var(--presse)}
-.cal-jour.hors{opacity:.5}
-.num-jour{align-self:flex-start;font-size:12px;font-weight:600;min-width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:0 4px}
-.cal-jour.auj .num-jour{background:var(--primaire);color:var(--sur-primaire)}
-.evt{display:block;width:100%;min-height:0;min-width:0;padding:1px 6px;border-radius:var(--r-petit);border:0;font-size:11px;line-height:16px;font-weight:600;text-align:left;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--bleu-clair);color:var(--sur-bleu-clair);justify-content:flex-start}
-.evt small{font-weight:600;opacity:.8}
-.anniv{font-size:11px;color:var(--sur-jaune);background:var(--jaune-clair);border-radius:var(--r-petit);padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-p.anniv,.agenda .anniv{font-size:13px;padding:4px 8px;align-self:flex-start;border-radius:var(--r-moyen)}
-@media (max-width:600px){.cal{padding:4px}.cal-jour{min-height:56px;padding:2px}.evt{font-size:0;height:4px;padding:0;background:var(--bleu)}.evt small{display:none}
-  .cal-jour .anniv{font-size:0;height:4px;padding:0;background:var(--jaune)}.cal-tete span{font-size:10px}
-  .cal-nav .groupe-compact{width:100%}.cal-nav .groupe-compact button{flex:1}}
 .agenda-jour{align-items:flex-start !important}
 .agenda-date{width:48px;min-height:48px;min-width:0;border-radius:var(--r-moyen);background:var(--surface-2);border-color:transparent;color:var(--texte);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0;flex:none;gap:0;font-weight:600}
 .agenda-date b{font-size:18px;line-height:22px}.agenda-date span{font-size:11px;line-height:14px;color:var(--texte-3);font-weight:400}
@@ -737,13 +717,6 @@ p.anniv,.agenda .anniv{font-size:13px;padding:4px 8px;align-self:flex-start;bord
 .puce-bleu{background:var(--surface-2);border:1px dashed var(--bord-fort);color:var(--texte)}
 .justification{margin:0;padding:8px 12px;border-left:3px solid var(--bord);background:var(--surface-2);border-radius:var(--r-petit);white-space:pre-line}
 
-/* Calendrier : logo de l'association en filigrane, au centre, très discret ; ne gêne ni la lecture ni les clics */
-.cal,.cal-semaine{position:relative;isolation:isolate}
-.filigrane{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(55%,340px);aspect-ratio:1;object-fit:contain;
-  opacity:.08;mix-blend-mode:multiply;pointer-events:none;user-select:none;z-index:1;border-radius:50%}
-@media (max-width:600px){.filigrane{width:70%;opacity:.07}}
-@media print{.filigrane{opacity:.06}}
-@media (forced-colors:active){.filigrane{display:none}}
 
 
 /* =====================================================================
@@ -908,64 +881,12 @@ a.tuile:active{transform:scale(.98)}
 .date-evt{width:48px;height:48px;border-radius:var(--r-grand);background:var(--evt-fond);color:var(--evt-texte);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none;font-size:11px;line-height:1;box-shadow:inset 0 -3px 0 var(--evt-accent)}
 .date-evt b{font-size:18px;line-height:22px}
 
-/* ---------- Planning coloré et animé ---------- */
-.cal-bandeau{display:flex;align-items:center;gap:8px;padding:14px 12px;border-radius:var(--r-xgrand);color:#fff;
-  background:linear-gradient(120deg,var(--mois,#1B77B0) 0%,color-mix(in srgb,var(--mois,#1B77B0) 70%,#000) 100%);box-shadow:var(--ombre8);position:relative;overflow:hidden}
-@supports not (background:color-mix(in srgb,red 50%,blue)){.cal-bandeau{background:var(--mois,#1B77B0)}}
-.cal-bandeau::before,.cal-bandeau::after{content:"";position:absolute;border-radius:50%;background:#fff;opacity:.1;pointer-events:none}
-.cal-bandeau::before{width:200px;height:200px;right:-60px;top:-90px}.cal-bandeau::after{width:120px;height:120px;left:30%;bottom:-80px}
-.cal-titre{flex:1;text-align:center;position:relative}
-.cal-titre h2{margin:0;color:#fff;font-size:24px;line-height:32px;letter-spacing:.01em;animation:entree var(--d-doux) var(--c-decel-moy)}
-.cal-fleche{width:44px;height:44px;min-height:0;padding:0;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;
-  transition:background-color var(--d-rapide) linear,transform var(--d-rapide) var(--c-decel)}
-@media (hover:hover){.cal-fleche:hover{background:rgba(255,255,255,.28);border-color:rgba(255,255,255,.5);color:#fff}}
-.cal-fleche:active{transform:scale(.92)}
-.cal-resume{font-size:13px;color:var(--texte-3);padding:2px 4px 8px}
-.cal-resume b{color:var(--texte)}
-.cal{background:var(--surface);border:1px solid var(--bord-doux)}
-.cal-tete span.we{color:var(--primaire)}
-.cal-grille{gap:4px}
-.cal-jour{background:#FAFAF9;border:1px solid transparent;transition:background-color var(--d-rapide) linear,transform var(--d-rapide) var(--c-decel),box-shadow var(--d-rapide) var(--c-decel),border-color var(--d-rapide) linear}
-.cal-jour.we{background:#FFF7F3}
-.cal-jour.occupe{background:#fff;border-color:var(--bord-doux)}
-.cal-jour.avec-anniv{background-image:linear-gradient(180deg,transparent 70%,rgba(248,179,52,.18) 100%)}
-@media (hover:hover){.cal-jour:hover{background:#fff;transform:translateY(-2px);box-shadow:var(--ombre8);border-color:var(--bord);z-index:2}}
-.cal-jour.auj{border:2px solid var(--primaire);background:#FFF4EF}
-.cal-jour.auj .num-jour{box-shadow:0 0 0 3px var(--primaire-clair);animation:pulsation 2.4s var(--c-aise) infinite}
-@keyframes pulsation{0%,100%{box-shadow:0 0 0 3px var(--primaire-clair)}50%{box-shadow:0 0 0 6px rgba(255,219,207,.4)}}
-.evt{background:var(--evt-fond,var(--bleu-clair));color:var(--evt-texte,var(--sur-bleu-clair));box-shadow:inset 3px 0 0 var(--evt-accent,var(--bleu));border-radius:var(--r-moyen);
-  transition:transform var(--d-rapide) var(--c-decel),filter var(--d-rapide) linear}
-@media (hover:hover){.evt:hover{filter:brightness(.95);transform:translateX(1px)}}
-.agenda-evt{background:var(--evt-fond,var(--bleu-clair));color:var(--evt-texte,var(--sur-bleu-clair));box-shadow:inset 4px 0 0 var(--evt-accent,var(--bleu))}
+/* ---------- Planning : rendez-vous de la semaine et « À venir » ---------- */
+.agenda-evt{background:var(--evt-fond,var(--bleu-clair));color:var(--evt-texte,var(--sur-bleu-clair));box-shadow:none;border-radius:var(--r-moyen)}
 @media (hover:hover){.agenda-evt:hover{background:var(--evt-fond,var(--bleu-clair));filter:brightness(.96);color:var(--evt-texte)}}
-.agenda-jour .agenda-date{transition:transform var(--d-rapide) var(--c-decel)}
-.agenda-jour.we .agenda-date{background:#FFEDE5}
+.agenda-jour.we .agenda-date{background:var(--surface-2)}
 .carte-mois>h2{display:flex;align-items:center;gap:10px}
-.carte-mois>h2::before{content:"";width:10px;height:24px;border-radius:999px;background:var(--mois)}
-.leg-evt{background:linear-gradient(90deg,#C23E10 0 25%,#1B77B0 25% 50%,#2E8B4E 50% 75%,#7048B8 75%) !important;width:24px !important}
-.leg-auj{background:var(--primaire);width:12px !important;height:12px !important;border-radius:50% !important}
-@media (max-width:600px){
-  /* Téléphone : tout le mois tient dans l'écran (bandeau bas, Mois/Semaine et Aujourd'hui sur une ligne, cases de 48 px) — même réglage qu'Android */
-  .cal-bandeau{padding:6px 8px}
-  .cal-titre h2{font-size:18px;line-height:24px}.cal-fleche{width:36px;height:36px}
-  .cal-nav{flex-wrap:nowrap !important;gap:8px}.cal-nav .groupe{width:auto !important;flex:none}
-  .cal-jour{min-height:48px}
-  .page-planning{gap:10px}
-}
-/* Écrans peu hauts (petits iPhone, ordinateur portable) : cases plus basses pour voir le mois entier sans défiler */
-@media (max-width:600px) and (max-height:700px){.page-planning .cal-jour{min-height:42px}.page-planning h1{font-size:22px;line-height:28px}}
-@media (min-width:601px) and (max-height:860px){.page-planning .cal-jour{min-height:72px}}
-@media (max-width:600px){.page-planning .onglets button{min-height:40px}.page-planning .cal .cal-resume{margin-bottom:4px}
-  /* Barres de 6 px : on touche la case du jour (détail du jour), pas la barre trop petite pour le doigt */
-  .evt{font-size:0;height:6px;padding:0;border-radius:3px;box-shadow:none;background:var(--evt-accent,var(--bleu));pointer-events:none}
-}
-/* Changement de mois : le nouveau mois glisse depuis le côté vers lequel on va */
-.cal-anime .cal-jour{animation:case-entree var(--d-doux) var(--c-decel-moy) both;animation-delay:calc(var(--i,0) * 6ms)}
-@keyframes case-entree{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
-.cal-anime.vers-gauche{animation:glisse-gauche var(--d-lent) var(--c-decel-moy)}
-.cal-anime.vers-droite{animation:glisse-droite var(--d-lent) var(--c-decel-moy)}
-@keyframes glisse-gauche{from{opacity:.3;transform:translateX(40px)}to{opacity:1;transform:none}}
-@keyframes glisse-droite{from{opacity:.3;transform:translateX(-40px)}to{opacity:1;transform:none}}
+.carte-mois>h2::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--mois)}
 
 /* ---------- Toute l'application : entrées en cascade, survols, appuis ---------- */
 .contenu>.page>*{animation:entree var(--d-doux) var(--c-decel-moy) backwards}  /* « backwards » : rien ne reste après l’animation, sinon le bouton + (position fixe) suivrait le bloc au lieu de l’écran */
@@ -988,7 +909,6 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .barre-nav a{position:relative}
 .chiffre-anime{display:inline-block}
 .banniere.banniere-compacte{min-height:0 !important;padding-top:18px;padding-bottom:18px}
-.cal-fleche{min-width:0}
 @media (max-width:640px){
   .tuiles{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
   .tuile{flex-direction:column;align-items:flex-start;gap:8px;padding:12px 10px}
@@ -996,7 +916,7 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
   .tuile-texte b{font-size:14px;line-height:18px;white-space:normal}
   .tuile-texte small{font-size:11px;line-height:14px}
 }
-.cal-jour.hors{opacity:1}.cal-jour.hors>*{opacity:.45}
+
 
 /* ---------- Vue du membre (accueil connecté et lien personnel, même rendu) ---------- */
 .espace-membre{max-width:1180px}
@@ -1674,3 +1594,87 @@ details.rubrique>summary>.ic{width:32px;height:32px;padding:6px;border-radius:50
 input[type=checkbox]{border-radius:4px}
 .case-p{border-radius:var(--r-rond)}
 .legende .case-p{border-radius:50%}
+
+/* ---------- Planning 0.45 : calendrier sobre (Google Agenda / Calendrier iOS) ----------
+   Plus de bandeau coloré : titre du mois et flèches rondes neutres, quadrillage fin sur fond blanc, numéro dans un rond,
+   rendez-vous en petites puces teintées (une couleur chacun, couleurEvt) ; téléphone : points de couleur sous le numéro. */
+.page-planning{gap:16px}
+.cal-entete{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 16px}
+.cal-titre{display:flex;align-items:center;gap:4px;flex:1 1 auto;min-width:0}
+.cal-titre h2{margin:0 8px 0 0;font-size:22px;line-height:28px;font-weight:600;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:entree var(--d-doux) var(--c-decel-moy) backwards}
+.cal-fleche{width:40px;height:40px;min-width:0;min-height:0;padding:0;border-radius:50%;border:0;background:transparent;color:var(--texte-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
+@media (hover:hover){.cal-fleche:hover{background:var(--survol);color:var(--texte)}}
+.cal-fleche:active{background:var(--presse)}
+.cal-nav{display:flex;align-items:center;gap:8px}
+.cal{position:relative;background:var(--surface);border:1px solid var(--bord-doux);border-radius:var(--r-xgrand);overflow:hidden;padding:0}
+.cal-tete,.cal-grille{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0}
+.cal-tete span{text-align:center;font-size:11px;line-height:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--texte-3);padding:12px 0 8px}
+.cal-tete span.we{color:var(--texte-3)}
+.cal-jour{min-height:96px;min-width:0;padding:6px 6px 8px;display:flex;flex-direction:column;align-items:stretch;gap:4px;cursor:pointer;background:transparent;
+  border-top:1px solid var(--bord-doux);transition:background-color var(--d-plus-rapide) linear}
+.cal-jour:not(:nth-child(7n+1)){border-left:1px solid var(--bord-doux)}
+.cal-jour.we{background:#FAFAFB}
+@media (hover:hover){.cal-jour:hover{background:var(--surface-2)}}
+.cal-jour:active{background:var(--presse)}
+.cal-jour:focus-visible{outline:2px solid var(--primaire);outline-offset:-2px}
+.num-jour{align-self:center;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:var(--texte);font-variant-numeric:tabular-nums;flex:none}
+.cal-jour.hors .num-jour{color:var(--texte-3);opacity:.6}
+.cal-jour.hors .cal-puces{opacity:.5}
+.cal-jour.auj .num-jour{background:var(--primaire);color:var(--sur-primaire);font-weight:700}
+.cal-puces{display:flex;flex-direction:column;gap:3px;min-width:0}
+.evt{display:block;width:100%;min-width:0;min-height:0;padding:2px 8px;border:0;border-radius:6px;font-size:11px;line-height:16px;font-weight:600;text-align:left;justify-content:flex-start;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--evt-fond,var(--bleu-clair));color:var(--evt-texte,var(--sur-bleu-clair));box-shadow:none}
+.evt small{font-weight:500;opacity:.75}
+@media (hover:hover){.evt:hover{filter:brightness(.95)}}
+.cal-plus{font-size:11px;line-height:14px;color:var(--texte-3);padding:0 8px;font-weight:600}
+.anniv{font-size:11px;line-height:16px;color:var(--sur-jaune);background:var(--jaune-clair);border-radius:6px;padding:2px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.anniv::before{content:"🎂 "}
+p.anniv,.agenda .anniv{font-size:13px;padding:4px 10px;align-self:flex-start;border-radius:var(--r-moyen)}
+.cal-anime.vers-gauche{animation:glisse-gauche var(--d-lent) var(--c-decel-moy) backwards}
+.cal-anime.vers-droite{animation:glisse-droite var(--d-lent) var(--c-decel-moy) backwards}
+@keyframes glisse-gauche{from{opacity:0;transform:translateX(32px)}to{opacity:1;transform:none}}
+@keyframes glisse-droite{from{opacity:0;transform:translateX(-32px)}to{opacity:1;transform:none}}
+/* Ordinateur portable peu haut : le mois entier sans défiler */
+@media (min-width:601px) and (max-height:860px){.page-planning .cal-jour{min-height:72px}}
+@media (max-width:600px){
+  /* Téléphone : tout le mois tient dans l'écran — titre et flèches sur une ligne, Mois / Semaine et Aujourd'hui sur la suivante, cases de 48 px */
+  .page-planning{gap:10px}
+  .page-planning .onglets button{min-height:40px}
+  .cal-titre{flex-basis:100%}
+  .cal-titre h2{font-size:18px;line-height:24px}
+  .cal-fleche{width:36px;height:36px}
+  .cal-nav{flex-basis:100%;justify-content:space-between}
+  .cal{border-radius:var(--r-grand)}
+  .cal-tete span{font-size:10px;padding:8px 0 6px;letter-spacing:.04em}
+  .cal-jour{min-height:48px;padding:4px 0 4px;gap:3px}
+  .num-jour{width:26px;height:26px;font-size:13px}
+  /* Points de 6 px centrés sous le numéro ; on touche la case (détail du jour), pas le point trop petit pour le doigt */
+  .cal-puces{flex-direction:row;flex-wrap:wrap;justify-content:center;align-items:center;gap:3px;padding:0 2px}
+  .evt{width:6px;height:6px;padding:0;border-radius:50%;font-size:0;background:var(--evt-accent,var(--bleu));pointer-events:none;flex:none}
+  .cal-jour .anniv{width:6px;height:6px;padding:0;border-radius:50%;font-size:0;background:var(--jaune);flex:none}
+  .cal-jour .anniv::before{content:none}
+  .cal-plus{font-size:9px;line-height:9px;padding:0}
+}
+@media (min-width:601px){.cal-liste-mois{display:none}}
+@media (max-width:600px) and (max-height:700px){.page-planning .cal-jour{min-height:42px}.page-planning h1{font-size:22px;line-height:28px}}
+@media (forced-colors:active){.cal-jour.auj .num-jour{border:2px solid CanvasText}}
+/* Semaine : un jour sans rien prend moins de place (case de date plus petite, tiret discret) */
+.agenda-jour.vide{padding-top:6px;padding-bottom:6px}.agenda-jour.vide .agenda-date{width:40px;min-height:40px;background:transparent}.agenda-jour.vide .agenda-date b{font-size:16px}.agenda-jour.vide .corps .muted{opacity:.5}
+.agenda-jour.vide.auj .agenda-date{background:var(--primaire)}
+
+/* ---------- 0.45 : aération générale (même réglage qu'Android : écrans espacés de 16, cartes 18 / 12, grille des mois écart 4) ---------- */
+.page{gap:20px}
+@media (min-width:1000px){.page{gap:24px}}
+.page-planning{gap:16px}
+.carte{gap:14px}
+.kpis{gap:10px}
+.kpis .carte{padding:14px 16px;gap:4px}
+@media (min-width:700px){.kpis{gap:16px}.kpis .carte{padding:18px 20px}}
+/* Trois chiffres sur un téléphone étroit : deux par ligne, le troisième en pleine largeur (les libellés ne s'écrasent plus) */
+@media (max-width:440px){.kpis:has(>.carte:nth-child(3):last-child){grid-template-columns:repeat(2,minmax(0,1fr))}.kpis>.carte:nth-child(3):last-child{grid-column:1/-1}}
+.liste li{padding:12px 0;gap:8px 14px}
+.grille-periodes{gap:4px;margin-top:8px}
+.case-p{height:22px}
+.legende{gap:8px 16px}
+.filtres,.puces-filtre{gap:8px}
+@media (max-width:600px){.page-planning{gap:10px}}

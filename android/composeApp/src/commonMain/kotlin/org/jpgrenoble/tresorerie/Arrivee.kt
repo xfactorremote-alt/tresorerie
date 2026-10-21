@@ -547,7 +547,7 @@ fun ParamExercices(d: Donnees, message: (String) -> Unit, recharger: () -> Unit 
     val supprimer = rememberSuppression(message, NOTE_SUPPR_EXERCICE) { version++; recharger() }
     LaunchedEffect(version, Synchro.version) { try { liste = Repo.exercices() } catch (e: Exception) { message(traduireErreur(e)) } }
     val l = liste ?: emptyList()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -670,7 +670,7 @@ fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit)
             }) { Icon(Icons.Outlined.Restore, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Restaurer") }
         }
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             CarteBlanche {
                 Text("Un élément supprimé n’est jamais perdu : il reste ici avec ses pièces jointes et ses liens, et «$NBSP" + "Restaurer$NBSP» le remet exactement en place. Chaque suppression et chaque restauration est tracée.", color = Couleurs.Texte2, fontSize = 14.sp)
@@ -708,7 +708,7 @@ fun ParamIdentite(d: Donnees, message: (String) -> Unit, recharger: () -> Unit) 
     val scope = rememberCoroutineScope()
     val libelles = listOf("nom" to "Nom *", "sigle" to "Sigle", "objet" to "Objet", "date_creation" to "Date de création (JJ/MM/AAAA)", "rna" to "N° RNA", "siret" to "SIRET",
         "site_web" to "Site internet", "adresse" to "Adresse", "code_postal" to "Code postal", "ville" to "Ville", "email" to "E-mail", "telephone" to "Téléphone")
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             CarteBlanche {
                 libelles.forEach { (k, l) ->
@@ -742,7 +742,7 @@ fun ParamCategories(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
     val scope = rememberCoroutineScope()
     val supprimer = rememberSuppression(message) { version++; recharger() }
     LaunchedEffect(version, Synchro.version) { try { categories = Repo.categories().filter { !it.interne } } catch (e: Exception) { message(traduireErreur(e)) } }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         listOf("recette" to "Recettes (ressources)", "depense" to "Dépenses (emplois)").forEach { (sens, titre) ->
             item(key = sens) {
                 CarteBlanche {
@@ -785,7 +785,7 @@ fun ParamSecurite(message: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val email = remember { Repo.emailConnecte() }
     val autofill = androidx.compose.ui.platform.LocalAutofillManager.current
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             CarteBlanche {
                 Text("Changer le mot de passe", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -810,7 +810,7 @@ fun ParamSecurite(message: (String) -> Unit) {
 fun ParamNotifications() {
     var autorise by remember { mutableStateOf(notificationsPermises()) }
     val demander = rememberDemandeNotifications { autorise = it }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             CarteBlanche {
                 Text("Pastilles", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

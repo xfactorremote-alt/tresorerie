@@ -101,7 +101,7 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val large = maxWidth >= 840.dp
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Budget", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -113,13 +113,20 @@ fun EcranBudget(d: Donnees, message: (String) -> Unit) {
         if (x == null) { item { LinearProgressIndicator(Modifier.fillMaxWidth()) }; return@LazyColumn }
         val equilibre = x.resPrevu - x.empPrevu
         val vide = x.resPrevu == 0.0 && x.empPrevu == 0.0
-        // Trois chiffres sur une ligne, comme les .kpis du site
+        // Trois chiffres sur une ligne, comme les .kpis du site ; téléphone étroit (< 440 dp) : deux par ligne, le troisième en pleine largeur
         item {
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChiffreBudget("Ressources prévues", x.resPrevu, "réalisé ${euros(x.resReel)}", Couleurs.Bleu, Modifier.weight(1f).fillMaxHeight())
-                ChiffreBudget("Emplois prévus", x.empPrevu, "réalisé ${euros(x.empReel)}", Couleurs.Orange, Modifier.weight(1f).fillMaxHeight())
-                ChiffreBudget(if (equilibre >= 0) "Excédent prévu" else "Déficit prévu", kotlin.math.abs(equilibre), "résultat réalisé ${euros(x.resReel - x.empReel)}",
-                    if (equilibre < 0) Couleurs.Erreur else MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).fillMaxHeight())
+            BoxWithConstraints {
+                val etroit = maxWidth < 440.dp
+                val troisieme = @Composable { m: Modifier -> ChiffreBudget(if (equilibre >= 0) "Excédent prévu" else "Déficit prévu", kotlin.math.abs(equilibre), "résultat réalisé ${euros(x.resReel - x.empReel)}",
+                    if (equilibre < 0) Couleurs.Erreur else MaterialTheme.colorScheme.onSurface, m) }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(if (etroit) 10.dp else 16.dp)) {
+                        ChiffreBudget("Ressources prévues", x.resPrevu, "réalisé ${euros(x.resReel)}", Couleurs.Bleu, Modifier.weight(1f).fillMaxHeight())
+                        ChiffreBudget("Emplois prévus", x.empPrevu, "réalisé ${euros(x.empReel)}", Couleurs.Orange, Modifier.weight(1f).fillMaxHeight())
+                        if (!etroit) troisieme(Modifier.weight(1f).fillMaxHeight())
+                    }
+                    if (etroit) troisieme(Modifier.fillMaxWidth())
+                }
             }
         }
         if (!gere) item {

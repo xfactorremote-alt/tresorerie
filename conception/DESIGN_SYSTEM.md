@@ -85,6 +85,23 @@ Les tailles littérales d'Android (331 occurrences) suivent déjà cette échell
 | Fond | `--m3-fond` #FFFFFF, `--m3-contour` #E7E7E9 | `Couleurs.M3Fond`, `M3Contour` | Page blanche neutre, cartes blanches cernées d'un filet gris ; la couleur vient des rubriques |
 | Bannière photo | `.banniere.avec-photo` | `Banniere(expressif = true)` | Hauteur 80 % de la largeur (320–440, 420 au-delà de 700), cadrage 38 %, voile neutre en haut et en bas |
 
+### Calendrier (Planning, depuis la 0.45.0)
+
+Modèle Google Agenda / Calendrier iOS, identique site (`.cal`, `.cal-entete`, `.cal-puces`, `.cal-liste-mois`) et Android (`CalendrierMois`, `CaseJour`, `NumeroJour`) :
+
+| Élément | Règle |
+|---|---|
+| En-tête | Titre du mois à gauche (18 / 22), flèches rondes neutres (36 / 40, fond transparent, survol gris), Mois / Semaine et « Aujourd'hui » (pilule tonale) sur la ligne suivante au téléphone, même ligne au-delà |
+| Grille | Carte blanche coins 16 (téléphone) / 24, filet `--bord-doux`, quadrillage fin sans écart, jours en petites capitales grises 10 / 11 |
+| Jour | Numéro centré dans un rond 26 / 28 ; aujourd'hui : rond plein orange, aucun halo ; hors du mois : à moitié effacé ; week-end : `#FAFAFB` |
+| Rendez-vous | Grand écran : puce teintée coins 6 (`--evt-fond` / `--evt-texte`, sans filet), heure atténuée ; téléphone : point de 6 de `--evt-accent`, et la liste du mois sous la grille |
+| Anniversaire | Puce jaune « 🎂 prénom » ; téléphone : point jaune |
+| Résumé | Sous le titre de la page (en-tête commun), plus dans la carte ; plus de légende |
+
+### Aération (depuis la 0.45.0)
+
+Écart entre blocs d'une page 20 (24 au-delà de 1000 px) ↔ `spacedBy(16.dp)` des écrans Android ; cartes : écart interne 14 ↔ 12 ; chiffres clés : écart 10 / 16, marge 14×16 / 18×20 ; **trois chiffres sur un téléphone étroit (< 440) : deux par ligne, le troisième en pleine largeur** ; lignes de liste 12 en haut et en bas ; grille des mois : écart 4, pastilles de 22.
+
 ## 5. Modèles d'écran
 
 1. **Liste + fiche** (Demandes, Membres, Matériel, Opérations, Tiers) : titre et résumé, recherche / filtres, une carte avec nombre et total, lignes sobres → fiche dans une feuille avec informations, historique, pièces, actions.

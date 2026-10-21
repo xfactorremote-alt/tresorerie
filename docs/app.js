@@ -5694,8 +5694,6 @@ async function pdfBudget(an) {
 }
 
 // =====================================================================
-// Logo de l'association en filigrane derrière le calendrier (décoratif, ignoré par les lecteurs d'écran)
-const filigrane = () => `<img class="filigrane" src="${esc(S.logoUrl)}" alt="" aria-hidden="true" onerror="this.remove()">`;
 
 // Planning : calendrier (affichage mois ou semaine) et liste des rendez-vous à venir
 // =====================================================================
@@ -5748,34 +5746,46 @@ async function pageActivites() {
   } else if (P.affichage === 'mois') {
     const cases = [];
     for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) cases.push(isoLocal(d));
-    const nbMois = evts.filter((e) => dateDe(e.date_debut).getMonth() === ref.getMonth()).length;
-    corps = `<div class="cal cal-anime ${P.sens || ''}">${filigrane()}<div class="cal-resume"><b>${nbMois}</b> rendez-vous ce mois${anniv.flat().filter((a) => a.mois === ref.getMonth() + 1).length ? ` · <b>${anniv.flat().filter((a) => a.mois === ref.getMonth() + 1).length}</b> anniversaire${anniv.flat().filter((a) => a.mois === ref.getMonth() + 1).length > 1 ? 's' : ''}` : ''}</div>
+    // Calendrier sobre (modèle Google Agenda / Calendrier iOS) : quadrillage fin, numéro du jour dans un rond, rendez-vous en petites puces teintées ;
+    // sur téléphone, des points de couleur sous le numéro (on touche la case pour le détail du jour)
+    corps = `<div class="cal cal-anime ${P.sens || ''}">
       <div class="cal-tete">${JOURS_COURTS.map((j, i) => `<span class="${i > 4 ? 'we' : ''}">${j}</span>`).join('')}</div>
       <div class="cal-grille">${cases.map((s, i) => {
         const e = parJour[s] || [], a = annivDe(s), horsMois = dateDe(s).getMonth() !== ref.getMonth();
-        return `<div class="cal-jour ${horsMois ? 'hors' : ''} ${s === auj ? 'auj' : ''} ${i % 7 > 4 ? 'we' : ''} ${e.length ? 'occupe' : ''} ${a.length ? 'avec-anniv' : ''}" data-jour="${s}" tabindex="0" role="button" style="--i:${i}" aria-label="${jourLong(s)}${e.length ? ', ' + e.length + ' rendez-vous' : ''}">
-          <span class="num-jour">${Number(s.slice(8))}</span>${e.slice(0, 3).map(puce).join('')}${e.length > 3 ? `<small class="muted">+${e.length - 3}</small>` : ''}
-          ${a.length ? `<small class="anniv" title="Anniversaire : ${esc(a.map((x) => x.prenom).join(', '))}">${esc(a.map((x) => x.prenom).join(', '))}</small>` : ''}</div>`;
+        return `<div class="cal-jour ${horsMois ? 'hors' : ''} ${s === auj ? 'auj' : ''} ${i % 7 > 4 ? 'we' : ''} ${e.length ? 'occupe' : ''}" data-jour="${s}" tabindex="0" role="button" aria-label="${jourLong(s)}${e.length ? ', ' + e.length + ' rendez-vous' : ''}${a.length ? ', anniversaire' : ''}">
+          <span class="num-jour">${Number(s.slice(8))}</span><div class="cal-puces">${e.slice(0, 3).map(puce).join('')}${e.length > 3 ? `<small class="cal-plus">+${e.length - 3}</small>` : ''}
+          ${a.length ? `<small class="anniv" title="Anniversaire : ${esc(a.map((x) => x.prenom).join(', '))}">${esc(a.map((x) => x.prenom).join(', '))}</small>` : ''}</div></div>`;
       }).join('')}</div></div>
-      <div class="legende muted"><span><i class="pastille-legende leg-evt"></i>Rendez-vous (une couleur chacun)</span><span><i class="pastille-legende leg-anniv"></i>Anniversaire</span><span><i class="pastille-legende leg-auj"></i>Aujourd’hui</span><span>Touchez un jour pour le détail</span></div>`;
+      ${(() => {
+        // Téléphone : les cases ne montrent que des points ; la liste des rendez-vous du mois suit le calendrier (masquée sur grand écran, où les noms sont dans les cases)
+        const duMois = evts.filter((e) => dateDe(e.date_debut).getMonth() === ref.getMonth()).sort((x, y) => (x.date_debut + (x.heure_debut || '')).localeCompare(y.date_debut + (y.heure_debut || '')));
+        return duMois.length ? `<section class="carte cal-liste-mois"><ul class="liste agenda">${duMois.map((e) => `<li class="agenda-jour ${e.date_debut === auj ? 'auj' : ''}" style="${styleEvt(e)}"><span class="agenda-date"><b>${Number(e.date_debut.slice(8))}</b><span>${JOURS_COURTS[(dateDe(e.date_debut).getDay() + 6) % 7]}</span></span><div class="corps">${ligneEvt(e)}</div></li>`).join('')}</ul></section>` : '';
+      })()}`;
   } else {
     const jours = [];
     for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) jours.push(isoLocal(d));
-    corps = `<section class="carte cal-semaine cal-anime ${P.sens || ''}">${filigrane()}<ul class="liste agenda">${jours.map((s, i) => `<li class="agenda-jour ${s === auj ? 'auj' : ''} ${i > 4 ? 'we' : ''}">
+    corps = `<section class="carte cal-semaine cal-anime ${P.sens || ''}"><ul class="liste agenda">${jours.map((s, i) => `<li class="agenda-jour ${s === auj ? 'auj' : ''} ${i > 4 ? 'we' : ''} ${!(parJour[s] || []).length && !annivDe(s).length ? 'vide' : ''}">
       <button class="agenda-date" data-jour="${s}"><b>${Number(s.slice(8))}</b><span>${JOURS_COURTS[(dateDe(s).getDay() + 6) % 7]}</span></button>
       <div class="corps">${(parJour[s] || []).map(ligneEvt).join('')}
         ${annivDe(s).map((a) => `<span class="anniv">Anniversaire de ${esc(a.prenom)} ${esc(a.nom)}</span>`).join('')}
         ${!(parJour[s] || []).length && !annivDe(s).length ? '<span class="muted">–</span>' : ''}</div></li>`).join('')}</ul></section>`;
   }
+  // Résumé sous le titre (règle de l'en-tête commun) : ce que montre la vue
+  const dansMois = (d) => d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear();
+  const nbEvts = P.vue === 'avenir' ? evts.filter((e) => (e.date_fin || e.date_debut) >= auj).length
+    : P.affichage === 'semaine' ? evts.length : evts.filter((e) => dansMois(dateDe(e.date_debut))).length;
+  const nbAnniv = P.vue === 'avenir' ? 0 : P.affichage === 'semaine' ? (() => { let n = 0; for (let d = new Date(debut); d <= fin; d = ajouterJours(d, 1)) n += annivDe(isoLocal(d)).length; return n; })()
+    : anniv.flat().filter((a) => a.mois === ref.getMonth() + 1).length;
+  const resume = `${nbEvts || 'Aucun'} rendez-vous ${P.vue === 'avenir' ? 'dans les douze prochains mois' : P.affichage === 'semaine' ? 'cette semaine' : 'ce mois'}${nbAnniv ? ` · ${nbAnniv} anniversaire${nbAnniv > 1 ? 's' : ''}` : ''}`;
   rendre(`<div class="page page-planning">
-    <div class="page-titre"><h1>Planning</h1></div>
+    <div class="page-titre"><h1>Planning</h1><span class="muted">${resume}</span></div>
     <div class="onglets" role="tablist">${[['calendrier', 'Calendrier'], ['avenir', 'À venir']].map(([k, l]) => `<button role="tab" aria-selected="${P.vue === k}" data-vue="${k}">${l}</button>`).join('')}</div>
-    ${P.vue === 'calendrier' ? `<div class="cal-bandeau" style="--mois:${EVT_PALETTE[ref.getMonth() % EVT_PALETTE.length][2]}">
-      <button class="cal-fleche" id="b-prec" aria-label="Précédent" title="Précédent">${icone('precedent')}</button>
-      <div class="cal-titre"><h2>${esc(titre)}</h2></div>
-      <button class="cal-fleche" id="b-suiv" aria-label="Suivant" title="Suivant">${icone('suivant')}</button></div>
-      <div class="filtres cal-nav"><div class="groupe groupe-compact" role="group" aria-label="Affichage">${[['mois', 'Mois'], ['semaine', 'Semaine']].map(([k, l]) => `<button type="button" data-affichage="${k}" aria-pressed="${P.affichage === k}">${l}</button>`).join('')}</div>
-      <span style="flex:1"></span><button class="btn-tonal btn-petit" id="b-auj">Aujourd’hui</button></div>` : '<p class="muted" style="margin:0">Les rendez-vous des douze prochains mois.</p>'}
+    ${P.vue === 'calendrier' ? `<div class="cal-entete">
+      <div class="cal-titre"><h2>${esc(titre)}</h2>
+        <button class="cal-fleche" id="b-prec" aria-label="Précédent" title="Précédent">${icone('precedent')}</button>
+        <button class="cal-fleche" id="b-suiv" aria-label="Suivant" title="Suivant">${icone('suivant')}</button></div>
+      <div class="cal-nav"><div class="groupe groupe-compact" role="group" aria-label="Affichage">${[['mois', 'Mois'], ['semaine', 'Semaine']].map(([k, l]) => `<button type="button" data-affichage="${k}" aria-pressed="${P.affichage === k}">${l}</button>`).join('')}</div>
+      <button class="btn-tonal btn-petit" id="b-auj">Aujourd’hui</button></div></div>` : ''}
     ${corps}
     ${peut('gerer_activites') ? `<button class="fab" id="b-evt" aria-label="Nouveau rendez-vous" title="Nouveau rendez-vous"></button>` : ''}
   </div>`);

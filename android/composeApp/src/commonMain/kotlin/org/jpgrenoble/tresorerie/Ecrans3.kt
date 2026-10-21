@@ -162,7 +162,7 @@ private fun ParamCompte(d: Donnees, message: (String) -> Unit, recharger: () -> 
     val email = remember { Repo.emailConnecte() }
     LaunchedEffect(Unit) { if (d.peut("administrer")) try { profils = Repo.profilsComplets() } catch (_: Exception) { } }
     val libres = d.membres.filter { m -> m.actif && profils.none { it.memberId == m.id } }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -228,7 +228,7 @@ private fun ParamAssociation(d: Donnees, message: (String) -> Unit, recharger: (
     val choixLogo = rememberChoixFichier(pdfAccepte = false) { f, err -> if (err != null) message(err); if (f != null) nouveauLogo = f }
     val choixBanniere = rememberChoixFichier(pdfAccepte = false) { f, err -> if (err != null) message(err); if (f != null) { nouvelleBanniere = f; retirerBanniere = false } }
     val action = rememberAction(message, recharger)
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -339,7 +339,7 @@ private fun ParamComptes(d: Donnees, message: (String) -> Unit, recharger: () ->
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
     val supprimerCompte = rememberSuppression(message) { version++; recharger() }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             CarteBlanche {
                 comptes.forEach { c ->
@@ -406,7 +406,7 @@ private fun ParamRoles(d: Donnees, message: (String) -> Unit, recharger: () -> U
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
     val role = roles.firstOrNull { it.code == choisi }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 roles.forEach { r ->
@@ -499,7 +499,7 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () 
     fun nomRole(c: String) = roles.firstOrNull { it.code == c }?.nom ?: c
     // Même carte que paramPersonnes du site : bouton « Créer des comptes », texte, puis une ligne par compte
     // (avatar, nom, état, fiche de membre, rôle, case Actif) et les invitations en attente atténuées
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             CarteBlanche {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -796,7 +796,7 @@ fun EcranMembres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit = 
         }
     }
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
                 // En-tête commun : titre et « Exporter » (ce qui est affiché : filtres, regroupement, tri), résumé dessous
                 Titre("Membres", "$nbActifs actif" + (if (nbActifs > 1) "s" else "") + if (nbInactifs > 0) " · $nbInactifs inactif" + (if (nbInactifs > 1) "s" else "") else "") {
@@ -1299,7 +1299,7 @@ fun EcranRapports(d: Donnees, message: (String) -> Unit) {
     fun longue(iso: String) = LocalDate.parse(iso).let { "${if (it.dayOfMonth == 1) "1er" else it.dayOfMonth} ${MOIS[it.monthNumber - 1]} ${it.year}" }
     val rappel = doc.b + ", " + noms[format] + when { doc.d == "annee" -> " : exercice $annee"; doc.d.isNotEmpty() && periode != null -> " : du ${longue(periode.first)} au ${longue(periode.second)}"; else -> "" }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Titre("Rapports et exports") }
         item {
             CarteBlanche {
@@ -1634,7 +1634,7 @@ fun EcranAdherent(d: Donnees, message: (String) -> Unit = {}, onReglages: (() ->
                 Column(Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(16.dp)) { ArriveeM3(1, "a:communiques") { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } }; ArriveeM3(2, "a:programme") { Suite() } }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { ArriveeM3(2, "a:cotisation") { Cotisation() }; ArriveeM3(3, "a:regler") { Regler() }; ArriveeM3(3, "a:participations") { Participations() }; ArriveeM3(4, "a:anniversaires") { Anniversaires() } }
             }
-        } else LazyColumn(Modifier.fillMaxSize().background(Couleurs.M3Fond), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        } else LazyColumn(Modifier.fillMaxSize().background(Couleurs.M3Fond), state = liste, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item { ArriveeM3(0, "a:tete") { Tete() } }
             if (communiquesActifs(communiques).isNotEmpty()) item { ArriveeM3(1, "a:communiques") { RubriqueCommuniques(communiques, mesReponses) { communiqueLu = it } } }
             item { ArriveeM3(2, "a:programme") { Suite() } }

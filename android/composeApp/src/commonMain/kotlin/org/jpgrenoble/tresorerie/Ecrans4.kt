@@ -152,7 +152,7 @@ fun ChampTiers(valeur: String, onChange: (String) -> Unit, suggestions: List<Pai
 // expressif : page des membres (Material 3 Expressive) — mois en pilules, « réglé » en vert, comme .vue-membre .case-p du site
 fun GrillePeriodes(cases: List<Pair<String, String?>>, pas: Int, modifier: Modifier = Modifier, uneLigne: Boolean = false, expressif: Boolean = false) {
     // Douze mois : deux lignes de six sur téléphone pour que les noms restent lisibles ; une ligne sur grand écran (comme le site)
-    val ecart = if (expressif) 4.dp else 3.dp
+    val ecart = 4.dp
     // Mois en pilules partout (comme .case-p du site) ; « réglé » en vert sur la page des membres
     val forme = RoundedCornerShape(50)
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ecart)) { cases.chunked(if (cases.size == 12 && !uneLigne) 6 else cases.size.coerceAtLeast(1)).forEach { rangee ->
@@ -421,7 +421,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
         })
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val large = maxWidth >= 840.dp
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     PuceMenu(annee.toString(), true, listOf(an + 1, an, an - 1, an - 2).map { it.toString() }) { annee = an + 1 - it }
@@ -446,10 +446,17 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
             else {
                 if (lignes.isNotEmpty()) {
                     item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Indicateur("Encaissé", euros((synth ?: emptyList()).sumOf { it.paye }), Couleurs.Bleu, Modifier.weight(1f))
-                            Indicateur("En retard", euros((synth ?: emptyList()).sumOf { it.retard }), Couleurs.Orange, Modifier.weight(1f))
-                            Indicateur("À jour", "${lignes.size - nbRetard}$NBSP/$NBSP${lignes.size}", Couleurs.Texte, Modifier.weight(1f))
+                        // Comme les .kpis du site : trois sur une ligne ; téléphone étroit (< 440 dp) : deux, puis le troisième en pleine largeur
+                        BoxWithConstraints {
+                            val etroit = maxWidth < 440.dp
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(if (etroit) 10.dp else 16.dp)) {
+                                    Indicateur("Encaissé", euros((synth ?: emptyList()).sumOf { it.paye }), Couleurs.Bleu, Modifier.weight(1f))
+                                    Indicateur("En retard", euros((synth ?: emptyList()).sumOf { it.retard }), Couleurs.Orange, Modifier.weight(1f))
+                                    if (!etroit) Indicateur("À jour", "${lignes.size - nbRetard}$NBSP/$NBSP${lignes.size}", Couleurs.Texte, Modifier.weight(1f))
+                                }
+                                if (etroit) Indicateur("À jour", "${lignes.size - nbRetard}$NBSP/$NBSP${lignes.size}", Couleurs.Texte, Modifier.fillMaxWidth())
+                            }
                         }
                     }
                     item {
@@ -622,7 +629,7 @@ private fun OngletParticipations(d: Donnees, message: (String) -> Unit) {
     val gere = d.peut("gerer_activites", "gerer_cotisations")
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val large = maxWidth >= 840.dp
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val l = liste
             if (l == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             else if (l.isEmpty()) item {
@@ -862,7 +869,7 @@ private object CouleursPlanning {
     val Surface2 = Couleurs.Surface2; val BordDoux = Couleurs.BordDoux; val Bord = Couleurs.Bord
     val Texte2 = Couleurs.TexteFort2; val Texte3 = Couleurs.Texte2
     val JauneTrait = Couleurs.JauneTrait; val BleuTrait = Couleurs.BleuTrait; val Info = Color(0xFFEAF4FB)
-    val JourFond = Color(0xFFFAFAF9); val JourWe = Color(0xFFFFF7F3); val JourAuj = Color(0xFFFFF4EF); val DateWe = Color(0xFFFFEDE5)
+    val JourWe = Color(0xFFFAFAFB)
     val PrimaireClair = Couleurs.OrangeClair
 }
 private val FormeP4 = Formes.Moyen
@@ -925,35 +932,48 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 600.dp          // site : @media (max-width:600px)
         val enTete = maxWidth >= 640.dp          // site : le bouton principal est dans l'en-tête au-delà de 639 px
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, if (compact) 8.dp else 16.dp, 16.dp, 104.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, if (compact) 8.dp else 16.dp, 16.dp, 104.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 16.dp)) {
             item {
                 val actionTitre: (@Composable () -> Unit)? = if (gere && enTete) { {
                     Button(onClick = { nouveau = dateNouveau() }, shape = FormeP4) {
                         Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Nouveau rendez-vous")
                     }
                 } } else null
-                Titre("Planning", action = actionTitre)
+                // Résumé sous le titre (en-tête commun), même texte que le site
+                val l = evts ?: emptyList()
+                val nbE = when { vue == "avenir" -> l.count { (it.fin ?: it.debut ?: "") >= auj }; affichage == "semaine" -> l.size
+                    else -> l.count { LocalDate.parse(it.debut!!.take(10)).let { j -> j.monthNumber == ref.monthNumber && j.year == ref.year } } }
+                val nbA = when { vue == "avenir" -> 0; affichage == "semaine" -> generateSequence(debut) { it.plus(DatePeriod(days = 1)) }.take(7).sumOf { annivDe(it.toString()).size }
+                    else -> anniv[ref.monthNumber].orEmpty().size }
+                val resume = "${if (nbE == 0) "Aucun" else nbE.toString()} rendez-vous ${when { vue == "avenir" -> "dans les douze prochains mois"; affichage == "semaine" -> "cette semaine"; else -> "ce mois" }}" +
+                    (if (nbA > 0) " · $nbA anniversaire${if (nbA > 1) "s" else ""}" else "")
+                Titre("Planning", resume = if (evts == null) null else resume, action = actionTitre)
             }
             item { OngletsPlanning(vue) { vue = it; PreferencesPlanning.vue = it; sens = 0 } }
             if (vue == "calendrier") {
-                // Bandeau coloré du mois (une couleur par mois), flèches rondes
+                // En-tête sobre (comme Google Agenda) : titre du mois et flèches rondes neutres ; Mois / Semaine et Aujourd'hui
+                // sur la ligne suivante au téléphone, sur la même ligne au-delà
                 item {
                     val titre = if (affichage == "mois") "${MOIS[ref.monthNumber - 1].replaceFirstChar { it.uppercase() }} ${ref.year}" else "Semaine du ${debut.dayOfMonth} ${MOIS[debut.monthNumber - 1]}"
-                    BandeauMois(titre, EVT_PALETTE[(ref.monthNumber - 1) % EVT_PALETTE.size].third, compact, onPrec = { decaler(-1) }, onSuiv = { decaler(1) })
-                }
-                item {
                     val choix: (String) -> Unit = { affichage = it; PreferencesPlanning.affichage = it; sens = 0 }
-                    val boutonAuj = @Composable {
-                        Surface(onClick = { sens = 0; ref = aujourdhui() }, shape = FormeP4, color = Color.White, contentColor = Couleurs.Texte,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, CouleursPlanning.Bord)) {
-                            Text("Aujourd’hui", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    val titreEtFleches = @Composable { m: Modifier ->
+                        Row(m, verticalAlignment = Alignment.CenterVertically) {
+                            Text(titre, Modifier.weight(1f, fill = false).padding(end = 8.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                fontSize = if (compact) 18.sp else 22.sp, lineHeight = if (compact) 24.sp else 28.sp)
+                            FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Précédent", if (compact) 36.dp else 40.dp) { decaler(-1) }
+                            FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Suivant", if (compact) 36.dp else 40.dp) { decaler(1) }
                         }
                     }
-                    // Mois / Semaine et Aujourd'hui sur une seule ligne, téléphone compris (tout le mois tient dans l'écran)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        GroupeAffichage(affichage, plein = false, onChoix = choix)
-                        Spacer(Modifier.weight(1f))
-                        boutonAuj()
+                    val boutonAuj = @Composable {
+                        Surface(onClick = { sens = 0; ref = aujourdhui() }, shape = Formes.Rond, color = Couleurs.OrangeClair, contentColor = Couleurs.Texte) {
+                            Text("Aujourd’hui", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    if (compact) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        titreEtFleches(Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) { GroupeAffichage(affichage, plein = false, onChoix = choix); Spacer(Modifier.weight(1f)); boutonAuj() }
+                    } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        titreEtFleches(Modifier.weight(1f)); GroupeAffichage(affichage, plein = false, onChoix = choix); boutonAuj()
                     }
                 }
                 if (evts == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
@@ -971,10 +991,9 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
                         }, onDragCancel = { cumul = 0f }) { _, dx -> cumul += dx }
                     }, label = "planning") { (aff, deb) ->
                         if (aff == "mois") {
-                            val nb = (evts ?: emptyList()).count { LocalDate.parse(it.debut!!.take(10)).monthNumber == ref.monthNumber }
-                            CalendrierMois(deb, parJour, ::annivDe, anniv[ref.monthNumber].orEmpty().size, nb, compact, onJour = { jour = it }, onEvt = { detail = it })
+                            CalendrierMois(deb, parJour, ::annivDe, compact, onJour = { jour = it }, onEvt = { detail = it })
                         } else {
-                            // Semaine : sept jours, logo en filigrane comme le calendrier du mois
+                            // Semaine : sept jours ; un jour sans rien prend moins de place
                             CartePlanning(Modifier.fillMaxWidth()) { Box {
                                 Column(Modifier.padding(16.dp)) {
                                     generateSequence(deb) { it.plus(DatePeriod(days = 1)) }.take(7).map { it.toString() }.forEachIndexed { i, s ->
@@ -982,24 +1001,28 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
                                         HorizontalDivider(color = CouleursPlanning.BordDoux)
                                     }
                                 }
-                                Filigrane(Modifier.align(Alignment.Center), compact)
                             } }
                         }
                     }
                 }
-                if (affichage == "mois") item {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(Modifier.size(width = 24.dp, height = 4.dp).clip(RoundedCornerShape(50))) { EVT_PALETTE.take(4).forEach { Box(Modifier.weight(1f).fillMaxHeight().background(it.third)) } }
-                            Text("Rendez-vous (une couleur chacun)", fontSize = 12.sp, color = CouleursPlanning.Texte3)
+                // Téléphone : les cases ne montrent que des points ; la liste des rendez-vous du mois suit le calendrier (comme le site)
+                if (affichage == "mois" && compact) {
+                    val duMois = (evts ?: emptyList()).filter { LocalDate.parse(it.debut!!.take(10)).monthNumber == ref.monthNumber }.sortedWith(compareBy({ it.debut }, { it.heureDebut ?: "" }))
+                    if (duMois.isNotEmpty()) item {
+                        CartePlanning(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                duMois.forEachIndexed { i, e ->
+                                    if (i > 0) HorizontalDivider(color = CouleursPlanning.BordDoux)
+                                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        DateAgenda(e.debut!!.take(10), e.debut.take(10) == auj, false, null)
+                                        Column(Modifier.weight(1f)) { CarteEvenement(e) { detail = e } }
+                                    }
+                                }
+                            }
                         }
-                        Legende(Couleurs.Jaune, "Anniversaire")
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Box(Modifier.size(12.dp).background(Couleurs.Orange, CircleShape)); Text("Aujourd’hui", fontSize = 12.sp, color = CouleursPlanning.Texte3) }
-                        Text("Touchez un jour pour le détail", fontSize = 12.sp, color = CouleursPlanning.Texte3)
                     }
                 }
             } else {
-                item { Text("Les rendez-vous des douze prochains mois.", fontSize = 14.sp, color = CouleursPlanning.Texte3) }
                 val l = (evts ?: emptyList()).filter { (it.fin ?: it.debut ?: "") >= auj }.sortedWith(compareBy({ it.debut }, { it.heureDebut ?: "" }))
                 if (evts != null && l.isEmpty()) item {
                     CartePlanning(Modifier.fillMaxWidth()) {
@@ -1015,7 +1038,7 @@ fun EcranPlanning(d: Donnees, message: (String) -> Unit, onBudget: (() -> Unit)?
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 // Titre du mois précédé d'un filet de la couleur du mois (comme .carte-mois)
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Box(Modifier.size(width = 10.dp, height = 24.dp).background(EVT_PALETTE[(mo - 1) % EVT_PALETTE.size].third, RoundedCornerShape(50)))
+                                    Box(Modifier.size(8.dp).background(EVT_PALETTE[(mo - 1) % EVT_PALETTE.size].third, CircleShape))
                                     Text("${MOIS[mo - 1].replaceFirstChar { it.uppercase() }} ${m.take(4)}", fontSize = if (compact) 18.sp else 20.sp, fontWeight = FontWeight.SemiBold)
                                 }
                                 Column {
@@ -1113,28 +1136,6 @@ private fun GroupeAffichage(affichage: String, plein: Boolean, onChoix: (String)
     }
 }
 
-// Bandeau du mois : dégradé de la couleur du mois, deux cercles clairs, titre qui entre en montant
-@Composable
-private fun BandeauMois(titre: String, couleur: Color, compact: Boolean, onPrec: () -> Unit, onSuiv: () -> Unit) {
-    val sombre = Color(couleur.red * 0.7f, couleur.green * 0.7f, couleur.blue * 0.7f)
-    Row(Modifier.fillMaxWidth().shadow(4.dp, FormeP8).clip(FormeP8)
-        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(couleur, sombre)))
-        .drawBehind {
-            drawCircle(Color.White.copy(alpha = 0.1f), radius = 100.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width - 40.dp.toPx(), 10.dp.toPx()))
-            drawCircle(Color.White.copy(alpha = 0.1f), radius = 60.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.3f + 60.dp.toPx(), size.height + 20.dp.toPx()))
-        }
-        .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Précédent", if (compact) 36.dp else 44.dp, onPrec)
-        AnimatedContent(titre, Modifier.weight(1f), transitionSpec = {
-            (fadeIn(androidx.compose.animation.core.tween(250)) + slideInVertically(androidx.compose.animation.core.tween(250)) { it / 4 }) togetherWith fadeOut(androidx.compose.animation.core.tween(90))
-        }, label = "titre-mois") { t ->
-            Text(t, Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold,
-                fontSize = if (compact) 18.sp else 24.sp, lineHeight = if (compact) 24.sp else 32.sp, color = Color.White)
-        }
-        FlecheMois(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Suivant", if (compact) 36.dp else 44.dp, onSuiv)
-    }
-}
-
 // Carte sobre du site (.carte / .cal) : blanche, coins 8, ombre légère
 @Composable
 private fun CartePlanning(modifier: Modifier, contenu: @Composable () -> Unit) =
@@ -1157,19 +1158,22 @@ private fun PucePlanning(texte: String, fond: Color, bord: Color, couleur: Color
 
 // Date d'une ligne d'agenda (.agenda-date) : 48 × 48, coins 4 ; aujourd'hui en orange ; week-end teinté (semaine)
 @Composable
-private fun DateAgenda(s: String, estAuj: Boolean, weekEnd: Boolean, onClick: (() -> Unit)?) {
-    val fond = if (estAuj) Couleurs.Orange else if (weekEnd) CouleursPlanning.DateWe else CouleursPlanning.Surface2
-    Column(Modifier.size(48.dp).clip(FormeP4).background(fond).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+private fun DateAgenda(s: String, estAuj: Boolean, weekEnd: Boolean, onClick: (() -> Unit)?, petit: Boolean = false) {
+    // Jour sans rien (semaine) : case plus petite et sans fond
+    val fond = if (estAuj) Couleurs.Orange else if (petit) Color.Transparent else CouleursPlanning.Surface2
+    Column(Modifier.size(if (petit) 40.dp else 48.dp).clip(FormeP4).background(fond).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(s.takeLast(2).trimStart('0'), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 22.sp, color = if (estAuj) Color.White else Couleurs.Texte)
+        Text(s.takeLast(2).trimStart('0'), fontWeight = FontWeight.SemiBold, fontSize = if (petit) 16.sp else 18.sp, lineHeight = 22.sp, color = if (estAuj) Color.White else Couleurs.Texte)
         Text(JOURS_COURTS[LocalDate.parse(s).dayOfWeek.isoDayNumber - 1], fontSize = 11.sp, lineHeight = 14.sp, color = if (estAuj) Color.White else CouleursPlanning.Texte3)
     }
 }
 
 @Composable
 private fun LigneAgenda(s: String, estAuj: Boolean, weekEnd: Boolean, evts: List<Projet>, anniv: List<Anniversaire>, onJour: () -> Unit, onEvt: (Projet) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
-        DateAgenda(s, estAuj, weekEnd, onJour)
+    val vide = evts.isEmpty() && anniv.isEmpty()
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = if (vide) Alignment.CenterVertically else Alignment.Top,
+        modifier = Modifier.fillMaxWidth().padding(vertical = if (vide) 6.dp else 10.dp)) {
+        DateAgenda(s, estAuj, weekEnd, onJour, petit = vide)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             evts.forEach { e -> CarteEvenement(e) { onEvt(e) } }
             anniv.forEach { PuceAnniversaire(it) }
@@ -1178,112 +1182,85 @@ private fun LigneAgenda(s: String, estAuj: Boolean, weekEnd: Boolean, evts: List
     }
 }
 
-// Logo de l'association en filigrane : très discret, laisse passer les appuis (55 % au plus 340 dp ; 70 % sur téléphone)
-@Composable
-private fun Filigrane(modifier: Modifier, compact: Boolean) =
-    LogoAsso(modifier.fillMaxWidth(if (compact) 0.7f else 0.55f).widthIn(max = 340.dp).aspectRatio(1f)
-        .graphicsLayer { alpha = if (compact) 0.07f else 0.08f }.clip(CircleShape).clearAndSetSemantics { })
-
+// Calendrier sobre (Google Agenda / Calendrier iOS), comme le site : quadrillage fin sur fond blanc, jours en petites capitales grises,
+// numéro dans un rond (aujourd'hui plein orange), rendez-vous en petites puces teintées ; téléphone : points de couleur sous le numéro
 @Composable
 private fun CalendrierMois(debut: LocalDate, parJour: Map<String, List<Projet>>,
-                           annivDe: (String) -> List<Anniversaire>, nbAnniv: Int, nbEvts: Int, compact: Boolean,
+                           annivDe: (String) -> List<Anniversaire>, compact: Boolean,
                            onJour: (String) -> Unit, onEvt: (Projet) -> Unit) {
     // Mois affiché déduit du premier lundi de la grille (la première semaine contient toujours le 1er)
     val ref = debut.plus(DatePeriod(days = 7)).let { LocalDate(it.year, it.monthNumber, 1) }
     val dern = ref.plus(DatePeriod(months = 1)).minus(DatePeriod(days = 1))
     val fin = dern.plus(DatePeriod(days = 7 - dern.dayOfWeek.isoDayNumber))
     val jours = generateSequence(debut) { it.plus(DatePeriod(days = 1)) }.takeWhile { it <= fin }.toList()
-    val cle = ref.year * 12 + ref.monthNumber
-    CartePlanning(Modifier.fillMaxWidth()) { Box {
-        Column(Modifier.padding(if (compact) 4.dp else 8.dp)) {
-            // Résumé dans la carte, comme .cal-resume
-            Text(buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Couleurs.Texte)) { append("$nbEvts") }; append(" rendez-vous ce mois")
-                if (nbAnniv > 0) { append(" · "); withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Couleurs.Texte)) { append("$nbAnniv") }; append(" anniversaire${if (nbAnniv > 1) "s" else ""}") }
-            }, fontSize = 13.sp, color = CouleursPlanning.Texte3, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                JOURS_COURTS.forEachIndexed { i, t ->
-                    Text(t, Modifier.weight(1f).padding(vertical = 4.dp), textAlign = TextAlign.Center, fontSize = if (compact) 10.sp else 12.sp,
-                        fontWeight = FontWeight.SemiBold, color = if (i >= 5) Couleurs.Orange else CouleursPlanning.Texte3)
+    Surface(Modifier.fillMaxWidth(), color = Color.White, shape = if (compact) Formes.Grand else Formes.XGrand,
+        border = androidx.compose.foundation.BorderStroke(1.dp, CouleursPlanning.BordDoux)) {
+        Column {
+            Row {
+                JOURS_COURTS.forEach { t ->
+                    Text(t.uppercase(), Modifier.weight(1f).padding(top = if (compact) 8.dp else 12.dp, bottom = if (compact) 6.dp else 8.dp), textAlign = TextAlign.Center,
+                        fontSize = if (compact) 10.sp else 11.sp, letterSpacing = 0.5.sp, fontWeight = FontWeight.SemiBold, color = CouleursPlanning.Texte3)
                 }
             }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                jours.chunked(7).forEachIndexed { n, semaine ->
-                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        semaine.forEachIndexed { k, j ->
-                            val s = j.toString()
-                            CaseJour(j, n * 7 + k, cle, j.monthNumber != ref.monthNumber, k >= 5, parJour[s].orEmpty(), annivDe(s), compact,
-                                Modifier.weight(1f).fillMaxHeight(), onJour, onEvt)
-                        }
+            jours.chunked(7).forEach { semaine ->
+                HorizontalDivider(color = CouleursPlanning.BordDoux)
+                Row(Modifier.height(IntrinsicSize.Min)) {
+                    semaine.forEachIndexed { k, j ->
+                        if (k > 0) VerticalDivider(color = CouleursPlanning.BordDoux)
+                        val s = j.toString()
+                        CaseJour(j, j.monthNumber != ref.monthNumber, k >= 5, parJour[s].orEmpty(), annivDe(s), compact,
+                            Modifier.weight(1f).fillMaxHeight(), onJour, onEvt)
                     }
                 }
             }
         }
-        Filigrane(Modifier.align(Alignment.Center), compact)
-    } }
+    }
 }
 
-// Case d'un jour (.cal-jour) : fond selon le jour, aujourd'hui entouré, anniversaire en dégradé jaune en bas ;
-// entrée en fondu léger, en cascade, une seule fois par mois affiché (pas à chaque mise à jour en temps réel)
+// Case d'un jour (.cal-jour) : fond blanc (week-end à peine teinté), numéro centré, puces ou points dessous
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CaseJour(j: LocalDate, rang: Int, cle: Int, hors: Boolean, weekEnd: Boolean, e: List<Projet>, a: List<Anniversaire>, compact: Boolean,
+private fun CaseJour(j: LocalDate, hors: Boolean, weekEnd: Boolean, e: List<Projet>, a: List<Anniversaire>, compact: Boolean,
                      modifier: Modifier, onJour: (String) -> Unit, onEvt: (Projet) -> Unit) {
     val s = j.toString()
     val estAuj = s == aujourdhui().toString()
-    val entree = remember(cle) { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(cle) { kotlinx.coroutines.delay(rang * 6L); entree.animateTo(1f, androidx.compose.animation.core.tween(250)) }
-    val fond = when { estAuj -> CouleursPlanning.JourAuj; e.isNotEmpty() -> Color.White; weekEnd -> CouleursPlanning.JourWe; else -> CouleursPlanning.JourFond }
-    val degradeAnniv = androidx.compose.ui.graphics.Brush.verticalGradient(0.7f to Color.Transparent, 1f to Couleurs.Jaune.copy(alpha = 0.18f))
-    Column(modifier.heightIn(min = if (compact) 48.dp else 88.dp)
-        .graphicsLayer { alpha = entree.value; val sc = 0.96f + 0.04f * entree.value; scaleX = sc; scaleY = sc }
-        .clip(FormeP4).background(fond)
-        .then(if (a.isNotEmpty()) Modifier.drawBehind { drawRect(degradeAnniv) } else Modifier)
-        .then(if (estAuj) Modifier.border(2.dp, Couleurs.Orange, FormeP4) else if (e.isNotEmpty()) Modifier.border(1.dp, CouleursPlanning.BordDoux, FormeP4) else Modifier)
+    Column(modifier.heightIn(min = if (compact) 48.dp else 96.dp)
+        .background(if (weekEnd) CouleursPlanning.JourWe else Color.White)
         .clickable { onJour(s) }
-        .semantics { contentDescription = jourLong(s) + if (e.isNotEmpty()) ", ${e.size} rendez-vous" else "" }
-        .padding(if (compact) 2.dp else 4.dp)) {
-        // Hors du mois : le contenu s'efface (.45), la case garde son fond
-        Column(Modifier.fillMaxWidth().graphicsLayer { alpha = if (hors) 0.45f else 1f }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            NumeroJour(j.dayOfMonth, estAuj)
+        .semantics { contentDescription = jourLong(s) + (if (e.isNotEmpty()) ", ${e.size} rendez-vous" else "") + if (a.isNotEmpty()) ", anniversaire" else "" }
+        .padding(horizontal = if (compact) 0.dp else 6.dp, vertical = if (compact) 4.dp else 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp)) {
+        NumeroJour(j.dayOfMonth, estAuj, hors, compact)
+        // Hors du mois : le contenu s'efface à moitié
+        if (compact) FlowRow(Modifier.graphicsLayer { alpha = if (hors) 0.5f else 1f }, horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            // Points de 6 dp : on touche la case (détail du jour), pas le point trop petit pour le doigt
+            e.take(3).forEach { ev -> Box(Modifier.size(6.dp).background(couleurEvt(ev.id).third, CircleShape)) }
+            if (e.size > 3) Text("+${e.size - 3}", fontSize = 9.sp, lineHeight = 9.sp, color = CouleursPlanning.Texte3, fontWeight = FontWeight.SemiBold)
+            if (a.isNotEmpty()) Box(Modifier.size(6.dp).background(Couleurs.Jaune, CircleShape))
+        } else Column(Modifier.fillMaxWidth().graphicsLayer { alpha = if (hors) 0.5f else 1f }, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             e.take(3).forEach { ev ->
-                val (fondEvt, encre, accent) = couleurEvt(ev.id)
-                // Téléphone : une barre de la couleur du rendez-vous ; ailleurs, l'heure et le nom
-                if (compact) Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(accent).clickable { onEvt(ev) })
-                else Text(buildAnnotatedString {
-                    ev.heureDebut?.let { withStyle(SpanStyle(color = encre.copy(alpha = 0.8f))) { append(it.take(5)) }; append(" ") }
+                val (fondEvt, encre, _) = couleurEvt(ev.id)
+                Text(buildAnnotatedString {
+                    ev.heureDebut?.let { withStyle(SpanStyle(color = encre.copy(alpha = 0.75f), fontWeight = FontWeight.Medium)) { append(it.take(5)) }; append(" ") }
                     append(ev.nom)
                 }, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = encre, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.fillMaxWidth().clip(FormeP4).background(fondEvt)
-                        .drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
-                        .clickable { onEvt(ev) }.padding(horizontal = 6.dp, vertical = 1.dp))
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(fondEvt).clickable { onEvt(ev) }.padding(horizontal = 8.dp, vertical = 2.dp))
             }
-            if (e.size > 3) Text("+${e.size - 3}", fontSize = 11.sp, lineHeight = 14.sp, color = CouleursPlanning.Texte3)
-            if (a.isNotEmpty()) {
-                if (compact) Box(Modifier.fillMaxWidth().height(4.dp).background(Couleurs.Jaune, Formes.Petit))
-                else Text(a.joinToString(", ") { it.prenom }, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = Couleurs.SurJaune, modifier = Modifier.fillMaxWidth().background(Couleurs.JauneClair, Formes.Petit).padding(horizontal = 6.dp, vertical = 1.dp))
-            }
+            if (e.size > 3) Text("+${e.size - 3}", Modifier.padding(horizontal = 8.dp), fontSize = 11.sp, lineHeight = 14.sp, color = CouleursPlanning.Texte3, fontWeight = FontWeight.SemiBold)
+            if (a.isNotEmpty()) Text("🎂 " + a.joinToString(", ") { it.prenom }, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = Couleurs.SurJaune, modifier = Modifier.fillMaxWidth().background(Couleurs.JauneClair, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 2.dp))
         }
     }
 }
 
-// Numéro du jour ; aujourd'hui : rond orange avec un halo qui respire (pulsation du site)
+// Numéro du jour dans un rond de 28 dp (26 au téléphone) ; aujourd'hui : rond orange plein, sans halo
 @Composable
-private fun NumeroJour(n: Int, estAuj: Boolean) {
-    val halo = if (estAuj) {
-        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "halo")
-        t.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1200, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            androidx.compose.animation.core.RepeatMode.Reverse), label = "halo").value
-    } else 0f
-    Box(Modifier.defaultMinSize(minWidth = 24.dp, minHeight = 24.dp)
-        .then(if (estAuj) Modifier.drawBehind {
-            val r = size.minDimension / 2
-            drawCircle(CouleursPlanning.PrimaireClair.copy(alpha = 1f - 0.6f * halo), radius = r + (3f + 3f * halo).dp.toPx())
-        }.background(Couleurs.Orange, CircleShape) else Modifier), contentAlignment = Alignment.Center) {
-        Text(n.toString(), fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, color = if (estAuj) Color.White else Couleurs.Texte,
-            modifier = Modifier.padding(horizontal = 4.dp))
+private fun NumeroJour(n: Int, estAuj: Boolean, hors: Boolean, compact: Boolean) =
+    Box(Modifier.size(if (compact) 26.dp else 28.dp).then(if (estAuj) Modifier.background(Couleurs.Orange, CircleShape) else Modifier), contentAlignment = Alignment.Center) {
+        Text(n.toString(), fontSize = 13.sp, lineHeight = 16.sp, fontWeight = if (estAuj) FontWeight.Bold else FontWeight.Medium,
+            color = when { estAuj -> Color.White; hors -> CouleursPlanning.Texte3.copy(alpha = 0.6f); else -> Couleurs.Texte })
     }
-}
 
 object EtatPlanning { var gere = false }
 
@@ -1293,8 +1270,8 @@ object EtatPlanning { var gere = false }
 @Composable
 private fun CarteEvenement(e: Projet, onClick: () -> Unit) {
     val gere = EtatPlanning.gere
-    val (fond, texte, accent) = couleurEvt(e.id)
-    Column(Modifier.fillMaxWidth().clip(FormeP4).background(fond).drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }
+    val (fond, texte, _) = couleurEvt(e.id)
+    Column(Modifier.fillMaxWidth().clip(FormeP4).background(fond)
         .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(e.nom, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = texte)
@@ -1615,7 +1592,6 @@ fun ListeParticipations(parts: List<Participation>, tuiles: Boolean = false) {
 
 @Composable
 private fun FlecheMois(icone: androidx.compose.ui.graphics.vector.ImageVector, description: String, taille: androidx.compose.ui.unit.Dp = 44.dp, onClick: () -> Unit) =
-    Surface(onClick = onClick, shape = CircleShape, color = Color.White.copy(alpha = 0.14f), contentColor = Color.White,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)), modifier = Modifier.size(taille)) {
+    Surface(onClick = onClick, shape = CircleShape, color = Color.Transparent, contentColor = CouleursPlanning.Texte2, modifier = Modifier.size(taille)) {
         Box(contentAlignment = Alignment.Center) { Icon(icone, description) }
     }

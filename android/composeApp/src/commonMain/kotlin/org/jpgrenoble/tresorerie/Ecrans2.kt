@@ -91,7 +91,7 @@ internal fun CarteBlanche(onClick: (() -> Unit)? = null, content: @Composable Co
     // Carte blanche cernée d'un filet gris doux, coins 24 (comme .carte du site)
     Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large, border = BorderStroke(1.dp, Couleurs.BordDoux), shadowElevation = 1.dp,
         modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onClick) else Modifier)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
 
 private fun couleursStatut(s: String): Pair<Color, Color> = when (s) {
@@ -315,7 +315,7 @@ fun EcranDepenses(d: Donnees, message: (String) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Grand écran : le bouton « Nouvelle demande » est dans l'en-tête (comme le site) ; téléphone : bouton + flottant
         val large = maxWidth >= 840.dp
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             // En-tête : titre et ce qui attend (comme le site)
             item {
                 val l0 = liste.orEmpty()
@@ -810,7 +810,7 @@ fun EcranRapprochement(d: Donnees, message: (String) -> Unit) {
     val releveValeur = solde.replace(',', '.').toDoubleOrNull()
     val ecart = releveValeur?.let { kotlin.math.round((it - total) * 100) / 100 }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Titre("Rapprochement") }
         if (!d.peut("rapprocher")) item {
             BlocInfo("Consultation$NBSP: le rapprochement est fait par le trésorier. Il compare chaque mois les opérations enregistrées au relevé de la banque et au comptage de la caisse$NBSP; une période rapprochée est verrouillée." +

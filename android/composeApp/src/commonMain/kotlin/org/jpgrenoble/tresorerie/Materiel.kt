@@ -90,7 +90,7 @@ fun EcranMateriel(d: Donnees, message: (String) -> Unit, pre: NouveauMateriel? =
     fun nomMembre(id: String?) = d.membres.firstOrNull { it.id == id }?.nomComplet ?: "un membre"
 
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 104.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 104.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item { Titre("Matériel") { OutlinedButton(onClick = { exporter = true }) { Text("Exporter") } } }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

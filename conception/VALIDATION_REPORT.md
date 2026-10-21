@@ -131,3 +131,13 @@
 | `membres2.mjs` (Pixel 7, iPhone SE, ordinateur) : liste, fiche, filtres, regroupement par nationalité, pastilles, répartition | ✅ largeur de page = écran, 0 erreur JS |
 | `scanner.mjs`, `import2.mjs`, `rappel.mjs`, `rappel-groupe.mjs`, `a5.mjs` | ✅ |
 | Android : compilation, 31 tests dont `groupesEtRepartitionCommeLeSite` | ✅ ; rendu à vérifier sur téléphone |
+
+## 0.45.0 — Planning sobre et aération
+
+| Contrôle | Résultat |
+|---|---|
+| Site, Pixel 7 et ordinateur : Mois, Semaine, À venir, détail du jour, mois suivant | ✅ 0 erreur JS |
+| `a7.mjs` (6 tailles d'iPhone/iPad, 4 rôles, toutes les pages) | ✅ 312 vues, 0 problème |
+| `a5.mjs` | ✅ 144 vues, aucun débordement |
+| Android : compilation, tests unitaires, capture Roborazzi `bureau-planning` | ✅ rendu identique au site |
+
