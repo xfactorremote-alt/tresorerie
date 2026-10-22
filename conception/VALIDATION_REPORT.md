@@ -141,3 +141,14 @@
 | `a5.mjs` | ✅ 144 vues, aucun débordement |
 | Android : compilation, tests unitaires, capture Roborazzi `bureau-planning` | ✅ rendu identique au site |
 
+
+## 0.46.0 — Plusieurs montants (cotisations et participations), suppression d'un compte d'accès, nom JTP
+
+| Contrôle | Résultat |
+|---|---|
+| Migration testée sur PostgreSQL local (barème, `appliquer_tarif` depuis une date, réapplication d'un montant modifié, refus de supprimer un montant attribué, collecte avec montants par personne, corbeille aller-retour d'une collecte et d'un membre avec leurs montants) | ✅ puis appliquée en production |
+| Fonction `supprimer-compte` déployée (refus : soi-même, dernier administrateur, compte qui a servi) | ✅ |
+| Site en démonstration (`montants.mjs`) : barème, montant d'un membre depuis juin, détail et formulaire de collecte, suppression d'un compte puis « Annuler » | ✅ 0 erreur JS |
+| `a7.mjs` (6 tailles, 4 rôles) / `a5.mjs` | ✅ 312 vues, 0 problème / 144 vues, aucun débordement |
+| Android : compilation, 34 tests dont `montantsSelonLaPersonne`, capture `bureau-cotisations` | ✅ |
+| À faire par le trésorier | `supabase/A-EXECUTER-montants-2026-10-22.sql` (clés de `collecte_montants`) |

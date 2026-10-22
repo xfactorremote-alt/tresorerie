@@ -127,6 +127,24 @@ fun couverture(periodes: List<PeriodeCotisation>, montant: Double): Couverture {
     }
     return Couverture(jusqua, partiel, kotlin.math.round(reste * 100) / 100)
 }
+// ---------- Montants selon la personne (mêmes noms et mêmes calculs que le site) ----------
+// Barème : montant de cotisation d'un membre, le sien (tarif) sinon le montant normal — comme montant_cotisation() de la base
+fun tarifDe(m: Membre?, tarifs: List<Tarif>): Tarif? = tarifs.firstOrNull { it.id == m?.tarifId }
+fun montantCotisation(m: Membre?, tarifs: List<Tarif>, normal: Double): Double = tarifDe(m, tarifs)?.montant ?: normal
+fun nomTarif(m: Membre?, tarifs: List<Tarif>): String = tarifDe(m, tarifs)?.nom ?: "Montant normal"
+fun libelleTarif(t: Tarif?, normal: Double): String = "${t?.nom ?: "Montant normal"} · ${(t?.montant ?: normal).let { if (it == 0.0) "dispensé" else euros(it) }}"
+// « 15 € par personne », « Montant libre », « … · selon la personne »
+fun libelleMontantCollecte(c: Collecte): String =
+    (c.montantAttendu?.takeIf { it > 0 }?.let { "${euros(it)} par personne" } ?: "Montant libre") + if (c.montantsVaries) " · selon la personne" else ""
+// Situation d'une personne pour une participation : donné v, attendu a (le sien), dispensé (montant personnel à 0)
+fun texteStatutParticipation(v: Double, a: Double, dispense: Boolean): String = when {
+    dispense -> if (v > 0) "Donné" else "Dispensé"
+    a > 0 -> if (v >= a) "Réglé" else if (v > 0) "Partiel" else "À régler"
+    else -> if (v > 0) "Donné" else ""
+}
+// Périodes proposées pour « à partir de » : celles de l'année (janvier par défaut), puis janvier suivant
+fun periodesDepuis(annee: Int, pas: Int): List<String> = (1..12 step (if (pas in listOf(1, 3, 6, 12)) pas else 1)).map { "$annee-${it.toString().padStart(2, '0')}-01" } + "${annee + 1}-01-01"
+
 fun retardDe(periodes: List<PeriodeCotisation>): Double {
     val auj = aujourdhui().toString()
     return periodes.filter { it.periode <= auj }.sumOf { it.du - it.regle }
@@ -391,12 +409,17 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     var rappel by remember { mutableStateOf<DemandeRappel?>(null) }
     var rappelGroupe by remember { mutableStateOf<List<CibleRappel>?>(null) }
     var fiche by remember { mutableStateOf<Membre?>(null) }
+    // Barème : montant de chacun (relu ici pour suivre un changement fait dans la fiche ou les Paramètres)
+    var tarifs by remember { mutableStateOf(d.tarifs) }
+    var tarifDeMembre by remember { mutableStateOf(d.membres.associate { it.id to it.tarifId }) }
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     val gere = d.peut("gerer_cotisations")
     LaunchedEffect(annee, version, Synchro.version) {
         try {
             synth = Repo.cotisations(annee); periodes = Repo.periodes(annee)
+            tarifs = try { Repo.tarifs() } catch (_: Exception) { emptyList() }
+            tarifDeMembre = try { Repo.membres().associate { it.id to it.tarifId } } catch (_: Exception) { tarifDeMembre }
             val r = Repo.reglages(); pas = (r["cotisation_periode_mois"] ?: 1.0).toInt(); montantPeriode = r["cotisation_montant"] ?: 0.0
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
@@ -408,6 +431,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     val vues = lignes.filter { (_, c) -> filtre == "tous" || (filtre == "retard") == (c.retard > 0.005) }
     val sansCotis = d.membres.count { it.actif && parMembre[it.id] == null }
     val nomOrg = d.organisation.nom.trim()
+    fun avecTarif(m: Membre) = m.copy(tarifId = tarifDeMembre[m.id])
     var exporterCotis by EtatCotisations::exporter
     val imprimerCotis = rememberImpression()
     val enregistrerCotis = rememberEnregistrer { it?.let(message) }
@@ -415,8 +439,8 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     if (exporterCotis) ChoixFormat("Cotisations $annee", onFermer = { exporterCotis = false },
         onPdf = { scope.launch { try { val (t, h) = documentHtml(d, "cotisations", annee); imprimerCotis(t, h) } catch (e: Exception) { message(traduireErreur(e)) } } },
         onExcel = {
-            enregistrerCotis("cotisations-$annee.csv", "text/csv", csv(listOf("Prénom", "Nom") + cases.map { nomPeriode(it, pas) } + listOf("Dû", "Réglé", "Exigible", "Retard", "Réglé jusqu’à"),
-                lignes.map { (m, c) -> listOf<Any?>(m.prenom, m.nom) + cases.map { p -> parCase[m.id to p]?.statut?.let { STATUTS_PERIODE[it] ?: it } ?: "" } +
+            enregistrerCotis("cotisations-$annee.csv", "text/csv", csv(listOf("Prénom", "Nom", "Montant", "Par période") + cases.map { nomPeriode(it, pas) } + listOf("Dû", "Réglé", "Exigible", "Retard", "Réglé jusqu’à"),
+                lignes.map { (m, c) -> listOf<Any?>(m.prenom, m.nom, nomTarif(avecTarif(m), tarifs), montantCotisation(avecTarif(m), tarifs, montantPeriode)) + cases.map { p -> parCase[m.id to p]?.statut?.let { STATUTS_PERIODE[it] ?: it } ?: "" } +
                     listOf<Any?>(c.du, c.paye, c.exigible ?: 0.0, c.retard, c.regleJusqua?.let { nomPeriode(it, pas) } ?: "") }).encodeToByteArray())
         })
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -425,7 +449,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
             item {
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     PuceMenu(annee.toString(), true, listOf(an + 1, an, an - 1, an - 2).map { it.toString() }) { annee = an + 1 - it }
-                    Text("${PERIODICITES[pas] ?: ""}, ${euros(montantPeriode)} par période", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.weight(1f).align(Alignment.CenterVertically))
+                    Text("${PERIODICITES[pas] ?: ""}, ${euros(montantPeriode)} par période" + if (tarifs.isNotEmpty()) " · ${tarifs.size} autre${if (tarifs.size > 1) "s" else ""} montant${if (tarifs.size > 1) "s" else ""}" else "", fontSize = 13.sp, color = Couleurs.Texte2, modifier = Modifier.weight(1f).align(Alignment.CenterVertically))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (gere && nbRetard > 0) FilledTonalButton(onClick = { rappelGroupe = lignes.filter { it.second.retard > 0.005 }.map { (m, c) -> CibleRappel(m, c.retard) } }) { Text("Petit rappel groupé") }
                     }
@@ -483,7 +507,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
                                     }
                                     val actions: @Composable () -> Unit = {
                                         if (gere) {
-                                            OutlinedButton(onClick = { encaisser = PreEcriture("recette", m.id, "cotisation", if (c.retard > 0.005) c.retard else montantPeriode) }) { Text("Encaisser") }
+                                            OutlinedButton(onClick = { encaisser = PreEcriture("recette", m.id, "cotisation", if (c.retard > 0.005) c.retard else montantCotisation(avecTarif(m), tarifs, montantPeriode)) }) { Text("Encaisser") }
                                             if (c.retard > 0.005) TextButton(onClick = { rappel = DemandeRappel(m, "cotisation", c.retard) }) { Text("Petit rappel") }
                                         }
                                     }
@@ -492,6 +516,8 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
                                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(m.nomComplet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.clickable { fiche = m }.semantics { contentDescription = "Fiche cotisation de ${m.nomComplet}" })
+                                            // Autre montant que le montant normal : rappelé sous le nom (comme .montant-perso du site)
+                                            tarifDe(avecTarif(m), tarifs)?.let { Text(libelleTarif(it, montantPeriode), fontSize = 12.sp, color = Couleurs.Texte2, modifier = Modifier.padding(top = 0.dp)) }
                                             GrillePeriodes(cases.map { it to parCase[m.id to it]?.statut }, pas, if (large) Modifier.widthIn(max = 420.dp) else Modifier, uneLigne = large)
                                             if (!large) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                                 Row(Modifier.align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(6.dp)) { puces() }
@@ -521,7 +547,7 @@ private fun OngletCotisations(d: Donnees, message: (String) -> Unit) {
     }
     fiche?.let { m ->
         ModalBottomSheet(onDismissRequest = { fiche = null }) {
-            FicheCotisation(d, m, annee, pas, message, onEncaisser = { pre -> fiche = null; encaisser = pre }, onChange = { version++ }, onFermer = { fiche = null })
+            FicheCotisation(d, avecTarif(m), annee, pas, message, onEncaisser = { pre -> fiche = null; encaisser = pre }, onChange = { version++ }, onFermer = { fiche = null })
         }
     }
 }
@@ -535,9 +561,14 @@ private fun FicheCotisation(d: Donnees, m: Membre, annee: Int, pas: Int, message
     var montantPeriode by remember { mutableStateOf(0.0) }
     var version by remember { mutableStateOf(0) }
     var edition by remember { mutableStateOf<PeriodeCotisation?>(null) }
+    var tarifs by remember { mutableStateOf<List<Tarif>>(emptyList()) }
+    var tarifId by remember { mutableStateOf(m.tarifId) }
+    var changerTarif by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(version, Synchro.version) {
         try {
+            tarifs = try { Repo.tarifs() } catch (_: Exception) { emptyList() }
+            tarifId = try { Repo.membres().firstOrNull { it.id == m.id }?.tarifId } catch (_: Exception) { tarifId }
             periodes = Repo.periodesMembre(m.id); operations = Repo.toutesEcritures().filter { it.membreId == m.id }.sortedByDescending { it.date }
             collectes = Repo.collectes()
             montantPeriode = Repo.reglages()["cotisation_montant"] ?: 0.0
@@ -552,6 +583,13 @@ private fun FicheCotisation(d: Donnees, m: Membre, annee: Int, pas: Int, message
             Text(m.nomComplet, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         }
         Row { if (retard > 0.005) Puce("Retard ${euros(retard)}", Couleurs.ErreurClair, Couleurs.SurErreurClair) else Puce("À jour", Couleurs.BleuClair, Couleurs.SurBleuClair) }
+        // Montant par période de la personne (barème), modifiable : comme la ligne « Montant par période » du site
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Montant par période", fontSize = 14.sp, color = Couleurs.Texte2)
+            Text(libelleTarif(tarifs.firstOrNull { it.id == tarifId }, montantPeriode), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
+            if (gere) TextButton(onClick = { changerTarif = true }) { Text("Changer") }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
         TitreFiche("$annee")
         val deLAnnee = periodes.filter { it.annee == annee }.sortedBy { it.periode }
         if (deLAnnee.isEmpty()) Text("Aucune période", color = Couleurs.Texte2)
@@ -578,9 +616,12 @@ private fun FicheCotisation(d: Donnees, m: Membre, annee: Int, pas: Int, message
             parts.forEach { e -> LigneSimple(nomRubrique(e, collectes), dateFr(e.date), e.signe) }
         }
         Row(Modifier.align(Alignment.End).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (gere) OutlinedButton(onClick = { onEncaisser(PreEcriture("recette", m.id, "cotisation", retard.takeIf { it > 0.005 } ?: montantPeriode)) }) { Text("Encaisser") }
+            if (gere) OutlinedButton(onClick = { onEncaisser(PreEcriture("recette", m.id, "cotisation", retard.takeIf { it > 0.005 } ?: montantCotisation(m.copy(tarifId = tarifId), tarifs, montantPeriode))) }) { Text("Encaisser") }
             Button(onClick = onFermer) { Text("Fermer") }
         }
+    }
+    if (changerTarif) DialogueFeuille({ changerTarif = false }) {
+        FeuilleTarifMembre(m.copy(tarifId = tarifId), tarifs, montantPeriode, pas, annee, message) { ok -> changerTarif = false; if (ok) { version++; onChange() } }
     }
     edition?.let { p ->
         var v by remember(p.periode) { mutableStateOf(montantSaisie(p.du)) }
@@ -660,13 +701,14 @@ private fun OngletParticipations(d: Donnees, message: (String) -> Unit) {
 
 @Composable
 private fun CarteCollecte(c: Collecte, projets: List<Projet>, onClick: () -> Unit) {
-    val vise = (c.objectif?.takeIf { it > 0 } ?: c.montantAttendu?.let { it * c.nbConcernes })?.takeIf { it > 0 }
+    // Ce qui est visé : l'objectif, sinon la somme des montants de chacun (total_attendu)
+    val vise = (c.objectif?.takeIf { it > 0 } ?: c.totalAttendu ?: c.montantAttendu?.let { it * c.nbConcernes })?.takeIf { it > 0 }
     CarteBlanche(onClick = onClick) {
         Row(verticalAlignment = Alignment.Top) {
             Text(c.nom, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
             if (c.cloturee) Puce("Clôturée", Couleurs.Surface2, Couleurs.Texte2)
         }
-        Text(listOfNotNull(projets.firstOrNull { it.id == c.projetId }?.nom, c.montantAttendu?.takeIf { it > 0 }?.let { "${euros(it)} par personne" } ?: "Montant libre",
+        Text(listOfNotNull(projets.firstOrNull { it.id == c.projetId }?.nom, libelleMontantCollecte(c),
             c.dateLimite?.let { "avant le ${dateFr(it)}" }).joinToString(" · "), fontSize = 13.sp, color = Couleurs.Texte2)
         Text(buildAnnotatedString {
             withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 24.sp)) { append(euros(c.totalRecu)) }
@@ -688,6 +730,7 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
     var c by remember { mutableStateOf(c0) }
     var operations by remember { mutableStateOf<List<Ecriture>>(emptyList()) }
     var choisis by remember { mutableStateOf<List<String>>(emptyList()) }
+    var montants by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
     var tiers by remember { mutableStateOf<List<Tiers>>(emptyList()) }
     var filtre by remember { mutableStateOf("tous") }
     var version by remember { mutableStateOf(0) }
@@ -702,14 +745,18 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
         try {
             operations = Repo.toutesEcritures().filter { it.collecteId == c.id }
             if (!c.tousMembres) choisis = Repo.collecteMembres(c.id)
+            montants = try { Repo.collecteMontants(c.id) } catch (_: Exception) { emptyMap() }
             tiers = Repo.tiers()
             Repo.collectes().firstOrNull { it.id == c.id }?.let { c = it }
         } catch (e: Exception) { message(traduireErreur(e)) }
     }
     val concernes = if (c.tousMembres) d.membres.filter { it.actif } else d.membres.filter { it.id in choisis }
     fun donne(id: String) = operations.filter { it.membreId == id }.sumOf { it.montant }
-    val att = c.montantAttendu ?: 0.0
+    // Montant attendu de chacun : le sien, sinon celui de la collecte (même calcul que montant_participation de la base)
+    fun attDe(id: String) = montants[id] ?: c.montantAttendu ?: 0.0
+    fun dispense(id: String) = montants[id] == 0.0
     val lignes = concernes.map { it to donne(it.id) }.sortedWith(compareBy({ it.second }, { it.first.nom }))
+    val avecMontant = lignes.any { attDe(it.first.id) > 0 }
     val autres = operations.filter { e -> concernes.none { it.id == e.membreId } }
     val gere = d.peut("gerer_cotisations")
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
@@ -718,12 +765,12 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
             Text(c.nom, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             if (c.cloturee) Puce("Clôturée", Couleurs.Surface2, Couleurs.Texte2)
         }
-        Text(listOfNotNull(projets.firstOrNull { it.id == c.projetId }?.nom, if (att > 0) "${euros(att)} par personne" else "Montant libre",
+        Text(listOfNotNull(projets.firstOrNull { it.id == c.projetId }?.nom, libelleMontantCollecte(c),
             c.dateLimite?.let { "avant le ${dateFr(it)}" }).joinToString(" · "), fontSize = 13.sp, color = Couleurs.Texte2)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Indicateur("Reçu", euros(operations.sumOf { it.montant }), Couleurs.Bleu, Modifier.weight(1f))
             Indicateur("Ont donné", "${lignes.count { it.second > 0 }}$NBSP/$NBSP${lignes.size}", Couleurs.Texte, Modifier.weight(1f))
-            Indicateur(if (att > 0) "Reste attendu" else "Objectif", if (att > 0) euros(lignes.sumOf { maxOf(0.0, att - it.second) }) else c.objectif?.let { euros(it) } ?: "–", Couleurs.Texte, Modifier.weight(1f))
+            Indicateur(if (avecMontant) "Reste attendu" else "Objectif", if (avecMontant) euros(lignes.sumOf { (m, v) -> maxOf(0.0, attDe(m.id) - v) }) else c.objectif?.let { euros(it) } ?: "–", Couleurs.Texte, Modifier.weight(1f))
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("tous" to "Tous", "donne" to "Ont donné", "pas" to "N’ont pas donné").forEach { (k, l) -> FilterChip(selected = filtre == k, onClick = { filtre = k }, label = { Text(l) }) }
@@ -731,21 +778,26 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
         val vusCollecte = lignes.filter { (_, v) -> filtre == "tous" || (filtre == "donne") == (v > 0) }
         if (vusCollecte.isEmpty()) Text("Personne", color = Couleurs.Texte2)
         vusCollecte.forEachIndexed { i, (m, v) ->
+            val att = attDe(m.id)
             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Avatar(m.prenom, m.nom, 40)
                     Column(Modifier.weight(1f)) {
                         Text(m.nomComplet, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(euros(v) + if (att > 0) " sur ${euros(att)}" else "", fontSize = 13.sp, color = Couleurs.Texte2)
+                        Text(euros(v) + (if (att > 0) " sur ${euros(att)}" else "") + (if (m.id in montants && !dispense(m.id)) " · montant personnel" else ""), fontSize = 13.sp, color = Couleurs.Texte2)
                     }
-                    // Situation toujours affichée (comme sur le site)
-                    if (att > 0) {
-                        if (v >= att) Puce("Réglé", Couleurs.BleuClair, Couleurs.SurBleuClair) else if (v > 0) Puce("Partiel", Couleurs.JauneClair, Couleurs.SurJaune) else Puce("À régler", Couleurs.ErreurClair, Couleurs.SurErreurClair)
-                    } else if (v > 0) Puce("Donné", Couleurs.BleuClair, Couleurs.SurBleuClair)
+                    // Situation toujours affichée (comme sur le site) ; « Dispensé » si son montant est 0
+                    when (texteStatutParticipation(v, att, dispense(m.id))) {
+                        "Réglé" -> Puce("Réglé", Couleurs.BleuClair, Couleurs.SurBleuClair)
+                        "Donné" -> Puce("Donné", Couleurs.BleuClair, Couleurs.SurBleuClair)
+                        "Partiel" -> Puce("Partiel", Couleurs.JauneClair, Couleurs.SurJaune)
+                        "À régler" -> Puce("À régler", Couleurs.ErreurClair, Couleurs.SurErreurClair)
+                        "Dispensé" -> Puce("Dispensé", Couleurs.Surface2, Couleurs.Texte2)
+                    }
                 }
-                // Actions sous la ligne, alignées sur le nom (actions-ligne du site)
-                if (gere && !c.cloturee) Row(Modifier.padding(start = 50.dp, top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Actions sous la ligne, alignées sur le nom (actions-ligne du site) ; aucune pour une personne dispensée
+                if (gere && !c.cloturee && !dispense(m.id)) Row(Modifier.padding(start = 50.dp, top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { encaisser = PreEcriture("recette", m.id, c.id, if (att > 0) maxOf(att - v, 0.0).takeIf { it > 0 } ?: att else null) }) { Text("Encaisser") }
                     if (att == 0.0 || v < att) TextButton(onClick = { rappel = DemandeRappel(m, "participation", if (att > 0) att - v else 0.0, c.nom, c.id) }) { Text("Petit rappel") }
                 }
@@ -757,9 +809,8 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
         }
         FlowRowActions {
             OutlinedButton(onClick = {
-                val statut = { v: Double -> if (att > 0) (if (v >= att) "Réglé" else if (v > 0) "Partiel" else "À régler") else if (v > 0) "Donné" else "" }
                 enregistrer("participations-${sansAccentsCode(c.nom).replace("_", "-")}.csv", "text/csv", csv(listOf("Prénom", "Nom", "Donné", "Attendu", "Statut"),
-                    lignes.map { (m, v) -> listOf<Any?>(m.prenom, m.nom, v, if (att > 0) att else "", statut(v)) } +
+                    lignes.map { (m, v) -> listOf<Any?>(m.prenom, m.nom, v, if (dispense(m.id)) 0.0 else attDe(m.id).takeIf { it > 0 } ?: "", texteStatutParticipation(v, attDe(m.id), dispense(m.id))) } +
                         autres.map { e -> listOf<Any?>("", nomTiers(e, d.membres, tiers).ifBlank { e.libelle }, e.montant, "", "Autre contribution") }).encodeToByteArray())
             }) { Text("Exporter") }
             if (d.peut("gerer_activites", "gerer_cotisations")) {
@@ -769,8 +820,8 @@ fun DetailCollecte(d: Donnees, c0: Collecte, projets: List<Projet>, message: (St
                 }
             }
             if (gere && !c.cloturee) OutlinedButton(onClick = { encaisser = PreEcriture("recette", null, c.id) }) { Text("Autre encaissement") }
-            // Petit rappel groupé : montant proposé non atteint, ou montant libre et rien donné (comme aRappeler du site)
-            val aRappeler = lignes.filter { (_, v) -> if (att > 0) v < att else v <= 0 }.map { (m, v) -> CibleRappel(m, if (att > 0) att - v else 0.0) }
+            // Petit rappel groupé : son montant non atteint, ou montant libre et rien donné ; jamais une personne dispensée (comme aRappeler du site)
+            val aRappeler = lignes.filter { (m, v) -> !dispense(m.id) && (if (attDe(m.id) > 0) v < attDe(m.id) else v <= 0) }.map { (m, v) -> CibleRappel(m, if (attDe(m.id) > 0) attDe(m.id) - v else 0.0) }
             if (gere && !c.cloturee && aRappeler.isNotEmpty()) TextButton(onClick = { rappelGroupe = aRappeler }) { Text("Petit rappel groupé") }
             if (d.peut("gerer_activites", "gerer_cotisations") && operations.isEmpty()) BoutonSupprimer({ if (onSupprimer != null) onSupprimer() else supprimerCollecte("collectes", c.id, c.nom) })
             Button(onClick = onFermer) { Text("Fermer") }
@@ -803,9 +854,15 @@ fun FormulaireCollecte(d: Donnees, c: Collecte?, preProjet: String?, projets: Li
     var limite by remember { mutableStateOf(c?.dateLimite?.let { dateFr(it) } ?: "") }
     var tous by remember { mutableStateOf(c?.tousMembres ?: true) }
     val choisis = remember { mutableStateListOf<String>() }
+    // Montants différents selon les personnes : saisie par personne concernée (vide : montant par personne ; 0 : dispensé)
+    var varies by remember { mutableStateOf(c?.montantsVaries ?: false) }
+    val perso = remember { mutableStateMapOf<String, String>() }
     var enCours by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(c?.id) { if (c != null && !c.tousMembres) try { choisis.addAll(Repo.collecteMembres(c.id)) } catch (_: Exception) { } }
+    LaunchedEffect(c?.id) {
+        if (c != null && !c.tousMembres) try { choisis.addAll(Repo.collecteMembres(c.id)) } catch (_: Exception) { }
+        if (c != null) try { Repo.collecteMontants(c.id).forEach { (m, v) -> perso[m] = montantSaisie(v) } } catch (_: Exception) { }
+    }
     val dLimite = if (limite.isBlank()) null else dateDepuisFr(limite)
     val valide = nom.isNotBlank() && (attendu.isBlank() || lireMontant(attendu)?.let { it > 0 } == true) && (objectif.isBlank() || lireMontant(objectif)?.let { it > 0 } == true) &&
         (limite.isBlank() || dLimite != null)
@@ -833,6 +890,21 @@ fun FormulaireCollecte(d: Donnees, c: Collecte?, preProjet: String?, projets: Li
                 Checkbox(m.id in choisis, { if (it) choisis.add(m.id) else choisis.remove(m.id) }); Text(m.nomComplet)
             }
         }
+        Row(Modifier.fillMaxWidth().clickable { varies = !varies }, verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(varies, { varies = it }); Text("Montants différents selon les personnes")
+        }
+        if (varies) {
+            Text("Vide : le montant par personne. 0 : dispensé (pas de rappel).", fontSize = 13.sp, color = Couleurs.Texte2)
+            d.membres.filter { it.actif && (tous || it.id in choisis) }.forEach { m ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(m.nomComplet, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(perso[m.id] ?: "", { perso[m.id] = it }, placeholder = { Text(lireMontant(attendu)?.let { montantSaisie(it) } ?: "Libre") },
+                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), suffix = { Text("€") },
+                        isError = (perso[m.id] ?: "").isNotBlank() && lireMontant(perso[m.id]!!)?.let { it >= 0 } != true,
+                        modifier = Modifier.width(130.dp).semantics { contentDescription = "Montant de ${m.nomComplet}" })
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.align(Alignment.End)) {
             TextButton(onClick = { onFini(false) }) { Text("Annuler") }
             Button(enabled = valide && !enCours, onClick = {
@@ -841,7 +913,11 @@ fun FormulaireCollecte(d: Donnees, c: Collecte?, preProjet: String?, projets: Li
                     enCours = true
                     scope.launch {
                         try {
-                            Repo.enregistrerCollecte(c?.id, NouvelleCollecte(nom.trim(), projet, lireMontant(attendu), lireMontant(objectif), dLimite?.toString(), tous), choisis.toList())
+                            // Montants propres aux personnes concernées (vide : montant par personne)
+                            val montants = if (!varies) emptyMap() else d.membres.filter { it.actif && (tous || it.id in choisis) }
+                                .mapNotNull { m -> perso[m.id]?.takeIf { it.isNotBlank() }?.let { v -> lireMontant(v)?.takeIf { it >= 0 }?.let { m.id to it } } }.toMap()
+                            Repo.enregistrerCollecte(c?.id, NouvelleCollecte(nom.trim(), projet, lireMontant(attendu), lireMontant(objectif), dLimite?.toString(), tous,
+                                montants.isNotEmpty()), choisis.toList(), montants)
                             message(if (c == null) "Collecte créée" else "Collecte modifiée"); onFini(true)
                         } catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
                     }

@@ -134,6 +134,26 @@ object Repo {
         if (demo) Demo.cotisations(annee)
         else client.from("v_cotisations").select { filter { eq("annee", annee) } }.decodeList()
 
+    // ---------- Barème : plusieurs montants de cotisation selon la personne ----------
+    suspend fun tarifs(): List<Tarif> =
+        if (demo) Demo.tarifs.sortedWith(compareBy({ it.ordre }, { it.montant }))
+        else client.from("tarifs").select { order("ordre", Order.ASCENDING); order("montant", Order.ASCENDING) }.decodeList()
+
+    suspend fun enregistrerTarif(id: String?, nom: String, montant: Double): String {
+        if (demo) return Demo.enregistrerTarif(id, nom, montant, profilDemo.value)
+        if (id != null) { client.from("tarifs").update({ set("nom", nom); set("montant", montant) }) { filter { eq("id", id) } }; return id }
+        return client.from("tarifs").insert(NouveauTarif(nom, montant, tarifs().size)) { select() }.decodeSingle<Tarif>().id
+    }
+
+    /** Attribue un montant (null : montant normal) à des membres, ou le réapplique à ceux qui l'ont (membres null) ;
+     *  met à jour les périodes à partir de [depuis] (null : aucune). Renvoie le nombre de périodes modifiées. */
+    suspend fun appliquerTarif(tarif: String?, depuis: String?, membres: List<String>?): Int =
+        if (demo) Demo.appliquerTarif(tarif, depuis, membres, profilDemo.value)
+        else client.postgrest.rpc("appliquer_tarif", buildJsonObject {
+            put("p_tarif", tarif); put("p_depuis", depuis)
+            if (membres != null) put("p_membres", kotlinx.serialization.json.JsonArray(membres.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        }).decodeAs()
+
     suspend fun genererCotisations(annee: Int): Int =
         if (demo) Demo.genererCotisations(annee, profilDemo.value)
         else client.postgrest.rpc("generer_cotisations", buildJsonObject { put("an", annee) }).decodeAs()
@@ -251,24 +271,43 @@ object Repo {
         client.postgrest.rpc("mot_de_passe_definitif")
     }
 
-    /** Crée directement les comptes (fonction Edge creer-comptes, avec le jeton de la personne connectée) : pas d'e-mail envoyé. */
-    suspend fun creerComptes(motDePasse: String, comptes: List<DemandeCompte>): List<ResultatCompte> {
-        if (demo) return Demo.creerComptes(motDePasse, comptes, profilDemo.value)
+    // Appel d'une fonction Edge avec le jeton de la personne connectée ; message « erreur » de la fonction en cas de refus
+    private suspend fun appelerFonction(nom: String, corps: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonObject {
         val jeton = client.auth.currentAccessTokenOrNull() ?: throw IllegalStateException("Session expirée : reconnectez-vous")
-        val corps = buildJsonObject {
-            put("mot_de_passe", motDePasse)
-            put("comptes", Json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(DemandeCompte.serializer()), comptes))
-        }
         val http = io.ktor.client.HttpClient()
         try {
-            val r = http.post(Config.SUPABASE_URL + "/functions/v1/creer-comptes") {
+            val r = http.post(Config.SUPABASE_URL + "/functions/v1/$nom") {
                 header("Authorization", "Bearer $jeton"); header("apikey", Config.SUPABASE_ANON_KEY)
                 contentType(ContentType.Application.Json); setBody(corps.toString())
             }
             val o = try { Json.parseToJsonElement(r.bodyAsText()).jsonObject } catch (_: Exception) { null }
-            if (r.status.value !in 200..299) throw IllegalStateException((o?.get("erreur") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "Création impossible (${r.status.value})")
-            return Json { ignoreUnknownKeys = true }.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(ResultatCompte.serializer()), o?.get("resultats") ?: return emptyList())
+            if (r.status.value !in 200..299) throw IllegalStateException((o?.get("erreur") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "Opération impossible (${r.status.value})")
+            return o ?: kotlinx.serialization.json.JsonObject(emptyMap())
         } finally { http.close() }
+    }
+
+    /** Crée directement les comptes (fonction Edge creer-comptes, avec le jeton de la personne connectée) : pas d'e-mail envoyé. */
+    suspend fun creerComptes(motDePasse: String, comptes: List<DemandeCompte>): List<ResultatCompte> {
+        if (demo) return Demo.creerComptes(motDePasse, comptes, profilDemo.value)
+        val o = appelerFonction("creer-comptes", buildJsonObject {
+            put("mot_de_passe", motDePasse)
+            put("comptes", Json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(DemandeCompte.serializer()), comptes))
+        })
+        return Json { ignoreUnknownKeys = true }.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(ResultatCompte.serializer()), o["resultats"] ?: return emptyList())
+    }
+
+    /** Supprime un compte d'accès créé par erreur (fonction supprimer-compte) : il part à la corbeille ; renvoie son identifiant dans la corbeille. */
+    suspend fun supprimerCompte(id: String, motif: String?): String {
+        if (demo) return Demo.supprimerCompte(id, motif, profilDemo.value)
+        val o = appelerFonction("supprimer-compte", buildJsonObject { put("action", "supprimer"); put("id", id); put("motif", motif) })
+        return (o["corbeille_id"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: throw IllegalStateException("Réponse inattendue")
+    }
+
+    /** Recrée un compte d'accès depuis la corbeille, avec un nouveau mot de passe provisoire. */
+    suspend fun restaurerCompte(idCorbeille: String, motDePasse: String): CompteRestaure {
+        if (demo) return Demo.restaurerCompte(idCorbeille, motDePasse, profilDemo.value)
+        val o = appelerFonction("supprimer-compte", buildJsonObject { put("action", "restaurer"); put("corbeille_id", idCorbeille); put("mot_de_passe", motDePasse) })
+        return Json { ignoreUnknownKeys = true }.decodeFromJsonElement(CompteRestaure.serializer(), o)
     }
 
     fun emailConnecte(): String = if (demo) Demo.emailDe(profilDemo.value?.id) else client.auth.currentUserOrNull()?.email ?: ""
@@ -618,16 +657,24 @@ object Repo {
         if (demo) Demo.collecteMembres.filter { it.collecteId == id }.map { it.membreId }
         else client.from("collecte_membres").select { filter { eq("collecte_id", id) } }.decodeList<CollecteMembre>().map { it.membreId }
 
-    suspend fun enregistrerCollecte(id: String?, c: NouvelleCollecte, membres: List<String>): String {
-        if (demo) return Demo.enregistrerCollecte(id, c, membres, profilDemo.value)
+    // Montants propres à certaines personnes pour une participation
+    suspend fun collecteMontants(id: String): Map<String, Double> =
+        if (demo) Demo.collecteMontants.filter { it.collecteId == id }.associate { it.membreId to it.montant }
+        else client.from("collecte_montants").select { filter { eq("collecte_id", id) } }.decodeList<CollecteMontant>().associate { it.membreId to it.montant }
+
+    suspend fun enregistrerCollecte(id: String?, c: NouvelleCollecte, membres: List<String>, montants: Map<String, Double> = emptyMap()): String {
+        if (demo) return Demo.enregistrerCollecte(id, c, membres, profilDemo.value, montants)
         val cle = if (id == null) client.from("collectes").insert(c) { select() }.decodeSingle<Collecte>().id
         else {
             client.from("collectes").update({
                 set("nom", c.nom); set("project_id", c.projetId); set("montant_attendu", c.montantAttendu); set("objectif", c.objectif)
-                set("date_limite", c.dateLimite); set("tous_membres", c.tousMembres)
+                set("date_limite", c.dateLimite); set("tous_membres", c.tousMembres); set("montants_varies", c.montantsVaries)
             }) { filter { eq("id", id) } }
             id
         }
+        // Les montants d'abord : la notification de chaque personne choisie annonce son propre montant (comme le site)
+        client.from("collecte_montants").delete { filter { eq("collecte_id", cle) } }
+        if (montants.isNotEmpty()) client.from("collecte_montants").insert(montants.map { (m, v) -> CollecteMontant(cle, m, v) })
         client.from("collecte_membres").delete { filter { eq("collecte_id", cle) } }
         if (!c.tousMembres && membres.isNotEmpty()) client.from("collecte_membres").insert(membres.map { CollecteMembre(cle, it) })
         return cle

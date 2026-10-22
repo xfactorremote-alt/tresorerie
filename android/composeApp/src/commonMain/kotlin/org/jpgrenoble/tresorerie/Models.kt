@@ -20,7 +20,7 @@ data class Profil(
 )
 
 @Serializable
-data class Organisation(val nom: String = "JP Grenoble", @SerialName("logo_path") val logo: String? = null,
+data class Organisation(val nom: String = "JTP Grenoble", @SerialName("logo_path") val logo: String? = null,
                         @SerialName("banniere_path") val banniere: String? = null,
                         // Identité et coordonnées (reprises sur les documents)
                         val sigle: String? = null, val objet: String? = null, val adresse: String? = null,
@@ -81,7 +81,24 @@ data class Membre(
     val nationalite: String? = null,
     val pupitre: String? = null,
     val statut: String? = null,
-) { val nomComplet get() = "$prenom $nom".trim() }   // le nom de famille peut manquer
+    // Barème : montant de cotisation de la personne (null : montant normal)
+    @SerialName("tarif_id") val tarifId: String? = null,
+) { val nomComplet get() = "$prenom $nom".trim() }
+
+// Montant du barème de cotisation (« Musicien » 10 €, « Exonéré » 0 €…), comme la table tarifs
+@Serializable
+data class Tarif(val id: String, val nom: String, val montant: Double, val ordre: Int = 0)
+
+@Serializable
+data class NouveauTarif(val nom: String, val montant: Double, val ordre: Int = 0)
+
+// Montant propre à une personne pour une participation (collecte_montants)
+@Serializable
+data class CollecteMontant(@SerialName("collecte_id") val collecteId: String, @SerialName("member_id") val membreId: String, val montant: Double)
+
+// Compte d'accès rétabli depuis la corbeille (fonction supprimer-compte)
+@Serializable
+data class CompteRestaure(val email: String, val nom: String, @SerialName("member_id") val memberId: String? = null, val role: String = "adherent")   // le nom de famille peut manquer
 
 @Serializable
 data class Ecriture(
@@ -192,6 +209,9 @@ data class Collecte(
     @SerialName("nb_contributeurs") val nbContributeurs: Int = 0,
     @SerialName("nb_concernes") val nbConcernes: Int = 0,
     @SerialName("created_at") val creeLe: String = "",
+    // Montants selon la personne (collecte_montants) ; total attendu = somme des montants de chacun (null : tout est libre)
+    @SerialName("montants_varies") val montantsVaries: Boolean = false,
+    @SerialName("total_attendu") val totalAttendu: Double? = null,
 )
 
 @Serializable
@@ -202,6 +222,7 @@ data class NouvelleCollecte(
     val objectif: Double? = null,
     @SerialName("date_limite") val dateLimite: String? = null,
     @EncodeDefault @SerialName("tous_membres") val tousMembres: Boolean = true,
+    @EncodeDefault @SerialName("montants_varies") val montantsVaries: Boolean = false,
 )
 
 @Serializable

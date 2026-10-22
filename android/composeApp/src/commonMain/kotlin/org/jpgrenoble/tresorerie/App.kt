@@ -57,6 +57,8 @@ class Donnees(
     val droits: Set<String>,
     val roles: List<Role>,
     val exercices: List<Exercice> = emptyList(),
+    // Barème de cotisation (plusieurs montants selon la personne)
+    val tarifs: List<Tarif> = emptyList(),
 ) {
     // Exercice clôturé : ses opérations sont verrouillées (ni ajout, ni modification, ni suppression)
     fun exerciceClos(date: String) = exercices.any { it.cloture && date >= it.debut && date <= it.fin }
@@ -116,7 +118,7 @@ fun Connexion() {
     var erreur by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
     var enCours by remember { mutableStateOf(false) }
-    var nomAsso by remember { mutableStateOf("JP Grenoble") }
+    var nomAsso by remember { mutableStateOf("JTP Grenoble") }
     var comptesDemo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val autofill = LocalAutofillManager.current
@@ -263,7 +265,8 @@ fun Principal(cle: String) {
                 if (a("consulter_finances", "saisir_ecritures", "payer_depenses", "gerer_cotisations", "rapprocher")) Repo.comptes() else emptyList(),
                 Repo.categories(),
                 if (a("voir_membres", "gerer_membres", "gerer_cotisations")) Repo.membres() else emptyList(),
-                droits, Repo.roles(), try { Repo.exercices() } catch (_: Exception) { emptyList() })
+                droits, Repo.roles(), try { Repo.exercices() } catch (_: Exception) { emptyList() },
+                if (a("voir_membres", "gerer_membres", "gerer_cotisations", "consulter_finances")) try { Repo.tarifs() } catch (_: Exception) { emptyList() } else emptyList())
             try { Repo.chargerLogo() } catch (_: Exception) { }
             erreur = null
         } catch (e: Exception) { erreur = traduireErreur(e) }

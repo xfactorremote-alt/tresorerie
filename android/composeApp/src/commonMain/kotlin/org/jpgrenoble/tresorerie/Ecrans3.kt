@@ -107,7 +107,8 @@ fun EcranParametres(d: Donnees, message: (String) -> Unit, recharger: () -> Unit
             "exercices" -> ParamExercices(d, message, recharger)
             "comptes" -> ParamComptes(d, message, recharger)
             "categories" -> ParamCategories(d, message, recharger)
-            "regles" -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) { item { BlocMontants(message) } }
+            "regles" -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                item { BlocTarifs(d, message) }; item { BlocMontants(message) } }
             "personnes" -> ParamPersonnes(d, message, recharger)
             "roles" -> ParamRoles(d, message, recharger)
             "corbeille" -> ParamCorbeille(d, message, recharger)
@@ -271,6 +272,8 @@ private fun BlocMontants(message: (String) -> Unit) {
     var infos by remember { mutableStateOf("") }
     var rappelCotis by remember { mutableStateOf(RAPPEL_DEFAUT.getValue("cotisation")) }
     var rappelPart by remember { mutableStateOf(RAPPEL_DEFAUT.getValue("participation")) }
+    // Nouveau montant normal appliqué aussi aux périodes déjà créées (membres sans autre montant), si demandé
+    var normalDepuis by remember { mutableStateOf<String?>(null) }
     val action = rememberAction(message) {}
     LaunchedEffect(Unit) {
         try {
@@ -288,9 +291,12 @@ private fun BlocMontants(message: (String) -> Unit) {
     // Même ordre et mêmes libellés que paramMontants du site
     CarteBlanche {
         Text("Cotisation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        OutlinedTextField(cotisation, { cotisation = it }, label = { Text("Montant (€ par période)") }, singleLine = true,
+        OutlinedTextField(cotisation, { cotisation = it }, label = { Text("Montant normal (€ par période)") }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
         ChoixListe("Périodicité", PERIODICITES[periodicite] ?: "", PERIODICITES.values.toList()) { periodicite = PERIODICITES.keys.toList()[it] }
+        val depuisOptions = periodesDepuis(aujourdhui().year, periodicite)
+        ChoixListe("Nouveau montant normal appliqué", normalDepuis?.let { "À partir de ${nomPeriode(it, periodicite)}" } ?: "Seulement aux prochaines",
+            listOf("Seulement aux prochaines") + depuisOptions.map { "À partir de ${nomPeriode(it, periodicite)}" }) { i -> normalDepuis = if (i == 0) null else depuisOptions[i - 1] }
         OutlinedTextField(infos, { infos = it.take(400) }, label = { Text("Comment régler (affiché aux membres)") },
             placeholder = { Text("Virement : IBAN FR76…\nEspèces : auprès du trésorier après le culte") }, minLines = 3, modifier = Modifier.fillMaxWidth())
         Text("Petit rappel aux membres", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
@@ -317,6 +323,7 @@ private fun BlocMontants(message: (String) -> Unit) {
                 // Enregistré seulement s'il diffère du texte proposé (sinon il suit les améliorations futures), comme le site
                 Repo.majTexteReglage("message_rappel", rappelCotis.trim().takeIf { it.isNotEmpty() && it != RAPPEL_DEFAUT["cotisation"] }, "Message de rappel (cotisation)")
                 Repo.majTexteReglage("message_rappel_participation", rappelPart.trim().takeIf { it.isNotEmpty() && it != RAPPEL_DEFAUT["participation"] }, "Message de rappel (participation)")
+                normalDepuis?.let { Repo.appliquerTarif(null, it, null) }
             }, "Paramètres enregistrés")
         }) { Text("Enregistrer") }
     }
@@ -493,6 +500,8 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () 
     var invitations by remember { mutableStateOf<List<Invitation>>(emptyList()) }
     var inviter by remember { mutableStateOf(false) }
     val action = rememberAction(message) { version++ }
+    // Compte créé par erreur ou pour essai : suppression par la corbeille (fonction supprimer-compte), comme le site
+    val supprimerCompte = rememberSuppressionCompte(d, message) { version++ }
     LaunchedEffect(version, Synchro.version) {
         try { roles = Repo.roles(); profils = Repo.profilsComplets().sortedBy { it.nom.lowercase() }; invitations = Repo.invitations() } catch (e: Exception) { message(traduireErreur(e)) }
     }
@@ -532,6 +541,9 @@ private fun ParamPersonnes(d: Donnees, message: (String) -> Unit, recharger: () 
                             Row(Modifier.clip(Formes.XGrand).clickable { action({ Repo.majProfil(p.id, actif = !p.actif) }, if (!p.actif) "Accès réactivé" else "Accès désactivé") },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(p.actif, { v -> action({ Repo.majProfil(p.id, actif = v) }, if (v) "Accès réactivé" else "Accès désactivé") }); Text("Actif", fontSize = 14.sp)
+                            }
+                            if (p.id != d.profil.id) IconButton(onClick = { supprimerCompte(p) }) {
+                                Icon(Icons.Outlined.Delete, "Supprimer le compte de ${p.nom}", tint = Couleurs.Texte2)
                             }
                         }
                     }

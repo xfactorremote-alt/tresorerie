@@ -636,7 +636,8 @@ fun ParamExercices(d: Donnees, message: (String) -> Unit, recharger: () -> Unit 
 }
 
 val TYPES_CORBEILLE = mapOf("transactions" to "Opération", "members" to "Membre", "tiers" to "Tiers", "projects" to "Rendez-vous", "collectes" to "Collecte",
-    "materiel" to "Matériel", "categories" to "Catégorie", "accounts" to "Compte", "budgets" to "Ligne de budget", "expense_requests" to "Demande", "exercices" to "Exercice", "communiques" to "Communiqué")
+    "materiel" to "Matériel", "categories" to "Catégorie", "accounts" to "Compte", "budgets" to "Ligne de budget", "expense_requests" to "Demande", "exercices" to "Exercice", "communiques" to "Communiqué",
+    "tarifs" to "Montant de cotisation", "comptes" to "Compte d’accès")
 
 @Composable
 fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit) {
@@ -650,6 +651,9 @@ fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit)
     fun nom(id: String?) = profils.firstOrNull { it.id == id }?.nom ?: if (id == d.profil.id) d.profil.nom else "un membre du bureau"
     val l = liste
     var enCours by remember { mutableStateOf<String?>(null) }
+    // Compte d'accès rétabli : recréé par la fonction supprimer-compte avec un nouveau mot de passe provisoire à transmettre
+    var retabli by remember { mutableStateOf<Pair<CompteRestaure, String>?>(null) }
+    retabli?.let { (r, mdp) -> FeuilleCompteRetabli(d, r, mdp) { retabli = null } }
     // Une ligne, comme sur le site : type, libellé, « Supprimé le … par … · motif · restauré le … », Restaurer ou « Restauré »
     @Composable fun Ligne(x: ElementCorbeille) {
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -663,7 +667,10 @@ fun ParamCorbeille(d: Donnees, message: (String) -> Unit, recharger: () -> Unit)
             else OutlinedButton(enabled = enCours != x.id, contentPadding = PaddingValues(horizontal = 12.dp), onClick = {
                 enCours = x.id
                 scope.launch {
-                    try { Repo.restaurer(x.id); recharger(); message("Élément restauré"); version++; EtatNouveautes.charger() }
+                    try {
+                        if (x.table == "comptes") { val mdp = motDePasseProvisoire(); retabli = Repo.restaurerCompte(x.id, mdp) to mdp; version++ }
+                        else { Repo.restaurer(x.id); recharger(); message("Élément restauré"); version++; EtatNouveautes.charger() }
+                    }
                     catch (e: Exception) { message(traduireErreur(e)) }
                     enCours = null
                 }

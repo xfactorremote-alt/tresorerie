@@ -1678,3 +1678,14 @@ p.anniv,.agenda .anniv{font-size:13px;padding:4px 10px;align-self:flex-start;bor
 .legende{gap:8px 16px}
 .filtres,.puces-filtre{gap:8px}
 @media (max-width:600px){.page-planning{gap:10px}}
+/* Choix d'un montant (fiche de cotisation) : une option par ligne */
+.liste-radios{grid-template-columns:1fr;max-height:none}
+/* Participation : montant propre à chaque personne (formulaire de la collecte) */
+#montants-perso .liste-montants{max-height:320px;overflow:auto;border:1px solid var(--bord);border-radius:var(--r-moyen);padding:0 12px}
+.liste-montants li{flex-wrap:nowrap;padding:6px 0}
+.liste-montants input{width:110px;flex:none;text-align:right}
+.ligne-cotis .montant-perso{display:block;font-size:12px;line-height:16px}
+.case input[type=radio]{width:20px;height:20px;min-height:0;flex:none;margin:0;padding:0;accent-color:var(--primaire)}
+/* Comptes et accès : le nom garde sa place (au moins 160 px), les choix passent dessous s'il le faut */
+.liste li:has(>.acces-champs)>.corps{flex:1 1 160px;min-width:160px}
+.liste li:has(>.acces-champs)>.corps b,.liste li:has(>.acces-champs)>.corps span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -25,7 +25,7 @@ object Synchro {
     var versionReferentiels by mutableStateOf(0)
         private set
     private var job: Job? = null
-    private val REFERENTIELS = setOf("members", "accounts", "categories", "organisation", "settings", "exercices", "liens_membres", "tiers", "projects", "profiles")
+    private val REFERENTIELS = setOf("members", "accounts", "categories", "organisation", "settings", "exercices", "liens_membres", "tiers", "projects", "profiles", "tarifs")
     private val enAttente = mutableSetOf<String>()
     private var minuterie: Job? = null
 
@@ -43,7 +43,8 @@ object Synchro {
 
     // Tables suivies (mêmes que la publication « supabase_realtime » de la base)
     private val TABLES = listOf("transactions", "expense_requests", "projects", "collectes", "collecte_membres", "members", "communiques", "reponses_sondage",
-        "cotisations", "budgets", "materiel", "settings", "organisation", "accounts", "categories", "tiers", "exercices", "liens_membres", "rappels")
+        "cotisations", "budgets", "materiel", "settings", "organisation", "accounts", "categories", "tiers", "exercices", "liens_membres", "rappels",
+        "tarifs", "collecte_montants")
 
     fun demarrer(scope: CoroutineScope) {
         if (job?.isActive == true || Repo.demo) return

@@ -1,4 +1,4 @@
-# Trésorerie JP Grenoble
+# Trésorerie JTP Grenoble
 
 Site web et application Android, mêmes fonctionnalités, gratuits, sur Supabase et GitHub.
 

@@ -8,7 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-// Couleurs du logo JP Grenoble, assombries pour un contraste 4,5:1 (voir la charte graphique)
+// Couleurs du logo JTP Grenoble, assombries pour un contraste 4,5:1 (voir la charte graphique)
 object Couleurs {
     val Orange = Color(0xFFC23E10)
     val OrangeClair = Color(0xFFFFDBCF)

@@ -49,13 +49,19 @@ function seed() {
   members[4].profession = 'Instrumentation scientifique - Développement logiciel'; members[4].email = 'ruth.diallo.instrumentation@exemple-association.fr';
   ['Côte d’Ivoire', 'Cameroun', 'Burundi', 'Nigeria', 'Guinée', 'République démocratique du Congo', 'République démocratique du Congo', 'Côte d’Ivoire', 'République démocratique du Congo', 'Ghana', 'République démocratique du Congo', 'République démocratique du Congo', 'Cameroun']
     .forEach((n, i) => { members[i].nationalite = n; });   // adhésion en cours d'année : cotisations à partir de mars
-  // Cotisation mensuelle : une ligne par membre et par mois
+  // Barème (comme Demo.kt) : montant normal 20 € ; Paul, musicien, paie 10 € ; Jean-Marc est exonéré
+  const tarifs = [{ id: 'tf1', nom: 'Musicien', montant: 10, ordre: 0, created_at: ilYa(30).toISOString() },
+    { id: 'tf2', nom: 'Exonéré', montant: 0, ordre: 1, created_at: ilYa(30).toISOString() }];
+  members.forEach((m) => { m.tarif_id = null; });
+  members[12].tarif_id = 'tf1'; members[10].tarif_id = 'tf2';
+  // Cotisation mensuelle : une ligne par membre et par mois, au montant de chacun
   const cotisations = [];
   members.forEach((m) => {
     for (let mo = 1; mo <= 12; mo++) {
       const periode = `${an}-${String(mo).padStart(2, '0')}-01`;
       const fin = new Date(an, mo, 1);
-      if (!m.date_adhesion || new Date(m.date_adhesion) < fin) cotisations.push({ id: uid(), member_id: m.id, periode, montant_du: 20 });
+      const montant = tarifs.find((x) => x.id === m.tarif_id)?.montant ?? 20;
+      if (!m.date_adhesion || new Date(m.date_adhesion) < fin) cotisations.push({ id: uid(), member_id: m.id, periode, montant_du: montant });
     }
   });
   const tiers = [
@@ -78,7 +84,7 @@ function seed() {
   projects.find((x) => x.id === 'p6').created_at = ilYa(1).toISOString();   // ajoutés récemment : apparaissent dans « Nouveautés »
   projects.find((x) => x.id === 'p5').created_at = ilYa(2).toISOString();
   const collectes = [
-    { id: 'co1', nom: 'Participation à la sortie des jeunes', project_id: 'p1', montant_attendu: 15, objectif: 300, date_limite: dansJours(10), tous_membres: true, cloturee: false, created_at: ilYa(20).toISOString() },
+    { id: 'co1', nom: 'Participation à la sortie des jeunes', project_id: 'p1', montant_attendu: 15, objectif: 300, date_limite: dansJours(10), tous_membres: true, montants_varies: true, cloturee: false, created_at: ilYa(20).toISOString() },
     { id: 'co2', nom: 'Repas de Noël', project_id: 'p2', montant_attendu: null, objectif: 500, date_limite: `${an}-12-15`, tous_membres: true, cloturee: false, created_at: ilYa(6).toISOString() },
   ];
   const rec0 = { id: 'rec0', account_id: 'acc-banque', periode_debut: iso(ilYa(75)), periode_fin: iso(ilYa(41)), solde_releve: 2815,
@@ -187,8 +193,8 @@ function seed() {
     ids,
     tables: {
       permissions, roles, role_permissions,
-      organisation: [{ id: 1, nom: 'JP Grenoble', logo_path: null, banniere_path: 'demo/photo2.jpg', devise: 'EUR', exercice_debut: `${an}-01-01`,
-        sigle: 'JP', objet: 'Rassembler et accompagner les jeunes de tous pays à Grenoble', adresse: '12 rue de la Paix', code_postal: '38000', ville: 'Grenoble',
+      organisation: [{ id: 1, nom: 'JTP Grenoble', logo_path: null, banniere_path: 'demo/photo2.jpg', devise: 'EUR', exercice_debut: `${an}-01-01`,
+        sigle: 'JTP', objet: 'Rassembler et accompagner les jeunes de tous pays à Grenoble', adresse: '12 rue de la Paix', code_postal: '38000', ville: 'Grenoble',
         email: 'contact@jp-grenoble.fr', telephone: '06 12 34 56 78', site_web: null, rna: 'W381000000', siret: null, date_creation: '2015-09-01', configuree: true }],
       exercices: [
         { id: 'ex1', libelle: `Exercice ${an - 1}`, debut: `${an - 1}-01-01`, fin: `${an - 1}-12-31`, cloture: true, cloture_le: `${an}-02-15T10:00:00Z`, cloture_par: ids.t, created_at: `${an - 1}-01-02T10:00:00Z` },
@@ -221,7 +227,9 @@ function seed() {
         { cle: 'infos_paiement', valeur: null, texte: 'Virement : IBAN FR76 0000 0000 0000 0000 0000 000 (démonstration)\nEspèces : auprès du trésorier après le culte' },
       ],
       categories, accounts, members, cotisations, transactions, profiles, expense_requests, invitations: [],
-      projects, budgets, attachments, reconciliations: [rec0], tiers, collectes, collecte_membres: [],
+      projects, budgets, attachments, reconciliations: [rec0], tiers, collectes, collecte_membres: [], tarifs,
+      // Sortie des jeunes : Jean-Marc dispensé, Ruth à 8 € (montants selon la personne, comme Demo.kt)
+      collecte_montants: [{ collecte_id: 'co1', member_id: 'm10', montant: 0 }, { collecte_id: 'co1', member_id: 'm4', montant: 8 }],
       liens_membres: [{ member_id: 'm0', jeton: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', code: 'k7qp2xyz9abc', cree_par: ids.t, cree_le: ilYa(2).toISOString(), nb_consultations: 3, derniere_consultation: ilYa(1).toISOString() }], materiel, materiel_mouvements,
     },
   };
@@ -247,8 +255,24 @@ const DROIT_ECRITURE = {
   profiles: ['administrer'], roles: ['administrer'], role_permissions: ['administrer'],
   materiel: ['gerer_materiel'], materiel_mouvements: ['gerer_materiel'], liens_membres: ['gerer_membres', 'gerer_cotisations'],
   tiers: ['saisir_ecritures', 'gerer_cotisations'], collectes: ['gerer_activites', 'gerer_cotisations'], collecte_membres: ['gerer_activites', 'gerer_cotisations'],
+  collecte_montants: ['gerer_activites', 'gerer_cotisations'], tarifs: ['gerer_cotisations'],
   communiques: ['gerer_activites', 'administrer'],
 };
+
+// Montants selon la personne (comme montant_cotisation, montant_participation et v_collectes.total_attendu de la base)
+function montantCotisation(t, mid) {
+  const m = t.members.find((x) => x.id === mid);
+  return t.tarifs.find((x) => x.id === m?.tarif_id)?.montant ?? t.settings.find((s) => s.cle === 'cotisation_montant').valeur;
+}
+function montantParticipation(t, c, mid) {
+  const x = t.collecte_montants.find((y) => y.collecte_id === c.id && y.member_id === mid);
+  return x ? Number(x.montant) : c.montant_attendu;
+}
+function totalAttendu(t, c) {
+  if (c.montant_attendu == null && !t.collecte_montants.some((x) => x.collecte_id === c.id)) return null;
+  const concernes = c.tous_membres ? t.members.filter((m) => m.actif).map((m) => m.id) : t.collecte_membres.filter((x) => x.collecte_id === c.id).map((x) => x.member_id);
+  return concernes.reduce((s, mid) => s + Number(montantParticipation(t, c, mid) || 0), 0);
+}
 
 // Cotisations par période, versements imputés sur la période la plus ancienne non réglée (comme la vue de la base)
 function periodesCotisation(t) {
@@ -428,7 +452,8 @@ export function createMockClient() {
         return t.collectes.map((c) => {
           const tx = t.transactions.filter((x) => x.collecte_id === c.id);
           return { ...c, total_recu: tx.reduce((s, x) => s + Number(x.montant), 0), nb_contributeurs: (() => { const net = {}; tx.forEach((x) => { const k = x.member_id || x.tiers_id || x.contrepasse_de || x.id; net[k] = (net[k] || 0) + Number(x.montant); }); return Object.values(net).filter((v) => v > 0).length; })(),
-            nb_concernes: c.tous_membres ? t.members.filter((m) => m.actif).length : t.collecte_membres.filter((x) => x.collecte_id === c.id).length };
+            nb_concernes: c.tous_membres ? t.members.filter((m) => m.actif).length : t.collecte_membres.filter((x) => x.collecte_id === c.id).length,
+            montants_varies: !!c.montants_varies, total_attendu: totalAttendu(t, c) };
         });
       }
       if (nom === 'v_justificatifs_en_retard') {
@@ -451,6 +476,8 @@ export function createMockClient() {
         tiers: finances || d.has('saisir_ecritures') || d.has('gerer_cotisations') || d.has('payer_depenses'),
         collectes: finances || d.has('gerer_cotisations') || d.has('gerer_activites') || d.has('saisir_ecritures'),
         collecte_membres: finances || d.has('gerer_cotisations') || d.has('gerer_activites') || d.has('saisir_ecritures'),
+        collecte_montants: finances || d.has('gerer_cotisations') || d.has('gerer_activites') || d.has('saisir_ecritures'),
+        tarifs: finances || d.has('voir_membres') || d.has('gerer_membres') || d.has('gerer_cotisations'),
         materiel: finances || d.has('gerer_materiel') || d.has('voir_membres'), materiel_mouvements: finances || d.has('gerer_materiel') || d.has('voir_membres'),
         liens_membres: d.has('gerer_membres') || d.has('gerer_cotisations'),
         reponses_sondage: d.has('gerer_activites') || d.has('administrer'),
@@ -551,12 +578,12 @@ export function createMockClient() {
         return ok({
           association: { nom: t.organisation[0].nom, logo_path: t.organisation[0].logo_path, banniere_path: t.organisation[0].banniere_path },
           membre: { prenom: m.prenom, nom: m.nom, actif: m.actif },
-          reglages: { montant: reg('cotisation_montant').valeur, periode_mois: reg('cotisation_periode_mois').valeur, infos_paiement: reg('infos_paiement')?.texte || null },
+          reglages: { montant: montantCotisation(t, m.id), periode_mois: reg('cotisation_periode_mois').valeur, infos_paiement: reg('infos_paiement')?.texte || null },
           periodes, avance: Math.max(0, paye - du),
           versements: t.transactions.filter((x) => x.member_id === m.id && x.sens === 'recette' && (x.est_cotisation || x.collecte_id)).sort((a, b) => (a.date_op < b.date_op ? 1 : -1)).slice(0, 24)
             .map((x) => ({ date: x.date_op, montant: x.montant, objet: x.est_cotisation ? 'Cotisation' : (t.collectes.find((c) => c.id === x.collecte_id)?.nom || x.libelle) })),
           participations: t.collectes.filter((c) => c.tous_membres || t.collecte_membres.some((x) => x.collecte_id === c.id && x.member_id === m.id)).map((c) => ({
-            nom: c.nom, montant_attendu: c.montant_attendu, date_limite: c.date_limite, cloturee: c.cloturee,
+            nom: c.nom, montant_attendu: montantParticipation(t, c, m.id), date_limite: c.date_limite, cloturee: c.cloturee,
             donne: t.transactions.filter((x) => x.collecte_id === c.id && x.member_id === m.id).reduce((s, x) => s + Number(x.montant), 0) })).filter((c) => !c.cloturee || c.donne !== 0),
           communiques: t.communiques.filter((c) => c.visible_adherents && c.debut <= iso(new Date()) && (!c.fin || c.fin >= iso(new Date()))).map((c) => {
             const mienne = t.reponses_sondage.find((r) => r.communique_id === c.id && r.member_id === m.id);
@@ -639,9 +666,23 @@ export function createMockClient() {
         const p = t.profiles.find((x) => x.id === db.moi());
         if (!p?.member_id) return ok([]);
         return ok(t.collectes.filter((c) => c.tous_membres || t.collecte_membres.some((x) => x.collecte_id === c.id && x.member_id === p.member_id)).map((c) => ({
-          collecte_id: c.id, nom: c.nom, montant_attendu: c.montant_attendu, date_limite: c.date_limite, cloturee: c.cloturee,
+          collecte_id: c.id, nom: c.nom, montant_attendu: montantParticipation(t, c, p.member_id), date_limite: c.date_limite, cloturee: c.cloturee,
           donne: t.transactions.filter((x) => x.collecte_id === c.id && x.member_id === p.member_id).reduce((s, x) => s + Number(x.montant), 0),
         })).filter((c) => !c.cloturee || c.donne !== 0));
+      }
+      // Attribue un montant du barème (null : montant normal) et met à jour les périodes à partir d'une date (comme appliquer_tarif)
+      if (nom === 'appliquer_tarif') {
+        if (!d.has('gerer_cotisations')) return ko('Droit « gérer les cotisations » requis');
+        const tf = args.p_tarif ? t.tarifs.find((x) => x.id === args.p_tarif) : null;
+        if (args.p_tarif && !tf) return ko('Montant de cotisation introuvable');
+        const montant = tf ? Number(tf.montant) : t.settings.find((s) => s.cle === 'cotisation_montant').valeur;
+        if (args.p_membres) t.members.filter((m) => args.p_membres.includes(m.id)).forEach((m) => { m.tarif_id = args.p_tarif || null; });
+        if (!args.p_depuis) { db.emettre('members'); return ok(0); }
+        const cibles = args.p_membres || t.members.filter((m) => (m.tarif_id || null) === (args.p_tarif || null)).map((m) => m.id);
+        let n = 0;
+        t.cotisations.filter((c) => cibles.includes(c.member_id) && c.periode >= args.p_depuis && Number(c.montant_du) !== Number(montant)).forEach((c) => { c.montant_du = montant; n++; });
+        db.emettre('cotisations');
+        return ok(n);
       }
       if (nom === 'generer_cotisations') {
         if (!d.has('gerer_cotisations')) return ko('Droit « gérer les cotisations » requis');
@@ -653,7 +694,7 @@ export function createMockClient() {
           for (let mo = 1; mo <= 12; mo += pas) {
             const periode = `${args.an}-${String(mo).padStart(2, '0')}-01`;
             if (m.date_adhesion && new Date(m.date_adhesion) >= new Date(args.an, mo - 1 + pas, 1)) continue;
-            if (!t.cotisations.some((c) => c.member_id === m.id && c.periode === periode)) { t.cotisations.push({ id: uid(), member_id: m.id, periode, montant_du: montant }); n++; }
+            if (!t.cotisations.some((c) => c.member_id === m.id && c.periode === periode)) { t.cotisations.push({ id: uid(), member_id: m.id, periode, montant_du: t.tarifs.find((x) => x.id === m.tarif_id)?.montant ?? montant }); n++; }
           }
         });
         return ok(n);
@@ -699,14 +740,15 @@ export function createMockClient() {
         return ok(t.projects.filter((p) => (p.visible_adherents || d.has('gerer_activites') || d.has('consulter_finances')) && p.date_debut
           && (p.date_fin || p.date_debut) >= debut && p.date_debut <= fin)
           .map((p) => { const c = t.collectes.filter((x) => x.project_id === p.id && !x.cloturee).sort((a, b) => (a.created_at > b.created_at ? 1 : -1))[0];
-            return { ...p, participation: c?.montant_attendu ?? null, collecte_id: c?.id ?? null }; })
+            const mid = t.profiles.find((x) => x.id === db.moi())?.member_id;
+            return { ...p, participation: c ? montantParticipation(t, c, mid) ?? null : null, collecte_id: c?.id ?? null }; })
           .sort((a, b) => ((a.date_debut + (a.heure_debut || '')) > (b.date_debut + (b.heure_debut || '')) ? 1 : -1)));
       }
       // Corbeille : copie complète puis effacement ; restauration à l'identique (comme supprimer() et restaurer() de la base)
       if (nom === 'supprimer' || nom === 'restaurer') {
         const DROITS = { transactions: ['saisir_ecritures'], members: ['gerer_membres'], tiers: ['saisir_ecritures', 'gerer_cotisations'], projects: ['gerer_activites'],
           collectes: ['gerer_activites', 'gerer_cotisations'], materiel: ['gerer_materiel'], categories: ['administrer'], accounts: ['administrer'], budgets: ['gerer_budget'],
-          expense_requests: null, exercices: ['administrer'], communiques: ['gerer_activites', 'administrer'] };
+          expense_requests: null, exercices: ['administrer'], communiques: ['gerer_activites', 'administrer'], tarifs: ['gerer_cotisations'] };
         const peutTable = (tb) => tb in DROITS && (DROITS[tb] === null || DROITS[tb].some((x) => d.has(x)));
         const clos = (dt) => t.exercices.some((e) => e.cloture && dt >= e.debut && dt <= e.fin);
         const eur = (m) => Number(m).toFixed(2).replace('.', ',') + ' €';
@@ -750,6 +792,7 @@ export function createMockClient() {
           if (t.profiles.some((p) => p.member_id === id) || t.invitations.some((i) => i.member_id === id)) return ko('Ce membre a un accès ou une invitation à la plateforme : retirez d’abord son accès');
           lib = `${v.prenom} ${v.nom}`;
           avec('cotisations', t.cotisations.filter((x) => x.member_id === id)); avec('collecte_membres', t.collecte_membres.filter((x) => x.member_id === id));
+          avec('collecte_montants', t.collecte_montants.filter((x) => x.member_id === id));
           avec('liens_membres', t.liens_membres.filter((x) => x.member_id === id));
           t.materiel.filter((x) => x.detenteur_id === id).forEach((x) => liens.push({ table: 'materiel', id: x.id, colonne: 'detenteur_id', valeur: id }));
         } else if (tb === 'tiers') {
@@ -762,7 +805,7 @@ export function createMockClient() {
           t.collectes.filter((x) => x.project_id === id).forEach((x) => liens.push({ table: 'collectes', id: x.id, colonne: 'project_id', valeur: id }));
         } else if (tb === 'collectes') {
           if (t.transactions.some((x) => x.collecte_id === id)) return ko('Des participations sont déjà encaissées : clôturez la collecte plutôt');
-          lib = v.nom; avec('collecte_membres', t.collecte_membres.filter((x) => x.collecte_id === id));
+          lib = v.nom; avec('collecte_membres', t.collecte_membres.filter((x) => x.collecte_id === id)); avec('collecte_montants', t.collecte_montants.filter((x) => x.collecte_id === id));
         } else if (tb === 'materiel') {
           lib = v.designation; avec('materiel_mouvements', t.materiel_mouvements.filter((x) => x.materiel_id === id));
         } else if (tb === 'categories') {
@@ -781,6 +824,10 @@ export function createMockClient() {
         } else if (tb === 'exercices') {
           if (v.cloture) return ko('Exercice clôturé : rouvrez-le d’abord');
           lib = v.libelle;
+        } else if (tb === 'tarifs') {
+          // Clé étrangère des membres : un montant encore attribué ne part pas
+          if (t.members.some((m) => m.tarif_id === id)) return ko('update or delete on table "tarifs" violates foreign key constraint "members_tarif_id_fkey" on table "members"');
+          lib = 'Montant de cotisation · ' + v.nom;
         }
         const entree = { id: uid(), table_nom: tb, ligne_id: id, libelle: lib, donnees: { ...v }, dependances: dep, liens, motif: (args.p_motif || '').trim() || null,
           supprime_par: db.moi(), supprime_le: new Date().toISOString(), restaure_par: null, restaure_le: null };
@@ -821,7 +868,7 @@ export function createMockClient() {
         const co = t.collectes.filter((c) => c.created_at > depuis('cotisations') && (gere || (p.member_id && !c.cloturee
           && (c.tous_membres || t.collecte_membres.some((x) => x.collecte_id === c.id && x.member_id === p.member_id)))));
         compteurs.cotisations = co.length;
-        co.forEach((c) => elements.push({ section: 'cotisations', titre: 'Participation demandée', detail: c.nom + (c.montant_attendu ? ' · ' + eur(c.montant_attendu) : ''), quand: c.created_at }));
+        co.forEach((c) => elements.push({ section: 'cotisations', titre: 'Participation demandée', detail: c.nom + (c.montants_varies ? ' · montant selon la personne' : c.montant_attendu ? ' · ' + eur(c.montant_attendu) : ''), quand: c.created_at }));
         const auj = iso(new Date());
         const cq = t.communiques.filter((c) => c.created_at > depuis('communiques') && c.created_by !== p.id && (c.visible_adherents || d.has('gerer_activites') || d.has('administrer')) && (!c.fin || c.fin >= auj));
         compteurs.communiques = cq.length;
@@ -867,6 +914,48 @@ export function createMockClient() {
     // adresse valide, fonction connue, pas de compte déjà lié, adresse libre), sans e-mail envoyé
     functions: {
       async invoke(nom, { body } = {}) {
+        // Fonction supprimer-compte : mêmes refus que supabase/functions/supprimer-compte (soi-même, dernier administrateur, compte qui a servi)
+        if (nom === 'supprimer-compte') {
+          if (!db.droits().has('administrer')) return ko('Réservé à l’administrateur de la plateforme');
+          const t = tables;
+          if (body?.action === 'supprimer') {
+            if (body.id === db.moi()) return ko('Vous ne pouvez pas supprimer votre propre compte');
+            const p = t.profiles.find((x) => x.id === body.id);
+            if (!p) return ko('Compte introuvable');
+            const admins = new Set(t.role_permissions.filter((x) => x.permission === 'administrer').map((x) => x.role));
+            if (admins.has(p.role) && !t.profiles.some((x) => x.id !== p.id && x.actif && admins.has(x.role))) return ko('C’est le dernier administrateur : donnez d’abord ce rôle à une autre personne');
+            const traces = t.transactions.some((x) => x.created_by === p.id) || t.expense_requests.some((x) => [x.demandeur, x.validee_par, x.payee_par].includes(p.id))
+              || t.attachments.some((x) => x.depose_par === p.id) || t.reconciliations.some((x) => x.termine_par === p.id) || t.liens_membres.some((x) => x.cree_par === p.id)
+              || t.materiel_mouvements.some((x) => x.par === p.id) || t.exercices.some((x) => x.cloture_par === p.id) || (t.rappels || []).some((x) => x.par === p.id)
+              || t.corbeille.some((x) => x.supprime_par === p.id || x.restaure_par === p.id);
+            if (traces) return ko('Ce compte a déjà servi (opérations, demandes, rappels…) : décochez « Actif » pour lui retirer l’accès, l’historique reste lisible');
+            const email = comptesCrees[p.id]?.email || p.id.replace('u-', '') + '@demo.jp';
+            const entree = { id: uid(), table_nom: 'comptes', ligne_id: p.id, libelle: `Compte de ${p.nom} (${email})`, donnees: { ...p, email }, dependances: [], liens: [],
+              motif: (body.motif || '').trim() || null, supprime_par: db.moi(), supprime_le: new Date().toISOString(), restaure_par: null, restaure_le: null };
+            t.corbeille.push(entree);
+            t.profiles = t.profiles.filter((x) => x.id !== p.id); delete comptesCrees[p.id];
+            db.emettre('profiles');
+            return ok({ corbeille_id: entree.id });
+          }
+          if (body?.action === 'restaurer') {
+            const mdp = String(body.mot_de_passe || '');
+            if (mdp.length < 8) return ko('Le mot de passe provisoire doit faire au moins 8 caractères');
+            const c = t.corbeille.find((x) => x.id === body.corbeille_id && x.table_nom === 'comptes');
+            if (!c) return ko('Élément introuvable dans la corbeille');
+            if (c.restaure_le) return ko('Compte déjà restauré');
+            const dn = c.donnees;
+            if (Object.values(comptesCrees).some((x) => x.email === dn.email) || t.profiles.some((x) => x.id === dn.id)) return ko('Un compte existe déjà pour cette adresse');
+            const member = dn.member_id && !t.profiles.some((x) => x.member_id === dn.member_id) && t.members.some((m) => m.id === dn.member_id) ? dn.member_id : null;
+            const id = 'u-r' + Date.now().toString(36);
+            comptesCrees[id] = { email: dn.email, mdp };
+            const { email: _e, ...profil } = dn;
+            t.profiles.push({ ...profil, id, member_id: member, mdp_provisoire: true, vus: {} });
+            Object.assign(c, { restaure_le: new Date().toISOString(), restaure_par: db.moi() });
+            db.emettre('profiles');
+            return ok({ email: dn.email, nom: dn.nom, member_id: member, role: dn.role });
+          }
+          return ko('Action inconnue');
+        }
         if (nom !== 'creer-comptes') return ko('Fonction inconnue');
         if (!db.droits().has('administrer')) return ko('Réservé à l’administrateur de la plateforme');
         const mdp = String(body?.mot_de_passe || '');

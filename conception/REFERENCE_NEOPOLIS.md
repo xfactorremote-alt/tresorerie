@@ -1,4 +1,4 @@
-# Rétro-ingénierie : simulateur Neopolis → Trésorerie JP Grenoble
+# Rétro-ingénierie : simulateur Neopolis → Trésorerie JTP Grenoble
 
 Référence : https://neopolis.fr/simulateur (relevé le 13 octobre 2026, paramètres publicitaires retirés).
 Projet cible : Trésorerie de l'association (site `docs/` + application Android), identité **conservée** (orange de l'association, Fluent 2).
@@ -73,7 +73,7 @@ Formes : nav et boutons 980 px (pilule), cartes 24 px (20 px mobile), champs 14 
 
 - Pourquoi ça marche (référence) : chaque écran ne pose qu'une question ; le registre public évite la saisie et rassure (« c'est bien nous ») ; le bouton grisé dit ce qui manque. `DÉDUIT`
 - Où ça échoue : résultat caché derrière e-mail + téléphone obligatoires (friction et méfiance) ; promesse chiffrée non vérifiable ; pilules translucides peu contrastées (`#919eab` sur blanc pour le bouton grisé : 2,7:1). `DÉDUIT`
-- Pour la cible : la recherche est **facultative** (beaucoup de petites associations n'ont pas de SIRET, donc ne sont pas dans le registre — c'est le cas de JP Grenoble lors du relevé), on ne demande aucune donnée de contact, et chaque valeur trouvée reste modifiable. `RECOMMANDÉ`
+- Pour la cible : la recherche est **facultative** (beaucoup de petites associations n'ont pas de SIRET, donc ne sont pas dans le registre — c'est le cas de JTP Grenoble lors du relevé), on ne demande aucune donnée de contact, et chaque valeur trouvée reste modifiable. `RECOMMANDÉ`
 
 ## 6. Responsive
 

@@ -187,7 +187,7 @@ class AuditTest {
     // Lien personnel court : prénom sans accent puis code de 12 caractères ; les anciens liens gardent leur jeton
     @Test fun lienCourtEtRassurant() {
         assertEquals("grace", slugPrenom("Grâce")); assertEquals("jeanmarie", slugPrenom("Jean-Marie"))
-        assertEquals("Jeunes de Tous Pays", nomAssoLisible("JEUNES DE TOUS PAYS")); assertEquals("JP Grenoble", nomAssoLisible("JP Grenoble"))
+        assertEquals("Jeunes de Tous Pays", nomAssoLisible("JEUNES DE TOUS PAYS")); assertEquals("JTP Grenoble", nomAssoLisible("JTP Grenoble"))
         val tres = Demo.profilsActuels().first { it.id == "u-t" }
         val nouveau = Demo.lienMembre("m1", true, tres)
         val l = Demo.liens.first { it.membreId == "m1" }
@@ -329,7 +329,7 @@ class AuditTest {
             n(texteRappel("", "Daniel", "JEUNES DE TOUS PAYS", "participation", 0.0, "Sortie", "  ", null)))
         // Notification : sans les astérisques du gras WhatsApp
         assertEquals("Bonjour Daniel 😊\nOn espère que tu vas bien ! Petit message de Jeunes de Tous Pays au sujet de la cotisation : c’est grâce à elle que l’association vit et que nos activités peuvent continuer.\n\n💶 Reste pour cette année : 40,00 €\n\nMerci pour ton soutien et à très vite,\nLe bureau de Jeunes de Tous Pays", n(sansGras(texteRappel(null, "Daniel", "JEUNES DE TOUS PAYS", "cotisation", 40.0, "", null, null))))
-        assertEquals("JP Grenoble", nomAssoMessage("JP Grenoble"))
+        assertEquals("JTP Grenoble", nomAssoMessage("JTP Grenoble"))
         assertTrue(listOf("arriéré", "retard", "relance", "sans pression", "bon moment").none { it in RAPPEL_DEFAUT.values.joinToString().lowercase() })
     }
 
@@ -475,5 +475,44 @@ Joël;;7;8;;;;oui;;;"""
         val l = listOf(Membre("a", "Zoé", "B", 1, 1), Membre("b", "Ana", "C", 1, 1), Membre("c", "Ben", "D", 1, 1), Membre("d", "Eve", "E", 1, 1, actif = false), Membre("e", "Ali", "F", 1, 1))
         val c = candidatsCompte(l, listOf(Profil("u", "Ali F", "adherent", memberId = "e")), listOf(Invitation("z@x.fr", "Zoé B", "bureau", "a")))
         assertEquals(listOf("Zoé", "Ana", "Ben"), c.map { it.prenom })
+    }
+
+    // Plusieurs montants selon la personne : mêmes calculs et libellés que le site (montantCotisation, libelleTarif,
+    // texteStatutParticipation, periodesDepuis) et même démonstration (barème, collecte de la sortie, appliquer_tarif)
+    @Test
+    fun montantsSelonLaPersonne() {
+        val tarifs = listOf(Tarif("t1", "Musicien", 3.0), Tarif("t0", "Exonéré", 0.0))
+        val m = Membre("m", "Ana", "B", 1, 1)
+        assertEquals(20.0, montantCotisation(m, tarifs, 20.0))
+        assertEquals(3.0, montantCotisation(m.copy(tarifId = "t1"), tarifs, 20.0))
+        assertEquals("Montant normal", nomTarif(m, tarifs))
+        assertEquals("Exonéré · dispensé", libelleTarif(tarifs[1], 20.0))
+        assertEquals("Montant normal · ${euros(20.0)}", libelleTarif(null, 20.0))
+        assertEquals("Dispensé", texteStatutParticipation(0.0, 0.0, true))
+        assertEquals("Donné", texteStatutParticipation(5.0, 0.0, true))
+        assertEquals("Partiel", texteStatutParticipation(5.0, 8.0, false))
+        assertEquals("Réglé", texteStatutParticipation(8.0, 8.0, false))
+        assertEquals("À régler", texteStatutParticipation(0.0, 15.0, false))
+        assertEquals("", texteStatutParticipation(0.0, 0.0, false))
+        assertEquals(listOf("2026-01-01", "2026-04-01", "2026-07-01", "2026-10-01", "2027-01-01"), periodesDepuis(2026, 3))
+        assertEquals(13, periodesDepuis(2026, 1).size)
+        // Démonstration : Paul paie 10 €, Jean-Marc est exonéré ; la sortie demande 15 €, Ruth 8 €, Jean-Marc dispensé
+        assertEquals("tf1", Demo.membres.first { it.id == "m12" }.tarifId)
+        assertEquals("tf2", Demo.membres.first { it.id == "m10" }.tarifId)
+        val sortie = Demo.collectesVue().first { it.id == "co1" }
+        assertTrue(sortie.montantsVaries)
+        assertEquals("${euros(15.0)} par personne · selon la personne", libelleMontantCollecte(sortie))
+        val actifs = Demo.membres.count { it.actif }
+        assertEquals(15.0 * (actifs - 2) + 8.0 + 0.0, sortie.totalAttendu)
+        // appliquer_tarif : Samuel passe à 10 € à partir de juillet, seules les périodes à partir de juillet changent
+        val an = aujourdhui().year
+        val avant = Demo.periodes().filter { it.membreId == "m3" && it.annee == an }.associate { it.periode to it.du }
+        val n = Demo.appliquerTarif("tf1", "$an-07-01", listOf("m3"), tresorier)
+        val apres = Demo.periodes().filter { it.membreId == "m3" && it.annee == an }.associate { it.periode to it.du }
+        assertEquals(6, n)
+        assertEquals(avant["$an-06-01"], apres["$an-06-01"])
+        assertEquals(10.0, apres["$an-07-01"])
+        Demo.appliquerTarif(null, "$an-07-01", listOf("m3"), tresorier)   // retour à l'état de départ
+        assertEquals(avant, Demo.periodes().filter { it.membreId == "m3" && it.annee == an }.associate { it.periode to it.du })
     }
 }

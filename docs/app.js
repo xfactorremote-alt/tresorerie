@@ -1,4 +1,4 @@
-// Trésorerie JP Grenoble — site web, phase 1
+// Trésorerie JTP Grenoble — site web, phase 1
 // Connexion, soldes, écritures, membres (fiche + import), cotisations, paramètres et accès.
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { ICONES_FLUENT } from './icones.js';
@@ -230,6 +230,7 @@ async function chargerReferentiels() {
   S.comptes = peut('consulter_finances', 'saisir_ecritures', 'payer_depenses', 'gerer_cotisations', 'rapprocher')
     ? await q(sb.from('accounts').select('*').eq('actif', true).order('nom')) : [];
   S.membres = peut('voir_membres', 'gerer_membres', 'gerer_cotisations') ? await q(sb.from('members').select('*').order('nom')) : [];
+  S.tarifs = peut('voir_membres', 'gerer_membres', 'gerer_cotisations', 'consulter_finances') ? await q(sb.from('tarifs').select('*').order('ordre').order('montant')).catch(() => []) : [];
   S.tiers = peut('consulter_finances', 'saisir_ecritures', 'gerer_cotisations', 'payer_depenses') ? await q(sb.from('tiers').select('*').order('nom')) : [];
   S.collectes = peut('consulter_finances', 'gerer_cotisations', 'gerer_activites', 'saisir_ecritures') ? await q(sb.from('collectes').select('*').order('created_at', { ascending: false })) : [];
   S.exercices = await q(sb.from('exercices').select('*').order('debut', { ascending: false })).catch(() => []);
@@ -522,7 +523,7 @@ async function assistantConfiguration(etape = 0) {
       <div style="display:flex;align-items:center;gap:16px"><img id="apercu-logo" src="${esc(S.logoUrl)}" alt="Logo" class="logo-apercu">
         <label class="btn btn-tonal btn-petit">Choisir le logo<input type="file" name="logo" accept="image/*" hidden></label></div>
       <div class="champs champs-2"><label class="champ"><span class="obligatoire">Nom de l’association</span><input name="nom" value="${esc(o.nom || '')}" required maxlength="80" aria-describedby="err-nom"><small class="erreur-champ" id="err-nom" hidden>Indiquez le nom de l’association.</small></label>
-        <label class="champ">Sigle<input name="sigle" value="${esc(o.sigle || '')}" maxlength="20" placeholder="JP"></label></div>
+        <label class="champ">Sigle<input name="sigle" value="${esc(o.sigle || '')}" maxlength="20" placeholder="JTP"></label></div>
       <label class="champ">Objet (but de l’association)<textarea name="objet" rows="2" maxlength="300">${esc(o.objet || '')}</textarea></label>
       <label class="champ">Date de création<input type="date" name="date_creation" value="${esc(o.date_creation || '')}"></label>`,
     () => `<h2>Coordonnées</h2><p class="muted">Le numéro RNA (W…) figure sur le récépissé de la préfecture ; le SIRET seulement si l’association en a un.</p>
@@ -846,7 +847,7 @@ async function rafraichirDoucement() {
   const occupe = $('#sheet[open]') || document.activeElement?.closest?.('.contenu input, .contenu textarea, .contenu select');
   if (occupe) { clearTimeout(S.minuterieSynchro); S.minuterieSynchro = setTimeout(rafraichirDoucement, 2500); return; }
   const tables = S.tablesChangees || new Set(); S.tablesChangees = new Set();
-  const REFERENTIELS = ['*', 'members', 'accounts', 'categories', 'organisation', 'settings', 'exercices', 'liens_membres', 'tiers', 'projects', 'profiles'];
+  const REFERENTIELS = ['*', 'members', 'tarifs', 'accounts', 'categories', 'organisation', 'settings', 'exercices', 'liens_membres', 'tiers', 'projects', 'profiles'];
   try {
     if ([...tables].some((t) => REFERENTIELS.includes(t))) { await chargerReferentiels(); if (S.liensMembres) await chargerLiens(); }
   } catch (e) { console.warn(e); }
@@ -1918,7 +1919,7 @@ function feuilleEcriture(pre = {}) {
         choisirCat('Activités / événements');
         if (co?.project_id) f.projet.value = co.project_id;
         if (!libelleSaisi) f.libelle.value = nom ? `${co.nom} : ${nom}` : co.nom;
-        if (co?.montant_attendu) { info.innerHTML = `Attendu&nbsp;: <b>${eur(co.montant_attendu)}</b> par personne`; info.hidden = false; }
+        if (co?.montant_attendu || co?.montants_varies) { info.innerHTML = `Attendu&nbsp;: <b>${libelleMontantCollecte(co)}</b>`; info.hidden = false; }
       } else if (!libelleSaisi && /^Cotisation|^Participation/.test(f.libelle.value)) f.libelle.value = '';
     };
     f.libelle.addEventListener('input', () => { libelleSaisi = f.libelle.value !== ''; });
@@ -2480,7 +2481,7 @@ function feuilleCreerComptes(preselection = [], apres = null) {
 }
 // Résultat : comptes prêts (message à envoyer par WhatsApp, un appui par personne, ou à copier) et refus avec leur motif
 function resultatComptes(resultats, mdp, apres) {
-  const membre = (id) => S.membres.find((m) => m.id === id) || { prenom: '', nom: '' };
+  const membre = (id) => S.membres.find((m) => m.id === id) || { prenom: resultats.find((r) => r.member_id === id)?.nom || '', nom: '' };
   const oks = resultats.filter((r) => r.ok), kos = resultats.filter((r) => !r.ok);
   ouvrirFeuille(`<h2>${oks.length ? `${oks.length} compte${oks.length > 1 ? 's' : ''} créé${oks.length > 1 ? 's' : ''}` : 'Aucun compte créé'}</h2>
     ${oks.length ? `<div class="info">${oks.some((r) => !r.existant) ? `Mot de passe provisoire : <b>${esc(mdp)}</b>. Envoyez à chacun son message : à la première connexion, il choisit son propre mot de passe.` : 'Ces personnes avaient déjà un compte : il est relié à leur fiche et elles gardent leur mot de passe. Envoyez-leur leur message.'}</div>
@@ -2496,6 +2497,34 @@ function resultatComptes(resultats, mdp, apres) {
     $('#cr-fermer', root).addEventListener('click', () => { fermerFeuille(); apres?.(); });
   });
   apres?.();
+}
+
+// Supprimer un compte d'accès créé par erreur ou pour essai : il part à la corbeille (fonction supprimer-compte),
+// l'adresse redevient libre, la fiche de membre reste. « Annuler » le recrée avec un nouveau mot de passe provisoire.
+function supprimerCompte(p, apres) {
+  ouvrirFeuille(`<form id="f-suppr-compte" class="champs"><h2>Supprimer le compte de ${esc(p.nom)}&#8239;?</h2>
+    <p class="muted" style="margin:0">Pour un compte créé par erreur ou pour essai. La personne ne peut plus se connecter et son adresse redevient libre ; sa fiche de membre et ses cotisations ne bougent pas. Le compte part dans la corbeille : « Restaurer » le recrée avec un nouveau mot de passe provisoire.</p>
+    <p class="info" style="margin:0">Un compte qui a déjà servi (opérations, demandes…) se désactive plutôt : décochez « Actif ».</p>
+    <label class="champ">Motif (facultatif)<input name="motif" maxlength="120" placeholder="Compte d’essai, mauvaise adresse…"></label>
+    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-danger">${icone('corbeille', 16)} Supprimer le compte</button></div></form>`, (root) => {
+    const f = $('#f-suppr-compte', root);
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const b = f.querySelector('.btn-danger'); b.disabled = true;
+      try {
+        const r = await appelerFonction('supprimer-compte', { action: 'supprimer', id: p.id, motif: f.motif.value || null });
+        fermerFeuille(); await chargerAcces(); apres?.();
+        toastAnnuler('Compte supprimé, placé dans la corbeille', () => restaurerCompte(r.corbeille_id, apres));
+      } catch (err) { b.disabled = false; erreur(err); }
+    });
+  });
+}
+async function restaurerCompte(idCorbeille, apres) {
+  const mdp = motDePasseProvisoire();
+  const r = await appelerFonction('supprimer-compte', { action: 'restaurer', corbeille_id: idCorbeille, mot_de_passe: mdp });
+  await chargerAcces();
+  resultatComptes([{ ok: true, member_id: r.member_id, email: r.email, nom: r.nom }], mdp, apres);
 }
 
 // Rafraîchit la liste sous la feuille ouverte
@@ -2801,7 +2830,7 @@ async function ongletCotisations(zone) {
   zone.innerHTML = `
     <div class="filtres" style="margin:12px 0">
       <select id="annee" aria-label="Année" style="width:auto">${[S.annee + 1, S.annee, S.annee - 1, S.annee - 2].map((a) => `<option ${a === S.annee ? 'selected' : ''}>${a}</option>`).join('')}</select>
-      <span class="muted">${PERIODICITES[pasCotis()]}, ${eur(montant)} par période</span>
+      <span class="muted">${PERIODICITES[pasCotis()]}, ${eur(montant)} par période${(S.tarifs || []).length ? ` · ${S.tarifs.length} autre${S.tarifs.length > 1 ? 's' : ''} montant${S.tarifs.length > 1 ? 's' : ''}` : ''}</span>
       <span style="flex:1"></span>
       ${gere && nbRetard ? '<button class="btn-tonal btn-petit" id="b-rappel-groupe">Petit rappel groupé</button>' : ''}
     </div>
@@ -2817,7 +2846,7 @@ async function ongletCotisations(zone) {
       ${vues.length ? `<div class="legende muted">${Object.entries(STATUT_PERIODE).map(([k, [, l]]) => `<span><i class="case-p p-${k}"></i>${l}</span>`).join('')}</div>
       <ul class="liste">${vues.map(({ m, c }) => `<li class="ligne-cotis">
         ${avatar(m)}
-        <div class="corps"><b class="lien" data-fiche="${m.id}" role="button" tabindex="0">${esc(nomComplet(m))}</b>
+        <div class="corps"><b class="lien" data-fiche="${m.id}" role="button" tabindex="0">${esc(nomComplet(m))}</b>${tarifDe(m) ? `<span class="muted montant-perso">${libelleTarif(tarifDe(m))}</span>` : ''}
           <div class="grille-periodes" style="grid-template-columns:repeat(${cases.length},1fr)">${cases.map((p) => {
             const x = parCase[cle(m.id, p)];
             return `<i class="case-p p-${x ? x.statut : 'vide'}" role="img" title="${esc(nomPeriode(p))} : ${x ? STATUT_PERIODE[x.statut][1] : 'non dû'}" aria-label="${esc(nomPeriode(p))} : ${x ? STATUT_PERIODE[x.statut][1] : 'non dû'}"><small>${pasCotis() === 1 ? MOIS_COURTS[Number(p.slice(5, 7)) - 1] : ''}</small></i>`;
@@ -2839,15 +2868,15 @@ async function ongletCotisations(zone) {
   }));
   zone.querySelectorAll('[data-encaisser]').forEach((b) => b.addEventListener('click', () => {
     const c = parMembre[b.dataset.encaisser];
-    feuilleEcriture({ sens: 'recette', rubrique: 'cotisation', member_id: b.dataset.encaisser, montant: Number(c.retard) > 0 ? Number(c.retard) : montant, apres: () => pageCotisations() });
+    feuilleEcriture({ sens: 'recette', rubrique: 'cotisation', member_id: b.dataset.encaisser, montant: Number(c.retard) > 0 ? Number(c.retard) : montantCotisation(S.membres.find((m) => m.id === b.dataset.encaisser)), apres: () => pageCotisations() });
   }));
   zone.querySelectorAll('[data-fiche]').forEach((b) => {
     const ouvrir = () => ficheCotisation(S.membres.find((m) => m.id === b.dataset.fiche));
     b.addEventListener('click', ouvrir); b.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
   });
   $('#b-export-c')?.addEventListener('click', () => choisirFormat(`Cotisations ${S.annee}`, () => pdfCotisations(S.annee), () => telechargerCsv(`cotisations-${S.annee}.csv`,
-    ['Prénom', 'Nom', ...cases.map((p) => nomPeriode(p)), 'Dû', 'Réglé', 'Exigible', 'Retard', 'Réglé jusqu’à'],
-    lignes.map(({ m, c }) => [m.prenom, m.nom, ...cases.map((p) => { const x = parCase[cle(m.id, p)]; return x ? STATUT_PERIODE[x.statut][1] : ''; }),
+    ['Prénom', 'Nom', 'Montant', 'Par période', ...cases.map((p) => nomPeriode(p)), 'Dû', 'Réglé', 'Exigible', 'Retard', 'Réglé jusqu’à'],
+    lignes.map(({ m, c }) => [m.prenom, m.nom, nomTarif(m), montantCotisation(m), ...cases.map((p) => { const x = parCase[cle(m.id, p)]; return x ? STATUT_PERIODE[x.statut][1] : ''; }),
       Number(c.montant_du), Number(c.montant_paye), Number(c.exigible || 0), Number(c.retard), c.regle_jusqu_a ? nomPeriode(c.regle_jusqu_a) : '']))));
 }
 
@@ -3028,6 +3057,7 @@ async function ficheCotisation(m) {
   const gere = peut('gerer_cotisations');
   ouvrirFeuille(`<div style="display:flex;gap:12px;align-items:center">${avatar(m)}<h2 style="flex:1">${esc(nomComplet(m))}</h2></div>
     <p>${retardDe(periodes) > 0 ? `<span class="puce puce-ko">Retard ${eur(retardDe(periodes))}</span>` : '<span class="puce puce-ok">À jour</span>'}</p>
+    <div class="ligne-detail"><span>Montant par période</span><b>${libelleTarif(tarifDe(m))}</b>${gere ? '<button class="btn-texte btn-petit" id="b-tarif-m">Changer</button>' : ''}</div>
     <h3>${S.annee}</h3>
     <ul class="liste">${deLAnnee.map((p) => `<li><div class="corps"><b>${esc(nomPeriode(p.periode))}</b><span>${eur(p.regle)} sur ${eur(p.montant_du)}</span></div>
       <span class="puce ${STATUT_PERIODE[p.statut][0]}">${STATUT_PERIODE[p.statut][1]}</span>
@@ -3037,7 +3067,8 @@ async function ficheCotisation(m) {
     ${autres.length ? `<h3>Participations</h3><ul class="liste">${autres.map((t) => `<li><div class="corps"><b>${esc(nomCollecte(t.collecte_id))}</b><span>${dateFr(t.date_op)}</span></div>${montantSigne(t)}</li>`).join('')}</ul>` : ''}
     <div class="actions">${gere ? `<button class="btn-tonal" id="b-enc">Encaisser</button>` : ''}<button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
     $('#b-fermer', root).addEventListener('click', fermerFeuille);
-    $('#b-enc', root)?.addEventListener('click', () => feuilleEcriture({ sens: 'recette', rubrique: 'cotisation', member_id: m.id, montant: retardDe(periodes) || Number(S.settings.cotisation_montant), apres: () => pageCotisations() }));
+    $('#b-enc', root)?.addEventListener('click', () => feuilleEcriture({ sens: 'recette', rubrique: 'cotisation', member_id: m.id, montant: retardDe(periodes) || montantCotisation(m), apres: () => pageCotisations() }));
+    $('#b-tarif-m', root)?.addEventListener('click', () => feuilleTarifMembre(m, () => ficheCotisation(S.membres.find((x) => x.id === m.id) || m)));
     root.querySelectorAll('[data-du]').forEach((b) => b.addEventListener('click', () => {
       const li = b.closest('li');
       li.innerHTML = `<form class="filtres" style="width:100%"><b style="flex:1">${esc(nomPeriode(b.dataset.du))}</b>
@@ -3082,13 +3113,14 @@ function listeParticipations(parts) {
 async function ongletParticipations(zone) {
   const coll = await q(sb.from('v_collectes').select('*').order('created_at', { ascending: false }));
   const gere = peut('gerer_activites', 'gerer_cotisations');
-  const vise = (c) => Number(c.objectif || 0) || Number(c.montant_attendu || 0) * Number(c.nb_concernes || 0);
+  // Ce qui est visé : l'objectif, sinon la somme des montants de chacun (total_attendu, le sien ou celui de la collecte)
+  const vise = (c) => Number(c.objectif || 0) || Number(c.total_attendu ?? Number(c.montant_attendu || 0) * Number(c.nb_concernes || 0));
   zone.innerHTML = `
     ${coll.length ? `<div class="grille grille-2">${coll.map((c) => {
       const v = vise(c), pct = v ? Math.min(100, Math.round(100 * Number(c.total_recu) / v)) : null;
       return `<article class="carte cliquable-carte" data-collecte="${c.id}" tabindex="0" role="button">
         <div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(c.nom)}</h2>${c.cloturee ? '<span class="puce puce-neutre">Clôturée</span>' : ''}</div>
-        <span class="muted">${c.project_id ? esc(nomProjet(c.project_id)) + ' · ' : ''}${c.montant_attendu ? eur(c.montant_attendu) + ' par personne' : 'Montant libre'}${c.date_limite ? ' · avant le ' + dateFr(c.date_limite) : ''}</span>
+        <span class="muted">${c.project_id ? esc(nomProjet(c.project_id)) + ' · ' : ''}${libelleMontantCollecte(c)}${c.date_limite ? ' · avant le ' + dateFr(c.date_limite) : ''}</span>
         <p><span class="num" style="font-size:24px;font-weight:600">${eur(c.total_recu)}</span>${v ? ` sur ${eur(v)}` : ''}</p>
         ${pct != null ? `<div class="barre"><span style="width:${pct}%"></span></div>` : ''}
         <span class="muted">${c.nb_contributeurs} contributeur${c.nb_contributeurs > 1 ? 's' : ''} · ${c.nb_concernes} membre${c.nb_concernes > 1 ? 's' : ''} concerné${c.nb_concernes > 1 ? 's' : ''}</span>
@@ -3101,33 +3133,40 @@ async function ongletParticipations(zone) {
   });
 }
 
+// « 15 € par personne », « Montant libre », « 15 € par personne · montant selon la personne »
+const libelleMontantCollecte = (c) => (c.montant_attendu ? eur(c.montant_attendu) + ' par personne' : 'Montant libre') + (c.montants_varies ? ' · selon la personne' : '');
+
 // Qui a donné quoi pour une collecte
 async function detailCollecte(c) {
   S.collectes = await q(sb.from('collectes').select('*').order('created_at', { ascending: false }));
-  const [txs, choisis] = await Promise.all([
+  const [txs, choisis, perso] = await Promise.all([
     q(sb.from('transactions').select('*').eq('collecte_id', c.id)),
     c.tous_membres ? Promise.resolve([]) : q(sb.from('collecte_membres').select('*').eq('collecte_id', c.id)),
+    q(sb.from('collecte_montants').select('*').eq('collecte_id', c.id)).catch(() => []),
   ]);
+  // Montant attendu de chacun : le sien, sinon celui de la collecte (même calcul que montant_participation de la base)
+  const montants = Object.fromEntries(perso.map((x) => [x.member_id, Number(x.montant)]));
+  const attDe = (mid) => montants[mid] ?? Number(c.montant_attendu || 0);
   const concernes = c.tous_membres ? S.membres.filter((m) => m.actif) : S.membres.filter((m) => choisis.some((x) => x.member_id === m.id));
   const donne = (mid) => txs.filter((t) => t.member_id === mid).reduce((s, t) => s + Number(t.montant), 0);
-  const att = Number(c.montant_attendu || 0);
-  const lignes = concernes.map((m) => ({ m, v: donne(m.id) })).sort((a, b) => a.v - b.v || a.m.nom.localeCompare(b.m.nom));
+  const lignes = concernes.map((m) => ({ m, v: donne(m.id), a: attDe(m.id), dispense: montants[m.id] === 0 })).sort((a, b) => a.v - b.v || a.m.nom.localeCompare(b.m.nom));
+  const avecMontant = lignes.some((x) => x.a > 0);
   const autres = txs.filter((t) => !concernes.some((m) => m.id === t.member_id));
   const total = txs.reduce((s, t) => s + Number(t.montant), 0);
   const gere = peut('gerer_cotisations');
   let filtre = 'tous';
-  // Petit rappel groupé : montant proposé non atteint, ou montant libre et rien donné
-  const aRappeler = () => lignes.filter(({ v }) => (att ? v < att : v <= 0)).map(({ m, v }) => ({ m, montant: att ? att - v : 0 }));
+  // Petit rappel groupé : son montant non atteint, ou montant libre et rien donné ; jamais une personne dispensée
+  const aRappeler = () => lignes.filter(({ v, a, dispense }) => !dispense && (a ? v < a : v <= 0)).map(({ m, v, a }) => ({ m, montant: a ? a - v : 0 }));
   const rendu = () => `<div style="display:flex;gap:8px;align-items:flex-start"><h2 style="flex:1">${esc(c.nom)}</h2>${c.cloturee ? '<span class="puce puce-neutre">Clôturée</span>' : ''}</div>
-    <p class="muted">${c.project_id ? esc(nomProjet(c.project_id)) + ' · ' : ''}${att ? eur(att) + ' par personne' : 'Montant libre'}${c.date_limite ? ' · avant le ' + dateFr(c.date_limite) : ''}</p>
+    <p class="muted">${c.project_id ? esc(nomProjet(c.project_id)) + ' · ' : ''}${libelleMontantCollecte(c)}${c.date_limite ? ' · avant le ' + dateFr(c.date_limite) : ''}</p>
     <div class="kpis"><div class="carte" style="background:var(--fond)"><span class="muted">Reçu</span><b class="num recette">${eur(total)}</b></div>
       <div class="carte" style="background:var(--fond)"><span class="muted">Ont donné</span><b class="num">${lignes.filter((x) => x.v > 0).length} / ${lignes.length}</b></div>
-      <div class="carte" style="background:var(--fond)"><span class="muted">${att ? 'Reste attendu' : 'Objectif'}</span><b class="num">${att ? eur(lignes.reduce((s, x) => s + Math.max(0, att - x.v), 0)) : c.objectif ? eur(c.objectif) : '–'}</b></div></div>
+      <div class="carte" style="background:var(--fond)"><span class="muted">${avecMontant ? 'Reste attendu' : 'Objectif'}</span><b class="num">${avecMontant ? eur(lignes.reduce((s, x) => s + Math.max(0, x.a - x.v), 0)) : c.objectif ? eur(c.objectif) : '–'}</b></div></div>
     <div class="filtres">${[['tous', 'Tous'], ['donne', 'Ont donné'], ['pas', 'N’ont pas donné']].map(([k, l]) => `<button class="puce-filtre" data-f="${k}" aria-pressed="${filtre === k}">${l}</button>`).join('')}</div>
-    <ul class="liste">${lignes.filter((x) => filtre === 'tous' || (filtre === 'donne' ? x.v > 0 : x.v <= 0)).map(({ m, v }) => `<li>${avatar(m)}<div class="corps"><b>${esc(nomComplet(m))}</b><span>${eur(v)}${att ? ' sur ' + eur(att) : ''}</span></div>
-      ${att ? (v >= att ? '<span class="puce puce-ok">Réglé</span>' : v > 0 ? '<span class="puce puce-partiel">Partiel</span>' : '<span class="puce puce-ko">À régler</span>') : v > 0 ? '<span class="puce puce-ok">Donné</span>' : ''}
-      ${gere && !c.cloturee ? `<div class="actions-ligne"><button class="btn-tonal btn-petit" data-enc="${m.id}">Encaisser</button>
-        ${!att || v < att ? `<button class="btn-texte btn-petit" data-rappel-part="${m.id}" data-montant="${att ? att - v : 0}">Petit rappel</button>` : ''}</div>` : ''}</li>`).join('') || '<li class="muted">Personne</li>'}</ul>
+    <ul class="liste">${lignes.filter((x) => filtre === 'tous' || (filtre === 'donne' ? x.v > 0 : x.v <= 0)).map(({ m, v, a, dispense }) => `<li>${avatar(m)}<div class="corps"><b>${esc(nomComplet(m))}</b><span>${eur(v)}${a ? ' sur ' + eur(a) : ''}${m.id in montants && !dispense ? ' · montant personnel' : ''}</span></div>
+      ${statutParticipation(v, a, dispense)}
+      ${gere && !c.cloturee && !dispense ? `<div class="actions-ligne"><button class="btn-tonal btn-petit" data-enc="${m.id}">Encaisser</button>
+        ${!a || v < a ? `<button class="btn-texte btn-petit" data-rappel-part="${m.id}" data-montant="${a ? a - v : 0}">Petit rappel</button>` : ''}</div>` : ''}</li>`).join('') || '<li class="muted">Personne</li>'}</ul>
     ${autres.length ? `<h3>Autres contributions</h3><ul class="liste">${autres.map((t) => `<li><div class="corps"><b>${esc(nomTiers(t) || t.libelle)}</b><span>${dateFr(t.date_op)}</span></div>${montantSigne(t)}</li>`).join('')}</ul>` : ''}
     <div class="actions">
       <button class="btn-bleu" id="b-exp">Exporter</button>
@@ -3145,25 +3184,36 @@ async function detailCollecte(c) {
       const m = S.membres.find((x) => x.id === b.dataset.rappelPart); if (m) feuilleRappel(m, { type: 'participation', montant: Number(b.dataset.montant), collecte: c.nom, collecteId: c.id }).catch(erreur);
     }));
     root.querySelectorAll('[data-enc]').forEach((b) => b.addEventListener('click', () => {
-      const v = donne(b.dataset.enc);
-      feuilleEcriture({ sens: 'recette', rubrique: c.id, member_id: b.dataset.enc, montant: att ? Math.max(att - v, 0) || att : '', apres });
+      const v = donne(b.dataset.enc), a = attDe(b.dataset.enc);
+      feuilleEcriture({ sens: 'recette', rubrique: c.id, member_id: b.dataset.enc, montant: a ? Math.max(a - v, 0) || a : '', apres });
     }));
     $('#b-rappel-groupe', root)?.addEventListener('click', () => feuilleRappelGroupe(aRappeler(), { type: 'participation', collecte: c.nom, collecteId: c.id }).catch(erreur));
     $('#b-enc-autre', root)?.addEventListener('click', () => feuilleEcriture({ sens: 'recette', rubrique: c.id, apres }));
-    $('#b-modif', root)?.addEventListener('click', () => feuilleCollecte(S.collectes.find((x) => x.id === c.id), apres, choisis.map((x) => x.member_id)));
+    $('#b-modif', root)?.addEventListener('click', () => feuilleCollecte(S.collectes.find((x) => x.id === c.id), apres, choisis.map((x) => x.member_id), '', montants));
     $('#b-clot', root)?.addEventListener('click', async () => {
       try { await q(sb.from('collectes').update({ cloturee: !c.cloturee }).eq('id', c.id)); fermerFeuille(); toast(c.cloturee ? 'Collecte rouverte' : 'Collecte clôturée'); apres(); } catch (e) { erreur(e); }
     });
     $('#b-exp', root).addEventListener('click', () => telechargerCsv(`participations-${sansAccents(c.nom).replace(/[^a-z0-9]+/g, '-')}.csv`, ['Prénom', 'Nom', 'Donné', 'Attendu', 'Statut'],
-      [...lignes.map(({ m, v }) => [m.prenom, m.nom, v, att || '', att ? (v >= att ? 'Réglé' : v > 0 ? 'Partiel' : 'À régler') : v > 0 ? 'Donné' : '']),
+      [...lignes.map(({ m, v, a, dispense }) => [m.prenom, m.nom, v, dispense ? 0 : a || '', texteStatutParticipation(v, a, dispense)]),
         ...autres.map((t) => ['', nomTiers(t) || t.libelle, Number(t.montant), '', 'Autre contribution'])]));
   };
   ouvrirFeuille(rendu(), brancher);
 }
 
-// Création ou modification d'une collecte ; preProjet : activité à laquelle la rattacher
-function feuilleCollecte(c, apres, choisis = [], preProjet = '') {
-  const v = c || { nom: '', project_id: preProjet, montant_attendu: '', objectif: '', date_limite: '', tous_membres: true };
+// Situation d'une personne pour une participation (même libellé dans la fiche, l'export et Android)
+function texteStatutParticipation(v, a, dispense) {
+  if (dispense) return v > 0 ? 'Donné' : 'Dispensé';
+  return a ? (v >= a ? 'Réglé' : v > 0 ? 'Partiel' : 'À régler') : v > 0 ? 'Donné' : '';
+}
+function statutParticipation(v, a, dispense) {
+  const t = texteStatutParticipation(v, a, dispense);
+  const cl = { Réglé: 'puce-ok', Donné: 'puce-ok', Partiel: 'puce-partiel', 'À régler': 'puce-ko', Dispensé: 'puce-neutre' }[t];
+  return t ? `<span class="puce ${cl}">${t}</span>` : '';
+}
+
+// Création ou modification d'une collecte ; preProjet : activité à laquelle la rattacher ; montants : montant propre à certaines personnes
+function feuilleCollecte(c, apres, choisis = [], preProjet = '', montants = {}) {
+  const v = c || { nom: '', project_id: preProjet, montant_attendu: '', objectif: '', date_limite: '', tous_membres: true, montants_varies: false };
   const actifs = S.membres.filter((m) => m.actif);
   ouvrirFeuille(`<form id="f-col" class="champs"><h2>${c ? 'Modifier la collecte' : 'Nouvelle collecte'}</h2>
     <label class="champ"><span class="obligatoire">Nom</span><input name="nom" maxlength="80" required value="${esc(v.nom)}" placeholder="Participation à la sortie"></label>
@@ -3177,26 +3227,48 @@ function feuilleCollecte(c, apres, choisis = [], preProjet = '') {
       <button type="button" data-tous="1" aria-pressed="${v.tous_membres}">Tous les membres</button>
       <button type="button" data-tous="0" aria-pressed="${!v.tous_membres}">Choisir</button></div>
     <div id="choix-membres" class="liste-cases" ${v.tous_membres ? 'hidden' : ''}>${actifs.map((m) => `<label class="case"><input type="checkbox" name="m" value="${m.id}" ${choisis.includes(m.id) ? 'checked' : ''}> ${esc(nomComplet(m))}</label>`).join('')}</div>
+    <label class="case"><input type="checkbox" name="varies" ${v.montants_varies ? 'checked' : ''}> Montants différents selon les personnes</label>
+    <div id="montants-perso" ${v.montants_varies ? '' : 'hidden'}>
+      <p class="muted" style="margin:0 0 8px">Vide : le montant par personne. 0 : dispensé (pas de rappel).</p>
+      <ul class="liste liste-montants">${actifs.map((m) => `<li data-mp="${m.id}"><div class="corps"><b>${esc(nomComplet(m))}</b></div>
+        <input type="number" name="mp-${m.id}" step="0.01" min="0" inputmode="decimal" value="${m.id in montants ? Number(montants[m.id]).toFixed(2) : ''}" placeholder="${esc(v.montant_attendu ? Number(v.montant_attendu).toFixed(2) : 'Libre')}" aria-label="Montant de ${esc(nomComplet(m))}"></li>`).join('')}</ul></div>
     <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div></form>`, (root) => {
     const f = $('#f-col', root);
     let tous = v.tous_membres;
+    // Montants par personne : seulement les personnes concernées
+    const majMontants = () => {
+      $('#montants-perso', root).hidden = !f.varies.checked;
+      const ids = new Set([...f.querySelectorAll('input[name=m]:checked')].map((x) => x.value));
+      root.querySelectorAll('[data-mp]').forEach((li) => { li.hidden = !tous && !ids.has(li.dataset.mp); });
+      root.querySelectorAll('[data-mp] input').forEach((i) => { i.placeholder = f.attendu.value ? Number(f.attendu.value).toFixed(2) : 'Libre'; });
+    };
+    f.varies.addEventListener('change', majMontants); f.attendu.addEventListener('input', majMontants);
+    $('#choix-membres', root).addEventListener('change', majMontants);
     root.querySelectorAll('[data-tous]').forEach((b) => b.addEventListener('click', () => {
       tous = b.dataset.tous === '1';
       root.querySelectorAll('[data-tous]').forEach((x) => x.setAttribute('aria-pressed', x === b));
       $('#choix-membres', root).hidden = tous;
+      majMontants();
     }));
+    majMontants();
     f.projet.addEventListener('change', () => { if (!f.nom.value && f.projet.value) f.nom.value = `Participation : ${nomProjet(f.projet.value)}`; });
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const ids = [...f.querySelectorAll('input[name=m]:checked')].map((x) => x.value);
       if (!tous && !ids.length) return toast('Cochez au moins un membre, ou choisissez « Tous les membres »');
+      // Montants propres à certaines personnes concernées (vide : montant par personne)
+      const perso = !f.varies.checked ? [] : actifs.filter((m) => (tous || ids.includes(m.id)) && f[`mp-${m.id}`].value !== '')
+        .map((m) => ({ member_id: m.id, montant: Number(f[`mp-${m.id}`].value) }));
       const d = { nom: f.nom.value.trim(), project_id: f.projet.value || null, montant_attendu: f.attendu.value ? Number(f.attendu.value) : null,
-        objectif: f.objectif.value ? Number(f.objectif.value) : null, date_limite: f.limite.value || null, tous_membres: tous };
+        objectif: f.objectif.value ? Number(f.objectif.value) : null, date_limite: f.limite.value || null, tous_membres: tous, montants_varies: perso.length > 0 };
       try {
         let id = c?.id;
         if (c) await q(sb.from('collectes').update(d).eq('id', c.id));
         else id = (await q(sb.from('collectes').insert(d).select()))[0].id;
+        // Les montants d'abord : la notification de chaque personne choisie annonce son propre montant
+        await q(sb.from('collecte_montants').delete().eq('collecte_id', id));
+        if (perso.length) await q(sb.from('collecte_montants').insert(perso.map((x) => ({ collecte_id: id, ...x }))));
         await q(sb.from('collecte_membres').delete().eq('collecte_id', id));
         if (!tous) await q(sb.from('collecte_membres').insert(ids.map((m) => ({ collecte_id: id, member_id: m }))));
         S.collectes = await q(sb.from('collectes').select('*').order('created_at', { ascending: false }));
@@ -3683,10 +3755,19 @@ async function paramApparence(zone) {
 
 // Cotisations et dépenses : montants, délais, seuils, informations de paiement
 async function paramMontants(zone) {
-  zone.innerHTML = `<form class="carte champs" id="f-montants">
+  const nb = (id) => S.membres.filter((m) => m.actif && (m.tarif_id || null) === id).length;
+  zone.innerHTML = `<section class="carte" id="z-tarifs">
+      <div class="page-titre"><h3 style="flex:1">Montants selon la personne</h3>${peut('gerer_cotisations') ? '<button class="btn-tonal btn-petit" id="b-tarif">Ajouter un montant</button>' : ''}</div>
+      <p class="muted" style="margin:0">Chacun paie le montant normal, sauf s’il a un autre montant (par exemple « Musicien » 3 €, « Exonéré » 0 €). Les personnes se choisissent ici ou dans la fiche de cotisation du membre.</p>
+      <ul class="liste">
+        <li><div class="corps"><b>Montant normal</b><span>${eur(S.settings.cotisation_montant || 0)} par période · ${nb(null)} membre${nb(null) > 1 ? 's' : ''}</span></div></li>
+        ${(S.tarifs || []).map((t) => `<li class="cliquable" data-tarif="${t.id}" tabindex="0" role="button"><div class="corps"><b>${esc(t.nom)}</b><span>${Number(t.montant) === 0 ? 'Dispensé (0 €)' : eur(t.montant) + ' par période'} · ${nb(t.id)} membre${nb(t.id) > 1 ? 's' : ''}</span></div>${icone('suivant', 18)}</li>`).join('')}
+      </ul></section>
+    <form class="carte champs" id="f-montants">
       <h3>Cotisation</h3>
-      <div class="champs champs-2"><label class="champ">Montant (€ par période)<input name="cotisation_montant" type="number" step="0.01" min="0" value="${esc(S.settings.cotisation_montant)}"></label>
-      <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+      <div class="champs champs-2"><label class="champ">Montant normal (€ par période)<input name="cotisation_montant" type="number" step="0.01" min="0" value="${esc(S.settings.cotisation_montant)}"></label>
+      <label class="champ">Périodicité<select name="cotisation_periode_mois">${Object.entries(PERIODICITES).map(([k, l]) => `<option value="${k}" ${Number(k) === pasCotis() ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="champ">Nouveau montant normal appliqué<select name="normal_depuis"><option value="">Seulement aux prochaines</option>${optionsDepuis('')}</select></label></div>
       <label class="champ">Comment régler (affiché aux membres)<textarea name="infos_paiement" rows="3" maxlength="400" placeholder="Virement : IBAN FR76…&#10;Espèces : auprès du trésorier après le culte">${esc(S.textes?.infos_paiement || '')}</textarea></label>
       <h3>Petit rappel aux membres</h3>
       <p class="muted" style="margin:0">Message proposé quand on rappelle une cotisation ou une participation. Restez chaleureux. Mots remplacés : {prénom}, {association}, {montant}, {collecte}, {règlement} (comment régler), {lien} (espace membre). Entre *astérisques* : en gras dans WhatsApp (retirés dans la notification).</p>
@@ -3699,6 +3780,12 @@ async function paramMontants(zone) {
       <label class="champ">Alerte budget (% du prévu)<input name="seuil_alerte_budget_pct" type="number" min="1" max="200" value="${esc(S.settings.seuil_alerte_budget_pct ?? 90)}"></label></div>
       <button class="btn-primaire" style="align-self:flex-end">Enregistrer</button></form>`;
   const fm = $('#f-montants', zone);
+  const recharger = () => paramMontants(zone).catch(erreur);
+  $('#b-tarif', zone)?.addEventListener('click', () => feuilleTarif(null, recharger));
+  zone.querySelectorAll('[data-tarif]').forEach((li) => {
+    const ouvrir = () => feuilleTarif(S.tarifs.find((t) => t.id === li.dataset.tarif), recharger);
+    li.addEventListener('click', ouvrir); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') ouvrir(); });
+  });
   $('#b-rappel-defaut', zone).addEventListener('click', () => { fm.message_rappel.value = RAPPEL_DEFAUT.cotisation; fm.message_rappel_participation.value = RAPPEL_DEFAUT.participation; });
   fm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -3709,13 +3796,89 @@ async function paramMontants(zone) {
         if (!n?.length) await q(sb.from('settings').insert({ cle, valeur: Number(fm[cle].value) }));
         S.settings[cle] = Number(fm[cle].value);
       }
+      // Montant normal : appliqué aussi aux périodes déjà créées des membres sans autre montant, si demandé
+      let maj = 0;
+      if (fm.normal_depuis.value) maj = await q(sb.rpc('appliquer_tarif', { p_tarif: null, p_depuis: fm.normal_depuis.value }));
       await enregistrerTexteReglage('infos_paiement', fm.infos_paiement.value.trim() || null, 'Comment régler sa cotisation');
       // Le message proposé n'est enregistré que s'il diffère du texte par défaut (sinon il suit les améliorations futures)
       for (const [cle, type, desc] of [['message_rappel', 'cotisation', 'Message de rappel (cotisation)'], ['message_rappel_participation', 'participation', 'Message de rappel (participation)']]) {
         const v = fm[cle].value.trim(); await enregistrerTexteReglage(cle, v && v !== RAPPEL_DEFAUT[type] ? v : null, desc);
       }
-      toast('Paramètres enregistrés');
+      toast(maj ? `Paramètres enregistrés · ${maj} période${maj > 1 ? 's' : ''} mise${maj > 1 ? 's' : ''} à jour` : 'Paramètres enregistrés');
+      recharger();
     } catch (err) { erreur(err); }
+  });
+}
+
+// Périodes de cotisation proposées pour « à partir de » : celles de l'année affichée (janvier par défaut)
+function optionsDepuis(choisi = `${S.annee || new Date().getFullYear()}-01-01`) {
+  const an = S.annee || new Date().getFullYear(), pas = pasCotis(), l = [];
+  for (let m = 1; m <= 12; m += pas) l.push(`${an}-${String(m).padStart(2, '0')}-01`);
+  l.push(`${an + 1}-01-01`);
+  return l.map((p) => `<option value="${p}" ${p === choisi ? 'selected' : ''}>À partir de ${esc(nomPeriode(p))}</option>`).join('');
+}
+
+// Un montant du barème : nom, montant par période, personnes concernées ; appliqué aux périodes à partir d'une date
+function feuilleTarif(t, apres) {
+  const actifs = S.membres.filter((m) => m.actif);
+  const avant = actifs.filter((m) => t && m.tarif_id === t.id).map((m) => m.id);
+  const nbAvecMoi = t ? S.membres.filter((m) => m.tarif_id === t.id).length : 0;
+  ouvrirFeuille(`<form id="f-tarif" class="champs"><h2>${t ? esc(t.nom) : 'Nouveau montant'}</h2>
+    <div class="champs champs-2"><label class="champ"><span class="obligatoire">Nom</span><input name="nom" maxlength="60" required value="${esc(t?.nom || '')}" placeholder="Musicien, Étudiant, Exonéré…"></label>
+      <label class="champ"><span class="obligatoire">Montant (€ par période)</span><input name="montant" type="number" step="0.01" min="0" required value="${t ? Number(t.montant).toFixed(2) : ''}" placeholder="0 = dispensé"></label></div>
+    <label class="champ">Personnes concernées<input type="search" id="r-tarif" placeholder="Rechercher un membre"></label>
+    <div class="liste-cases" id="l-tarif">${actifs.map((m) => `<label class="case" data-nom="${esc(sansAccents(nomComplet(m)))}"><input type="checkbox" name="m" value="${m.id}" ${avant.includes(m.id) ? 'checked' : ''}> ${esc(nomComplet(m))}${m.tarif_id && (!t || m.tarif_id !== t.id) ? ` <small class="muted">(${esc(nomTarif(m))})</small>` : ''}</label>`).join('')}</div>
+    <label class="champ">Cotisations mises à jour<select name="depuis">${optionsDepuis()}<option value="">Seulement aux prochaines</option></select></label>
+    <p class="muted" style="margin:0">Les périodes déjà créées prennent le nouveau montant à partir de la période choisie (0 € : « Dispensé ») ; ce qui a été encaissé reste acquis.</p>
+    <div class="actions">${t ? `<button type="button" class="btn-texte btn-texte-danger" id="b-suppr-tarif">${icone('corbeille', 16)} Supprimer</button>` : ''}
+      <button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div></form>`, (root) => {
+    const f = $('#f-tarif', root);
+    $('#b-annuler', root).addEventListener('click', fermerFeuille);
+    $('#r-tarif', root).addEventListener('input', (e) => { const v = sansAccents(e.target.value.trim()); root.querySelectorAll('#l-tarif .case').forEach((c) => { c.hidden = !!v && !c.dataset.nom.includes(v); }); });
+    $('#b-suppr-tarif', root)?.addEventListener('click', () => {
+      if (nbAvecMoi) return toast(`${nbAvecMoi} membre${nbAvecMoi > 1 ? 's ont' : ' a'} ce montant : décochez-les d’abord`);
+      supprimerAvecConfirmation('tarifs', t.id, t.nom, async () => { S.tarifs = await q(sb.from('tarifs').select('*').order('ordre').order('montant')); apres?.(); });
+    });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const choisis = [...f.querySelectorAll('input[name=m]:checked')].map((x) => x.value);
+      const depuis = f.depuis.value || null;
+      const d = { nom: f.nom.value.trim(), montant: Number(f.montant.value) };
+      try {
+        const id = t ? t.id : (await q(sb.from('tarifs').insert({ ...d, ordre: (S.tarifs || []).length }).select()))[0].id;
+        if (t) await q(sb.from('tarifs').update(d).eq('id', t.id));
+        // Décochés : retour au montant normal ; cochés : ce montant (et réapplication si le montant a changé)
+        const retires = avant.filter((x) => !choisis.includes(x));
+        let n = 0;
+        if (retires.length) n += await q(sb.rpc('appliquer_tarif', { p_tarif: null, p_depuis: depuis, p_membres: retires }));
+        if (choisis.length) n += await q(sb.rpc('appliquer_tarif', { p_tarif: id, p_depuis: depuis, p_membres: choisis }));
+        [S.tarifs, S.membres] = await Promise.all([q(sb.from('tarifs').select('*').order('ordre').order('montant')), q(sb.from('members').select('*').order('nom'))]);
+        fermerFeuille(); toast(`Montant enregistré${n ? ` · ${n} période${n > 1 ? 's' : ''} mise${n > 1 ? 's' : ''} à jour` : ''}`); apres?.();
+      } catch (err) { erreur(err); }
+    });
+  });
+}
+
+// Choisir le montant d'un membre (fiche de cotisation)
+function feuilleTarifMembre(m, apres) {
+  const options = [null, ...(S.tarifs || [])];
+  ouvrirFeuille(`<form id="f-tm" class="champs"><h2>Montant de ${esc(nomComplet(m))}</h2>
+    <div class="liste-cases liste-radios" role="radiogroup">${options.map((t) => `<label class="case"><input type="radio" name="t" value="${t ? t.id : ''}" ${(m.tarif_id || '') === (t ? t.id : '') ? 'checked' : ''}> ${libelleTarif(t)}</label>`).join('')}</div>
+    ${(S.tarifs || []).length ? '' : '<p class="muted" style="margin:0">Pour proposer d’autres montants (Musicien, Exonéré…) : Paramètres › Cotisations et dépenses.</p>'}
+    <label class="champ">Cotisations mises à jour<select name="depuis">${optionsDepuis()}<option value="">Seulement aux prochaines</option></select></label>
+    <div class="actions"><button type="button" class="btn-texte" id="b-annuler">Annuler</button><button class="btn-primaire">Enregistrer</button></div></form>`, (root) => {
+    const f = $('#f-tm', root);
+    $('#b-annuler', root).addEventListener('click', () => apres?.());
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const n = await q(sb.rpc('appliquer_tarif', { p_tarif: f.t.value || null, p_depuis: f.depuis.value || null, p_membres: [m.id] }));
+        S.membres = await q(sb.from('members').select('*').order('nom'));
+        toast(`Montant enregistré${n ? ` · ${n} période${n > 1 ? 's' : ''} mise${n > 1 ? 's' : ''} à jour` : ''}`);
+        if (location.hash.includes('cotisations')) pageCotisations().catch(erreur);
+        apres?.();
+      } catch (err) { erreur(err); }
+    });
   });
 }
 
@@ -3867,7 +4030,8 @@ function feuilleExercice(e, apres) {
 
 // ---------- Corbeille : tout ce qui a été supprimé, restaurable ----------
 const TYPES_CORBEILLE = { transactions: 'Opération', members: 'Membre', tiers: 'Tiers', projects: 'Rendez-vous', collectes: 'Collecte', materiel: 'Matériel',
-  categories: 'Catégorie', accounts: 'Compte', budgets: 'Ligne de budget', expense_requests: 'Demande', exercices: 'Exercice', communiques: 'Communiqué' };
+  categories: 'Catégorie', accounts: 'Compte', budgets: 'Ligne de budget', expense_requests: 'Demande', exercices: 'Exercice', communiques: 'Communiqué',
+  tarifs: 'Montant de cotisation', comptes: 'Compte d’accès' };
 async function paramCorbeille(zone) {
   const l = await q(sb.from('corbeille').select('*').order('supprime_le', { ascending: false }));
   const nom = (id) => (S.profils || []).find((p) => p.id === id)?.nom || (id === S.profil.id ? S.profil.nom : 'un membre du bureau');
@@ -3880,8 +4044,11 @@ async function paramCorbeille(zone) {
     ${restaures.length ? `<details class="carte"><summary>Déjà restaurés (${restaures.length})</summary><ul class="liste">${restaures.map(ligne).join('')}</ul></details>` : ''}`;
   zone.querySelectorAll('[data-restaurer]').forEach((b) => b.addEventListener('click', async () => {
     b.disabled = true;
-    try { await q(sb.rpc('restaurer', { p_id: b.dataset.restaurer })); await chargerReferentiels(); toast('Élément restauré'); paramCorbeille(zone); chargerNouveautes(); }
-    catch (err) { b.disabled = false; erreur(err); }
+    try {
+      // Un compte d'accès se recrée par la fonction supprimer-compte (nouveau mot de passe provisoire à transmettre)
+      if (l.find((x) => x.id === b.dataset.restaurer)?.table_nom === 'comptes') return await restaurerCompte(b.dataset.restaurer, () => paramCorbeille(zone));
+      await q(sb.rpc('restaurer', { p_id: b.dataset.restaurer })); await chargerReferentiels(); toast('Élément restauré'); paramCorbeille(zone); chargerNouveautes();
+    } catch (err) { b.disabled = false; erreur(err); }
   }));
 }
 
@@ -4086,7 +4253,8 @@ async function paramPersonnes(zone) {
           <select data-fiche="${p.id}" aria-label="Fiche de membre de ${esc(p.nom)}"><option value="">Sans fiche de membre</option>${S.membres.filter((m) => m.actif && (!S.liens[m.id]?.profil || m.id === p.member_id)).map((m) => `<option value="${m.id}" ${m.id === p.member_id ? 'selected' : ''}>${esc(nomComplet(m))}</option>`).join('')}</select>
           <select data-role="${p.id}" aria-label="Rôle de ${esc(p.nom)}">${optionsRoles(p.role)}</select>
         </div>
-        <label class="case"><input type="checkbox" data-actif="${p.id}" ${p.actif ? 'checked' : ''}> Actif</label></li>`).join('')}
+        <label class="case"><input type="checkbox" data-actif="${p.id}" ${p.actif ? 'checked' : ''}> Actif</label>
+        ${p.id !== S.profil.id ? `<button type="button" class="btn-icone" data-suppr-acces="${p.id}" aria-label="Supprimer le compte de ${esc(p.nom)}" title="Supprimer le compte">${icone('corbeille')}</button>` : ''}</li>`).join('')}
       ${invitations.map((i) => `<li style="opacity:.75"><span class="avatar" aria-hidden="true">@</span>
         <div class="corps"><b>${esc(i.nom || i.email)}</b><span>${esc(i.email)} · invitation en attente</span></div>
         <span class="puce puce-neutre">${esc(nomRole(i.role))}</span>
@@ -4110,6 +4278,7 @@ async function paramPersonnes(zone) {
     try { await q(sb.from('profiles').update({ actif: c.checked }).eq('id', c.dataset.actif)); toast(c.checked ? 'Accès réactivé' : 'Accès désactivé'); }
     catch (err) { erreur(err); paramPersonnes(zone); }
   }));
+  zone.querySelectorAll('[data-suppr-acces]').forEach((b) => b.addEventListener('click', () => supprimerCompte(profils.find((p) => p.id === b.dataset.supprAcces), () => paramPersonnes(zone))));
   zone.querySelectorAll('[data-retirer]').forEach((b) => b.addEventListener('click', async () => {
     try { await q(sb.from('invitations').delete().eq('email', b.dataset.retirer)); await chargerAcces(); toast('Invitation retirée'); paramPersonnes(zone); } catch (err) { erreur(err); }
   }));
@@ -4154,6 +4323,11 @@ const TYPES_TIERS = { donateur: 'Donateur', fournisseur: 'Fournisseur', partenai
 const PERIODICITES = { 1: 'Mensuelle', 3: 'Trimestrielle', 6: 'Semestrielle', 12: 'Annuelle' };
 const pad2 = (n) => String(n).padStart(2, '0');
 const isoLocal = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+// Barème : montant de cotisation d'un membre, le sien (tarif) sinon le montant normal — même calcul que montant_cotisation() de la base
+const tarifDe = (m) => (S.tarifs || []).find((t) => t.id === m?.tarif_id) || null;
+const montantCotisation = (m) => { const t = tarifDe(m); return t ? Number(t.montant) : Number(S.settings.cotisation_montant || 0); };
+const nomTarif = (m) => tarifDe(m)?.nom || 'Montant normal';
+const libelleTarif = (t) => `${t ? esc(t.nom) : 'Montant normal'} · ${Number(t ? t.montant : S.settings.cotisation_montant || 0) === 0 ? 'dispensé' : eur(t ? t.montant : S.settings.cotisation_montant || 0)}`;
 const pasCotis = () => { const p = Number(S.settings.cotisation_periode_mois || 1); return [1, 3, 6, 12].includes(p) ? p : 1; };
 function nomPeriode(p, court = false) {
   const m = Number(p.slice(5, 7)) - 1, a = p.slice(0, 4), pas = pasCotis();
@@ -4599,7 +4773,7 @@ async function detailEvenement(e, recharger) {
   if (e.collecte_id) {
     if (peut('consulter_finances', 'gerer_cotisations', 'gerer_activites')) {
       const c = (await q(sb.from('v_collectes').select('*').eq('id', e.collecte_id)))[0];
-      if (c) part = `<div class="info">Participation${c.montant_attendu ? ` de ${eur(c.montant_attendu)} par personne` : ''}&nbsp;: <b>${eur(c.total_recu)}</b> reçus de ${c.nb_contributeurs} contributeur${c.nb_contributeurs > 1 ? 's' : ''}</div>`;
+      if (c) part = `<div class="info">Participation (${libelleMontantCollecte(c)})&nbsp;: <b>${eur(c.total_recu)}</b> reçus de ${c.nb_contributeurs} contributeur${c.nb_contributeurs > 1 ? 's' : ''}</div>`;
     } else {
       const m = (await q(sb.rpc('mes_participations'))).find((x) => x.collecte_id === e.collecte_id);
       if (m) part = `<div class="info">Participation demandée&nbsp;: <b>${m.montant_attendu ? eur(m.montant_attendu) : 'libre'}</b> · vous avez donné ${eur(m.donne)}</div>`;

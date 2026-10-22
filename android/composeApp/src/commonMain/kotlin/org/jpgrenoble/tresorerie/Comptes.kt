@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -144,13 +146,14 @@ fun FeuilleCreerComptes(d: Donnees, profils: List<Profil>, invitations: List<Inv
     }
 }
 
+// nomSansFiche : nom affiché pour un compte sans fiche de membre (compte rétabli depuis la corbeille)
 @Composable
-private fun ResultatComptes(d: Donnees, resultats: List<ResultatCompte>, mdp: String, onFermer: () -> Unit) {
+internal fun ResultatComptes(d: Donnees, resultats: List<ResultatCompte>, mdp: String, nomSansFiche: String = "", onFermer: () -> Unit) {
     val oks = resultats.filter { it.ok }; val kos = resultats.filter { !it.ok }
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     val presse = LocalClipboardManager.current
     val envoyes = remember { mutableStateListOf<String>() }
-    fun membre(id: String?) = d.membres.firstOrNull { it.id == id } ?: Membre(id ?: "", "", "", 1, 1)
+    fun membre(id: String?) = d.membres.firstOrNull { it.id == id } ?: Membre(id ?: "", nomSansFiche, "", 1, 1)
     Text(if (oks.isEmpty()) "Aucun compte créé" else "${oks.size} compte${if (oks.size > 1) "s" else ""} créé${if (oks.size > 1) "s" else ""}",
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     if (oks.isNotEmpty()) {
@@ -238,6 +241,73 @@ fun MotDePasseProvisoire(d: Donnees, onFini: () -> Unit) {
             erreur?.let { Text(it, color = Couleurs.Erreur, fontSize = 14.sp) }
             Button(onClick = { valider() }, enabled = !enCours, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Enregistrer mon mot de passe") }
             TextButton(onClick = { scope.launch { Repo.deconnecter() } }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Se déconnecter") }
+        }
+    }
+}
+
+// =====================================================================
+// Supprimer un compte d'accès créé par erreur ou pour essai (fonction supprimer-compte), comme supprimerCompte du site :
+// le compte part à la corbeille, l'adresse redevient libre, la fiche de membre reste ; « Annuler » le recrée
+// avec un nouveau mot de passe provisoire, puis le message à transmettre (ResultatComptes).
+// =====================================================================
+/** Renvoie la fonction qui demande confirmation puis supprime le compte ; la suite tourne dans la portée de l'application. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun rememberSuppressionCompte(d: Donnees, message: (String) -> Unit, apres: () -> Unit): (Profil) -> Unit {
+    var cible by remember { mutableStateOf<Profil?>(null) }
+    var retabli by remember { mutableStateOf<Pair<CompteRestaure, String>?>(null) }
+    val apresActuel by rememberUpdatedState(apres)
+    cible?.let { p ->
+        var motif by remember(p.id) { mutableStateOf("") }
+        var enCours by remember(p.id) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { cible = null },
+            icon = { Icon(Icons.Outlined.Delete, null, tint = Couleurs.Erreur) },
+            title = { Text("Supprimer le compte de ${p.nom}$NBSP?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Pour un compte créé par erreur ou pour essai. La personne ne peut plus se connecter et son adresse redevient libre ; sa fiche de membre et ses cotisations ne bougent pas. Le compte part dans la corbeille : « Restaurer » le recrée avec un nouveau mot de passe provisoire.",
+                        fontSize = 14.sp, color = Couleurs.Texte2)
+                    Surface(color = Couleurs.BleuClair, contentColor = Couleurs.SurBleuClair, shape = Formes.XGrand) {
+                        Text("Un compte qui a déjà servi (opérations, demandes…) se désactive plutôt : décochez « Actif ».", fontSize = 14.sp, modifier = Modifier.padding(10.dp))
+                    }
+                    OutlinedTextField(motif, { motif = it.take(120) }, label = { Text("Motif (facultatif)") }, placeholder = { Text("Compte d’essai, mauvaise adresse…") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                OutlinedButton(enabled = !enCours, colors = ButtonDefaults.outlinedButtonColors(contentColor = Couleurs.Erreur),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Couleurs.Erreur.copy(alpha = 0.5f)), onClick = {
+                    enCours = true
+                    Annulation.portee.launch {
+                        try {
+                            val idCorbeille = Repo.supprimerCompte(p.id, motif.trim().ifBlank { null })
+                            cible = null; apresActuel()
+                            val hote = Annulation.hote
+                            if (hote != null) {
+                                val r = hote.showSnackbar("Compte supprimé, placé dans la corbeille", actionLabel = "Annuler", duration = SnackbarDuration.Long)
+                                if (r == SnackbarResult.ActionPerformed) try {
+                                    val mdp = motDePasseProvisoire()
+                                    retabli = Repo.restaurerCompte(idCorbeille, mdp) to mdp; apresActuel()
+                                } catch (e: Exception) { message(traduireErreur(e)) }
+                            } else message("Compte supprimé, placé dans la corbeille")
+                        } catch (e: Exception) { enCours = false; message(traduireErreur(e)) }
+                    }
+                }) { Icon(Icons.Outlined.Delete, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Supprimer le compte") }
+            },
+            dismissButton = { TextButton(onClick = { cible = null }) { Text("Annuler") } },
+        )
+    }
+    retabli?.let { (r, mdp) -> FeuilleCompteRetabli(d, r, mdp) { retabli = null } }
+    return { cible = it }
+}
+
+/** Compte rétabli (Annuler ou Paramètres › Corbeille) : même résultat que « Créer des comptes », avec le message à transmettre. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FeuilleCompteRetabli(d: Donnees, r: CompteRestaure, mdp: String, onFermer: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onFermer) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ResultatComptes(d, listOf(ResultatCompte(r.memberId ?: "", r.email, ok = true)), mdp, r.nom, onFermer)
         }
     }
 }

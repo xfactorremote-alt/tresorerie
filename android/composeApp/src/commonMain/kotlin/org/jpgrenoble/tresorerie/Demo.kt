@@ -25,7 +25,7 @@ object Demo {
         CompteDemo("nouveau@demo.jp", Profil("u-n", "nouveau@demo.jp", "adherent")),   // nouveau membre : sa fiche lui est demandée
     )
 
-    var organisation = Organisation("JP Grenoble", sigle = "JP", objet = "Rassembler et accompagner les jeunes de tous pays à Grenoble",
+    var organisation = Organisation("JTP Grenoble", sigle = "JTP", objet = "Rassembler et accompagner les jeunes de tous pays à Grenoble",
         adresse = "12 rue de la Paix", codePostal = "38000", ville = "Grenoble", email = "contact@jp-grenoble.fr", telephone = "06 12 34 56 78",
         rna = "W381000000", dateCreation = "2015-09-01", configuree = true, exerciceDebut = "${aujourdhui().year}-01-01")
     val fichiers = mutableMapOf<String, ByteArray>()
@@ -292,10 +292,44 @@ object Demo {
     val tiers = mutableListOf(Tiers("ti1", "Thomann", "fournisseur"), Tiers("ti2", "Boulangerie du Lac", "fournisseur"),
         Tiers("ti3", "Paroisse Saint-Bruno", "partenaire"), Tiers("ti4", "M. et Mme Lefèvre", "donateur"))
     private val collectes = mutableListOf(
-        Collecte("co1", "Participation à la sortie des jeunes", "p1", 15.0, 300.0, aujourdhui().plus(DatePeriod(days = 10)).toString(), creeLe = ilYa(20) + "T10:00:00Z"),
+        Collecte("co1", "Participation à la sortie des jeunes", "p1", 15.0, 300.0, aujourdhui().plus(DatePeriod(days = 10)).toString(), creeLe = ilYa(20) + "T10:00:00Z", montantsVaries = true),
         Collecte("co2", "Repas de Noël", "p2", null, 500.0, "${aujourdhui().year}-12-15", creeLe = ilYa(6) + "T10:00:00Z"),
     )
     val collecteMembres = mutableListOf<CollecteMembre>()
+    // Sortie des jeunes : Jean-Marc dispensé, Ruth à 8 € (montants selon la personne, comme mock.js)
+    val collecteMontants = mutableListOf(CollecteMontant("co1", "m10", 0.0), CollecteMontant("co1", "m4", 8.0))
+    // Barème de cotisation (comme mock.js)
+    val tarifs = mutableListOf(Tarif("tf1", "Musicien", 10.0, 0), Tarif("tf2", "Exonéré", 0.0, 1))
+
+    // Montants selon la personne (comme montant_cotisation et montant_participation de la base)
+    private fun montantCotisationDe(mid: String?): Double =
+        tarifs.firstOrNull { it.id == membres.firstOrNull { m -> m.id == mid }?.tarifId }?.montant ?: (reglages["cotisation_montant"] ?: 20.0)
+    private fun montantParticipationDe(c: Collecte, mid: String?): Double? =
+        collecteMontants.firstOrNull { it.collecteId == c.id && it.membreId == mid }?.montant ?: c.montantAttendu
+    private fun totalAttendu(c: Collecte): Double? {
+        if (c.montantAttendu == null && collecteMontants.none { it.collecteId == c.id }) return null
+        val concernes = if (c.tousMembres) membres.filter { it.actif }.map { it.id } else collecteMembres.filter { it.collecteId == c.id }.map { it.membreId }
+        return concernes.sumOf { montantParticipationDe(c, it) ?: 0.0 }
+    }
+
+    fun enregistrerTarif(id: String?, nom: String, montant: Double, profil: Profil?): String {
+        exiger(profil, "gerer_cotisations")
+        if (nom.isBlank() || montant < 0) throw IllegalStateException("check constraint")
+        if (id != null) { val i = tarifs.indexOfFirst { it.id == id }; tarifs[i] = tarifs[i].copy(nom = nom.trim(), montant = montant); return id }
+        return "tf${compteur++}".also { tarifs += Tarif(it, nom.trim(), montant, tarifs.size) }
+    }
+
+    // Comme appliquer_tarif : attribue le montant (null : montant normal), puis met à jour les périodes à partir de « depuis »
+    fun appliquerTarif(tarif: String?, depuis: String?, choisis: List<String>?, profil: Profil?): Int {
+        exiger(profil, "gerer_cotisations")
+        val montant = if (tarif == null) reglages["cotisation_montant"] ?: 20.0 else tarifs.firstOrNull { it.id == tarif }?.montant ?: throw IllegalStateException("Montant de cotisation introuvable")
+        choisis?.forEach { mid -> val i = membres.indexOfFirst { it.id == mid }; if (i >= 0) membres[i] = membres[i].copy(tarifId = tarif) }
+        if (depuis == null) return 0
+        val cibles = choisis ?: membres.filter { it.tarifId == tarif }.map { it.id }
+        val aChanger = cotisationsDues.filter { (k, v) -> k.first in cibles && k.second >= depuis && v != montant }.keys
+        aChanger.forEach { cotisationsDues[it] = montant }
+        return aChanger.size
+    }
 
     private fun ilYa(jours: Int) = aujourdhui().minus(DatePeriod(days = jours)).toString()
 
@@ -344,8 +378,11 @@ object Demo {
             if (don > 0) ajout(j + 8, "recette", don.toDouble(), "c2", "Don", "acc-banque", tiersId = "ti4")
             if (k % 3 == 1) ajout(j + 10, "depense", (45 + k * 5).toDouble(), "c8", "Aide à une famille", "acc-caisse")
         }
-        // m9 a adhéré en mars : pas de cotisation avant
-        membres.forEach { m -> for (mo in (if (m.id == "m9") 3 else 1)..12) cotisationsDues[m.id to "$an-${p2(mo)}-01"] = 20.0 }
+        // Barème (comme mock.js) : montant normal 20 € ; Paul, musicien, paie 10 € ; Jean-Marc est exonéré
+        membres.indexOfFirst { it.id == "m12" }.let { membres[it] = membres[it].copy(tarifId = "tf1") }
+        membres.indexOfFirst { it.id == "m10" }.let { membres[it] = membres[it].copy(tarifId = "tf2") }
+        // m9 a adhéré en mars : pas de cotisation avant ; chacun à son montant
+        membres.forEach { m -> for (mo in (if (m.id == "m9") 3 else 1)..12) cotisationsDues[m.id to "$an-${p2(mo)}-01"] = montantCotisationDe(m.id) }
     }
 
     fun ecritures(): List<Ecriture> = lignes.map { it.e }.sortedByDescending { it.date }
@@ -604,7 +641,7 @@ object Demo {
         membres.filter { it.actif }.forEach { m ->
             for (mo in 1..12 step pas) {
                 val cle = m.id to "$annee-${p2(mo)}-01"
-                if (cle !in cotisationsDues) { cotisationsDues[cle] = reglages["cotisation_montant"] ?: 20.0; n++ }
+                if (cle !in cotisationsDues) { cotisationsDues[cle] = montantCotisationDe(m.id); n++ }
             }
         }
         return n
@@ -626,16 +663,18 @@ object Demo {
     fun collectesVue(): List<Collecte> = collectes.map { c ->
         val l = lignes.filter { it.e.collecteId == c.id }
         c.copy(totalRecu = l.sumOf { it.e.montant }, nbContributeurs = l.map { it.e.membreId ?: it.e.tiersId ?: it.e.id }.toSet().size,
-            nbConcernes = if (c.tousMembres) membres.count { it.actif } else collecteMembres.count { it.collecteId == c.id })
+            nbConcernes = if (c.tousMembres) membres.count { it.actif } else collecteMembres.count { it.collecteId == c.id }, totalAttendu = totalAttendu(c))
     }.sortedByDescending { it.creeLe }
 
-    fun enregistrerCollecte(id: String?, n: NouvelleCollecte, choisis: List<String>, profil: Profil?): String {
+    fun enregistrerCollecte(id: String?, n: NouvelleCollecte, choisis: List<String>, profil: Profil?, montants: Map<String, Double> = emptyMap()): String {
         exiger(profil, "gerer_activites", "gerer_cotisations")
         val cle = id ?: "co${compteur++}"
         val i = collectes.indexOfFirst { it.id == cle }
         val c = Collecte(cle, n.nom, n.projetId, n.montantAttendu, n.objectif, n.dateLimite, n.tousMembres,
-            if (i >= 0) collectes[i].cloturee else false, creeLe = if (i >= 0) collectes[i].creeLe else maintenant())
+            if (i >= 0) collectes[i].cloturee else false, creeLe = if (i >= 0) collectes[i].creeLe else maintenant(), montantsVaries = n.montantsVaries)
         if (i >= 0) collectes[i] = c else collectes += c
+        collecteMontants.removeAll { it.collecteId == cle }
+        collecteMontants += montants.map { (m, v) -> CollecteMontant(cle, m, v) }
         collecteMembres.removeAll { it.collecteId == cle }
         if (!n.tousMembres) collecteMembres += choisis.map { CollecteMembre(cle, it) }
         return cle
@@ -649,7 +688,7 @@ object Demo {
     fun mesParticipations(profil: Profil?): List<Participation> {
         val mid = actuel(profil)?.memberId ?: return emptyList()
         return collectes.filter { c -> c.tousMembres || collecteMembres.any { it.collecteId == c.id && it.membreId == mid } }.map { c ->
-            Participation(c.id, c.nom, c.montantAttendu, lignes.filter { it.e.collecteId == c.id && it.e.membreId == mid }.sumOf { it.e.montant }, c.dateLimite, c.cloturee)
+            Participation(c.id, c.nom, montantParticipationDe(c, mid), lignes.filter { it.e.collecteId == c.id && it.e.membreId == mid }.sumOf { it.e.montant }, c.dateLimite, c.cloturee)
         }.filter { !it.cloturee || it.donne != 0.0 }
     }
 
@@ -822,7 +861,7 @@ object Demo {
         return projets.filter { p -> (p.visible || "gerer_activites" in d || "consulter_finances" in d) && p.debut != null &&
             (p.fin ?: p.debut) >= d0 && (fin == null || p.debut <= fin) }
             .map { p -> val c = collectes.filter { it.projetId == p.id && !it.cloturee }.minByOrNull { it.creeLe }
-                p.copy(participation = c?.montantAttendu, collecteId = c?.id) }
+                p.copy(participation = c?.let { montantParticipationDe(it, actuel(profil)?.memberId) }, collecteId = c?.id) }
             .sortedWith(compareBy({ it.debut }, { it.heureDebut ?: "" }))
     }
 
@@ -841,7 +880,7 @@ object Demo {
             nationalite = n.nationalite, pupitre = n.pupitre, statut = n.statut)
         membres += m
         val auj = aujourdhui()
-        for (mo in auj.monthNumber..12) cotisationsDues[m.id to "${auj.year}-${p2(mo)}-01"] = reglages["cotisation_montant"] ?: 20.0
+        for (mo in auj.monthNumber..12) cotisationsDues[m.id to "${auj.year}-${p2(mo)}-01"] = montantCotisationDe(m.id)
         return m.id
     }
 
@@ -923,7 +962,8 @@ object Demo {
     private val droitsSuppression = mapOf("transactions" to listOf("saisir_ecritures"), "members" to listOf("gerer_membres"),
         "tiers" to listOf("saisir_ecritures", "gerer_cotisations"), "projects" to listOf("gerer_activites"), "collectes" to listOf("gerer_activites", "gerer_cotisations"),
         "materiel" to listOf("gerer_materiel"), "categories" to listOf("administrer"), "accounts" to listOf("administrer"), "budgets" to listOf("gerer_budget"),
-        "expense_requests" to emptyList(), "exercices" to listOf("administrer"), "communiques" to listOf("gerer_activites", "administrer"))
+        "expense_requests" to emptyList(), "exercices" to listOf("administrer"), "communiques" to listOf("gerer_activites", "administrer"),
+        "tarifs" to listOf("gerer_cotisations"), "comptes" to listOf("administrer"))
     private fun peutSupprimer(table: String, profil: Profil?): Boolean {
         val l = droitsSuppression[table] ?: return false
         return actuel(profil) != null && (l.isEmpty() || l.any { it in droitsDe(profil) })
@@ -965,6 +1005,7 @@ object Demo {
                 libelle = m.nomComplet
                 val dues = cotisationsDues.filterKeys { it.first == id }; dues.keys.forEach { cotisationsDues.remove(it) }; restaurations += { cotisationsDues.putAll(dues) }
                 retirer(collecteMembres) { it.membreId == id }
+                retirer(collecteMontants) { it.membreId == id }
                 retirer(liens) { it.membreId == id }
                 retirer(membres) { it.id == id }
             }
@@ -986,7 +1027,7 @@ object Demo {
             "collectes" -> {
                 val c = collectes.firstOrNull { it.id == id } ?: throw IllegalStateException("Élément introuvable")
                 if (lignes.any { it.e.collecteId == id }) throw IllegalStateException("Des participations sont déjà encaissées : clôturez la collecte plutôt")
-                libelle = c.nom; retirer(collecteMembres) { it.collecteId == id }; retirer(collectes) { it.id == id }
+                libelle = c.nom; retirer(collecteMembres) { it.collecteId == id }; retirer(collecteMontants) { it.collecteId == id }; retirer(collectes) { it.id == id }
             }
             "materiel" -> {
                 val m = materiel.firstOrNull { it.id == id } ?: throw IllegalStateException("Élément introuvable")
@@ -1022,6 +1063,12 @@ object Demo {
                 val c = communiques.firstOrNull { it.id == id } ?: throw IllegalStateException("Élément introuvable")
                 libelle = "Communiqué · " + c.titre; retirer(communiques) { it.id == id }
             }
+            "tarifs" -> {
+                val t = tarifs.firstOrNull { it.id == id } ?: throw IllegalStateException("Élément introuvable")
+                // Clé étrangère des membres : un montant encore attribué ne part pas
+                if (membres.any { it.tarifId == id }) throw IllegalStateException("update or delete on table \"tarifs\" violates foreign key constraint \"members_tarif_id_fkey\"")
+                libelle = "Montant de cotisation · " + t.nom; retirer(tarifs) { it.id == id }
+            }
             else -> throw IllegalStateException("Droit insuffisant pour supprimer")
         }
         val el = ElementCorbeille("cb${compteur++}", table, id, libelle, motif?.trim()?.ifBlank { null }, profil?.id, maintenant())
@@ -1033,10 +1080,48 @@ object Demo {
         val i = corbeilleListe.indexOfFirst { it.element.id == id }
         if (i < 0) throw IllegalStateException("Élément introuvable dans la corbeille")
         val c = corbeilleListe[i]
+        if (c.element.table == "comptes") throw IllegalStateException("Un compte d’accès se restaure par « Restaurer » dans Paramètres › Corbeille")
         if (c.element.restaureLe != null) throw IllegalStateException("Élément déjà restauré")
         if (!peutSupprimer(c.element.table, profil)) throw IllegalStateException("Droit insuffisant pour restaurer")
         c.restaurerTout()
         corbeilleListe[i] = Supprime(c.element.copy(restaureLe = maintenant()), c.restaurerTout)
+    }
+
+    // Comptes d'accès supprimés (comme la fonction supprimer-compte) : profil et adresse gardés pour les recréer
+    private val comptesSupprimes = mutableMapOf<String, Pair<Profil, String>>()
+
+    fun supprimerCompte(id: String, motif: String?, profil: Profil?): String {
+        exiger(profil, "administrer")
+        if (id == profil?.id) throw IllegalStateException("Vous ne pouvez pas supprimer votre propre compte")
+        val p = profilsActuels().firstOrNull { it.id == id } ?: throw IllegalStateException("Compte introuvable")
+        val admins = rolePermissions.filter { it.permission == "administrer" }.map { it.role }.toSet()
+        if (p.role in admins && profilsActuels().none { it.id != id && it.actif && it.role in admins })
+            throw IllegalStateException("C’est le dernier administrateur : donnez d’abord ce rôle à une autre personne")
+        val traces = lignes.any { it.e.creePar == id } || demandesListe.any { it.demandeur == id || it.valideePar == id }
+            || corbeilleListe.any { it.element.supprimePar == id }
+        if (traces) throw IllegalStateException("Ce compte a déjà servi (opérations, demandes, rappels…) : décochez « Actif » pour lui retirer l’accès, l’historique reste lisible")
+        val email = emailDe(id).ifBlank { id.removePrefix("u-") + "@demo.jp" }
+        profils.removeAll { it.id == id }; profilsAjoutes.removeAll { it.id == id }; comptesCrees.removeAll { it.id == id }
+        val el = ElementCorbeille("cb${compteur++}", "comptes", id, "Compte de ${p.nom} ($email)", motif?.trim()?.ifBlank { null }, profil?.id, maintenant())
+        comptesSupprimes[el.id] = p to email
+        corbeilleListe += Supprime(el) { }
+        return el.id
+    }
+
+    fun restaurerCompte(idCorbeille: String, mdp: String, profil: Profil?): CompteRestaure {
+        exiger(profil, "administrer")
+        if (mdp.length < 8) throw IllegalStateException("Le mot de passe provisoire doit faire au moins 8 caractères")
+        val i = corbeilleListe.indexOfFirst { it.element.id == idCorbeille && it.element.table == "comptes" }
+        if (i < 0) throw IllegalStateException("Élément introuvable dans la corbeille")
+        if (corbeilleListe[i].element.restaureLe != null) throw IllegalStateException("Compte déjà restauré")
+        val (p, email) = comptesSupprimes[idCorbeille] ?: throw IllegalStateException("Élément introuvable dans la corbeille")
+        if (comptesCrees.any { it.email == email } || profilsActuels().any { it.id == p.id }) throw IllegalStateException("Un compte existe déjà pour cette adresse")
+        val membre = p.memberId?.takeIf { mid -> profilsActuels().none { it.memberId == mid } && membres.any { it.id == mid } }
+        val id = "u-r${compteur++}"
+        comptesCrees += CompteCree(email, mdp, id)
+        profilsAjoutes += p.copy(id = id, memberId = membre, mdpProvisoire = true)
+        corbeilleListe[i] = Supprime(corbeilleListe[i].element.copy(restaureLe = maintenant()), corbeilleListe[i].restaurerTout)
+        return CompteRestaure(email, p.nom, membre, p.role)
     }
 
     fun corbeilleVisible(profil: Profil?): List<ElementCorbeille> {
@@ -1085,7 +1170,7 @@ object Demo {
         val co = collectes.filter { c -> c.creeLe > depuis("cotisations") && (gere || (p.memberId != null && !c.cloturee &&
             (c.tousMembres || collecteMembres.any { it.collecteId == c.id && it.membreId == p.memberId }))) }
         compteurs["cotisations"] = co.size
-        co.forEach { c -> els += ElementNouveaute("cotisations", "Participation demandée", c.nom + (c.montantAttendu?.let { " · " + eur(it) } ?: ""), c.creeLe) }
+        co.forEach { c -> els += ElementNouveaute("cotisations", "Participation demandée", c.nom + (if (c.montantsVaries) " · montant selon la personne" else c.montantAttendu?.let { " · " + eur(it) } ?: ""), c.creeLe) }
         val auj = aujourdhui().toString()
         val cq = communiques.filter { (it.creeLe ?: "") > depuis("communiques") && it.creePar != p.id && (it.visible || "gerer_activites" in d || "administrer" in d) && (it.fin == null || it.fin >= auj) }
         compteurs["communiques"] = cq.size

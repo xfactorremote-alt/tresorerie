@@ -1,4 +1,4 @@
-# Système de conception — Trésorerie JP Grenoble
+# Système de conception — Trésorerie JTP Grenoble
 
 Un seul produit, deux interfaces : le site (`docs/`, HTML + CSS) et l'application Android (`android/`, Compose Multiplatform).
 **La référence est le site** (`docs/styles.css`, bloc `:root`). Android reprend chaque valeur sous le même nom français.
