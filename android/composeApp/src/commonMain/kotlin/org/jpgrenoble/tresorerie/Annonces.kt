@@ -149,9 +149,13 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
             aller(i + 1, 1)
         }
     }
-    // Liseré qui s'illumine à chaque nouvelle annonce
+    // Liseré qui s'illumine, icône qui saute et reflet : au PREMIER passage de chaque annonce seulement (comme le site) ;
+    // répétés à chaque rotation, ils faisaient clignoter la bannière
+    val dejaVues = remember { mutableStateListOf(0) }
+    val premiere = remember(i) { i !in dejaVues }
+    LaunchedEffect(i) { if (i !in dejaVues) dejaVues += i }
     val eclat = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(i) { eclat.snapTo(1f); eclat.animateTo(0f, androidx.compose.animation.core.tween(900)) }
+    LaunchedEffect(i) { if (premiere) { eclat.snapTo(1f); eclat.animateTo(0f, androidx.compose.animation.core.tween(900)) } }
     Box(panneau.drawBehind {
         if (eclat.value > 0f) drawRoundRect(Color.White.copy(alpha = 0.55f * eclat.value), cornerRadius = androidx.compose.ui.geometry.CornerRadius(24.dp.toPx()),
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = (2.dp + 6.dp * (1f - eclat.value)).toPx()))
@@ -169,22 +173,21 @@ fun BanniereAnnonces(annonces: List<Annonce>, rotation: Int, onEvt: (Projet) -> 
             if (kotlin.math.abs(total) > 60) aller(i + (if (total < 0) 1 else -1), if (total < 0) 1 else -1)
         }) { _, d -> total += d }
     }) {
-        // Passage d'une annonce à l'autre, fait pour attirer l'œil : glissement avec léger rebond, icône qui saute,
-        // reflet lumineux qui balaie l'annonce (même effet que le site)
+        // Passage d'une annonce à l'autre : glissement doux (450 ms, sans rebond ni changement d'échelle, comme le site)
         androidx.compose.animation.AnimatedContent(i.coerceIn(0, annonces.size - 1), transitionSpec = {
-            val rebond = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0.9f, 0.3f, 1.15f)
-            (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(620, easing = rebond)) { it * sens / 7 } +
-                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(380)) +
-                androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(620, easing = rebond), initialScale = 0.94f)) togetherWith
-                (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(380)) { -it * sens / 8 } +
-                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)) +
-                    androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(380), targetScale = 0.96f))
+            val doux = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)
+            (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(450, easing = doux)) { it * sens / 12 } +
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(380))) togetherWith
+                (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(380)) { -it * sens / 14 } +
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)))
         }, label = "annonce") { k ->
-            val saut = remember { androidx.compose.animation.core.Animatable(0.4f) }
-            val reflet = remember { androidx.compose.animation.core.Animatable(-0.4f) }
+            val saut = remember { androidx.compose.animation.core.Animatable(if (premiere) 0.4f else 1f) }
+            val reflet = remember { androidx.compose.animation.core.Animatable(if (premiere) -0.4f else 2f) }
             LaunchedEffect(Unit) {
-                launch { kotlinx.coroutines.delay(120); saut.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.42f, stiffness = 380f)) }
-                launch { kotlinx.coroutines.delay(250); reflet.animateTo(1.4f, androidx.compose.animation.core.tween(1000)) }
+                if (premiere) {
+                    launch { kotlinx.coroutines.delay(120); saut.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.42f, stiffness = 380f)) }
+                    launch { kotlinx.coroutines.delay(250); reflet.animateTo(1.4f, androidx.compose.animation.core.tween(1000)) }
+                }
             }
             val a = annonces[k]
             // Pastille en galet : fond clair, icône colorée (date blanche à la couleur du rendez-vous, comme le site)

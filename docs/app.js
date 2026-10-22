@@ -858,7 +858,6 @@ async function rafraichirDoucement() {
   c.classList.add('sans-anim'); S.silencieux = true;
   try { await PAGES[page](); } catch (e) { console.warn(e); } finally { S.silencieux = false; }
   window.scrollTo(0, y);
-  requestAnimationFrame(() => requestAnimationFrame(() => c.classList.remove('sans-anim')));
 }
 
 function demarrerNouveautes() {
@@ -879,22 +878,24 @@ function afficherPastilles(racine = document) {
   racine.querySelectorAll('a[href^="#"]').forEach((a) => {
     const k = a.getAttribute('href').slice(1);
     if (!SECTIONS_NOUVEAUTES.includes(k)) return;
-    const n = Number(c[k]) || 0;
-    const cible = a.querySelector('.nav-icone') || a;
-    cible.querySelector('.pastille-nav')?.remove();
-    if (n) cible.insertAdjacentHTML('beforeend', pastille(n));
+    poserPastille(a.querySelector('.nav-icone') || a, Number(c[k]) || 0);
   });
   const plus = racine.querySelector?.('#b-plus');
   if (plus) {
-    const n = (S.autresPages || []).reduce((t, k) => t + (Number(c[k]) || 0), 0);
-    plus.querySelector('.pastille-nav')?.remove();
-    if (n) plus.querySelector('.nav-icone').insertAdjacentHTML('beforeend', pastille(n));
+    poserPastille(plus.querySelector('.nav-icone'), (S.autresPages || []).reduce((t, k) => t + (Number(c[k]) || 0), 0));
   }
   document.querySelectorAll('.b-cloche').forEach((b) => {
-    b.querySelector('.pastille-nav')?.remove();
-    (b.querySelector('.nav-icone') || b).insertAdjacentHTML('beforeend', pastille(total));
+    poserPastille(b.querySelector('.nav-icone') || b, total);
     b.classList.toggle('a-du-nouveau', total > 0);
   });
+  // Une pastille dont le nombre ne change pas reste en place : la recréer rejouait son apparition à chaque vérification
+  function poserPastille(cible, n) {
+    if (!cible) return;
+    const p = cible.querySelector('.pastille-nav'), texte = n > 99 ? '99+' : String(n);
+    if (p && n > 0 && p.textContent === texte) return;
+    p?.remove();
+    if (n > 0) cible.insertAdjacentHTML('beforeend', pastille(n));
+  }
 }
 function feuilleNouveautes() {
   const els = S.nouveautes?.elements || [];
@@ -952,7 +953,14 @@ function animerChiffres(racine) {
   });
 }
 const rendre = (html) => {
-  const c = $('.contenu'); c.innerHTML = html;
+  const c = $('.contenu');
+  // Mise à jour silencieuse (temps réel) : aucune animation d'entrée ne doit rejouer. La classe reste posée jusqu'au
+  // prochain affichage normal — la retirer juste après redémarrait toutes les animations (clignotement de la page).
+  c.classList.toggle('sans-anim', !!S.silencieux);
+  // Mêmes images qu'avant (photos, logo) : on garde les éléments déjà décodés au lieu de les recharger (pas de clignotement)
+  const anciennes = S.silencieux ? new Map([...c.querySelectorAll('img[src]')].map((i) => [i.getAttribute('src'), i])) : null;
+  c.innerHTML = html;
+  if (anciennes?.size) c.querySelectorAll('img[src]').forEach((i) => { const a = anciennes.get(i.getAttribute('src')); if (a && a !== i) { anciennes.delete(i.getAttribute('src')); a.className = i.className; a.alt = i.alt; i.replaceWith(a); } });
   if (!S.silencieux) animerChiffres(c);
   // Commande principale (+) : bouton dans l'en-tête de page sur tablette et ordinateur, bouton flottant sur téléphone
   const fab = c.querySelector('.page > .fab, .page > .page-titre > .fab'); const titre = c.querySelector('.page > .page-titre');
@@ -1239,7 +1247,7 @@ function banniereAnnonces(donnees) {
   S.annonces = { liste: annonces, rotation, donnees };
   if (!annonces.length) return `<div class="annonces acrylique"><div class="annonce" aria-live="polite"><span class="ann-corps"><small>Prochain rendez-vous</small><b>Rien de prévu pour l’instant</b></span></div></div>`;
   return `<div class="annonces acrylique" aria-roledescription="carrousel" aria-label="Annonces de l’association">
-    <div class="annonces-piste">${annonces.map((a, i) => `<div class="annonces-item ${i ? '' : 'actif entre'}" data-i="${i}" ${i ? 'aria-hidden="true"' : ''}>${htmlAnnonce(a)}</div>`).join('')}</div>
+    <div class="annonces-piste">${annonces.map((a, i) => `<div class="annonces-item ${i ? '' : 'actif entre premiere'}" data-i="${i}" ${i ? 'aria-hidden="true"' : ''}>${htmlAnnonce(a)}</div>`).join('')}</div>
     ${annonces.length > 1 ? `<div class="annonces-points" role="tablist">${annonces.map((a, i) => `<button type="button" role="tab" class="${i ? '' : 'actif'}" data-aller="${i}" aria-label="Annonce ${i + 1} sur ${annonces.length}"><i></i></button>`).join('')}</div>` : ''}
   </div>`;
 }
@@ -1247,8 +1255,10 @@ function brancherAnnonces(ouvrirEvt) {
   const zone = $('.annonces'); const A = S.annonces; if (!zone || !A) return;
   clearInterval(S.minuterieAnnonces);
   let i = 0;
-  // Passage d'une annonce à l'autre, fait pour attirer l'œil : glissement avec léger rebond, icône qui saute,
-  // reflet lumineux qui balaie l'annonce, liseré qui s'illumine ; la barre du point actif annonce la suivante.
+  // Passage d'une annonce à l'autre : glissement doux ; au PREMIER passage de chaque annonce seulement, icône qui saute,
+  // reflet lumineux et liseré qui s'illumine (répétés toutes les 8 secondes, ils faisaient clignoter la bannière).
+  // La barre du point actif annonce la suivante.
+  const dejaVues = new Set([0]);
   const doux = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const items = [...zone.querySelectorAll('.annonces-item')];
   const montrer = (n, sens = 1) => {
@@ -1261,8 +1271,10 @@ function brancherAnnonces(ouvrirEvt) {
     i = j;
     const nouvel = items[i];
     nouvel.classList.remove('entre', 'depuis-gauche'); void nouvel.offsetWidth;
+    const premiere = !dejaVues.has(i); dejaVues.add(i);
+    nouvel.classList.toggle('premiere', premiere);
     nouvel.classList.add('actif', 'entre'); if (sens < 0) nouvel.classList.add('depuis-gauche'); nouvel.setAttribute('aria-hidden', 'false');
-    zone.classList.remove('eclat'); void zone.offsetWidth; zone.classList.add('eclat');
+    zone.classList.remove('eclat'); if (premiere) { void zone.offsetWidth; zone.classList.add('eclat'); }
     zone.querySelectorAll('[data-aller]').forEach((b, k) => { b.classList.remove('actif'); if (k === i) { void b.offsetWidth; b.classList.add('actif'); } });
     const a = A.liste[i]; if (a) noterVu(a.cle);
   };
@@ -5619,7 +5631,8 @@ async function pageLien(jeton, retour = null, silencieux = false) {
         try { await activerPush(jeton); toast('Notifications activées sur cet appareil'); } catch (e) { toast(e.message); } }); } }, 2500);
     }
   }
-  if (silencieux) { window.scrollTo(0, yLien); requestAnimationFrame(() => requestAnimationFrame(() => $('.espace-membre')?.classList.remove('sans-anim'))); }
+  // La classe sans-anim reste : la retirer relançait toutes les animations d'entrée (clignotement)
+  if (silencieux) window.scrollTo(0, yLien);
   $('#b-retour')?.addEventListener('click', retour);
   $('#b-co')?.addEventListener('click', seConnecter);
   $('#b-oublier')?.addEventListener('click', () => { garderJeton(null); history.replaceState(null, '', location.pathname); ecranConnexion('Lien oublié sur cet appareil.'); });

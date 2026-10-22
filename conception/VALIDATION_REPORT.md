@@ -152,3 +152,12 @@
 | `a7.mjs` (6 tailles, 4 rôles) / `a5.mjs` | ✅ 312 vues, 0 problème / 144 vues, aucun débordement |
 | Android : compilation, 34 tests dont `montantsSelonLaPersonne`, capture `bureau-cotisations` | ✅ |
 | À faire par le trésorier | `supabase/A-EXECUTER-montants-2026-10-22.sql` (clés de `collecte_montants`) |
+
+## 0.46.1 — Fin des clignotements
+
+| Contrôle | Résultat |
+|---|---|
+| `scintille.mjs` : changement en base pendant que la page est ouverte (8 pages, téléphone et ordinateur) — animations qui rejouent pendant la mise à jour | ❌ avant : jusqu'à 29 (fondu de toute la page, trait d'onglet, pastilles) / ✅ après : 0 |
+| Pastilles de nouveautés recréées chaque minute | ✅ gardées tant que le nombre ne change pas |
+| Carrousel d'annonces : reflet, saut, éclat et flou toutes les 8 secondes | ✅ au premier passage seulement, puis glissement doux (site et Android) |
+| `a7.mjs`, `a5.mjs`, `fluidite.mjs`, `montants.mjs`, Android 34 tests | ✅ |

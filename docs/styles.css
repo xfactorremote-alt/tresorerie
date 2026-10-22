@@ -985,7 +985,7 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
   background:rgba(20,18,17,.42);border:1px solid rgba(255,255,255,.22);box-shadow:inset 3px 0 0 var(--evt-accent,#fff)}
 .rdv-compte{background:#fff;color:var(--evt-texte,#1C1B1A);border-radius:var(--r-rond);padding:0 8px;line-height:20px;font-weight:700}
 .rdv-imminent .rdv-compte{background:var(--evt-accent);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.6)}
-@media (prefers-reduced-motion:no-preference){.rdv-imminent .rdv-compte{animation:pulsation-rdv 1.8s ease-in-out infinite}}
+@media (prefers-reduced-motion:no-preference){.rdv-imminent .rdv-compte{animation:pulsation-rdv 1.8s ease-in-out 3}}
 @keyframes pulsation-rdv{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.65)}50%{box-shadow:0 0 0 6px rgba(255,255,255,0)}}
 /* Aperçu du lien personnel, tel que WhatsApp l'affiche : logo et nom de l'association plutôt que l'adresse */
 .apercu-lien{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:var(--r-xgrand);background:var(--surface-2);border:1px solid var(--bord-doux);box-shadow:inset 3px 0 0 var(--primaire)}
@@ -996,7 +996,7 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .apercu-lien small{font-size:12px;color:var(--texte-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ---------- Mise à jour en temps réel : pas d'animation d'entrée quand l'écran se redessine seul ---------- */
-.sans-anim,.sans-anim *{animation:none !important}
+.sans-anim,.sans-anim *,.sans-anim *::before,.sans-anim *::after{animation:none !important}
 
 /* ---------- Annonces de la bannière (une à la fois, en fondu) : compactes, posées sur la photo ---------- */
 .annonces{position:relative;margin-top:auto;border-radius:var(--r-xgrand);color:#fff;background:rgba(20,18,17,.42);border:1px solid rgba(255,255,255,.22);overflow:hidden}
@@ -1053,21 +1053,22 @@ details.rubrique>.rub-corps{animation:fondu var(--d-normal) var(--c-decel-moy)}
 .puce-bureau{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:0 6px;vertical-align:middle}
 
 /* ---------- Passage d'une annonce à l'autre : effet qui attire l'œil (sans excès) ---------- */
-@keyframes ann-entree{0%{opacity:0;transform:translateX(44px) scale(.94);filter:blur(6px)}60%{opacity:1;transform:translateX(-5px) scale(1.01);filter:blur(0)}100%{opacity:1;transform:none}}
-@keyframes ann-entree-g{0%{opacity:0;transform:translateX(-44px) scale(.94);filter:blur(6px)}60%{opacity:1;transform:translateX(5px) scale(1.01);filter:blur(0)}100%{opacity:1;transform:none}}
-@keyframes ann-sortie{to{opacity:0;transform:translateX(-36px) scale(.96);filter:blur(4px)}}
-@keyframes ann-sortie-d{to{opacity:0;transform:translateX(36px) scale(.96);filter:blur(4px)}}
+/* Sans flou (le texte qui passe du flou au net donnait une impression de clignotement) */
+@keyframes ann-entree{0%{opacity:0;transform:translateX(28px)}100%{opacity:1;transform:none}}
+@keyframes ann-entree-g{0%{opacity:0;transform:translateX(-28px)}100%{opacity:1;transform:none}}
+@keyframes ann-sortie{to{opacity:0;transform:translateX(-24px)}}
+@keyframes ann-sortie-d{to{opacity:0;transform:translateX(24px)}}
 @keyframes ann-saut{0%{transform:scale(.4) rotate(-14deg)}55%{transform:scale(1.18) rotate(5deg)}80%{transform:scale(.95)}100%{transform:none}}
 @keyframes ann-reflet{from{transform:translateX(-120%) skewX(-18deg)}to{transform:translateX(320%) skewX(-18deg)}}
 @keyframes ann-eclat{0%{box-shadow:0 0 0 0 rgba(255,255,255,.55)}100%{box-shadow:0 0 0 10px rgba(255,255,255,0)}}
 @keyframes ann-progres{from{width:0}to{width:100%}}
-.annonces-item.entre{animation:ann-entree .62s cubic-bezier(.2,.9,.3,1) both}
+.annonces-item.entre{animation:ann-entree .45s cubic-bezier(.2,0,0,1) both}
 .annonces-item.entre.depuis-gauche{animation-name:ann-entree-g}
 .annonces-item.sort{animation:ann-sortie .38s cubic-bezier(.4,0,1,1) both}
 .annonces-item.sort.vers-droite{animation-name:ann-sortie-d}
-.annonces-item.entre .ann-puce{animation:ann-saut .7s cubic-bezier(.2,.9,.3,1.3) .12s both}
+.annonces-item.entre.premiere .ann-puce{animation:ann-saut .7s cubic-bezier(.2,.9,.3,1.3) .12s both}
 .annonces-item.entre .annonce{position:relative;overflow:hidden}
-.annonces-item.entre .annonce::after{content:"";position:absolute;top:0;bottom:0;left:0;width:35%;pointer-events:none;
+.annonces-item.entre.premiere .annonce::after{content:"";position:absolute;top:0;bottom:0;left:0;width:35%;pointer-events:none;
   background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.28),rgba(255,255,255,0));animation:ann-reflet 1s ease-out .25s both}
 .annonces.eclat{animation:ann-eclat .9s ease-out}
 @media (prefers-reduced-motion:reduce){
