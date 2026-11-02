@@ -19,6 +19,10 @@
 <meta name="theme-color" content="#F6F6F6">
 <meta name="color-scheme" content="light">
 <meta name="format-detection" content="telephone=no">
+<!-- Politique de sécurité du contenu : même si un texte piégé passait l'échappement, la page ne peut ni charger de script
+     d'un autre site ni envoyer de données ailleurs que vers la base, l'annuaire public et les deux bibliothèques. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://kihxkuotukbzrbsiqanq.supabase.co; font-src 'self' data:; connect-src 'self' https://kihxkuotukbzrbsiqanq.supabase.co wss://kihxkuotukbzrbsiqanq.supabase.co https://recherche-entreprises.api.gouv.fr https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; worker-src 'self'; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -26,15 +30,15 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!-- Version des fichiers (même numéro que l'application Android) : le navigateur recharge tout quand elle change -->
-<script type="importmap">{"imports":{"./app.js":"./app.js?v=0.46.2","./config.js":"./config.js?v=0.46.2","./icones.js":"./icones.js?v=0.46.2","./graphiques.js":"./graphiques.js?v=0.46.2","./mock.js":"./mock.js?v=0.46.2","./scanner.js":"./scanner.js?v=0.46.2"}}</script>
-<link rel="stylesheet" href="styles.css?v=0.46.2">
+<script type="importmap">{"imports":{"./app.js":"./app.js?v=0.46.3","./config.js":"./config.js?v=0.46.3","./icones.js":"./icones.js?v=0.46.3","./graphiques.js":"./graphiques.js?v=0.46.3","./mock.js":"./mock.js?v=0.46.3","./scanner.js":"./scanner.js?v=0.46.3"}}</script>
+<link rel="stylesheet" href="styles.css?v=0.46.3">
 </head>
 <body>
 <div id="demo-banner" hidden></div>
 <div id="app" aria-live="polite"><p class="chargement">Chargement…</p></div>
 <dialog id="sheet"><div id="sheet-body"></div></dialog>
 <div id="toast" role="status" hidden></div>
-<script type="module" src="app.js?v=0.46.2"></script>
+<script type="module" src="app.js?v=0.46.3"></script>
 <script nomodule>document.getElementById('app').innerHTML = '<p class="chargement">Ce navigateur est trop ancien pour la trésorerie. Ouvrez la page avec Chrome, Edge, Firefox ou Safari à jour.</p>';</script>
 <noscript><p class="chargement">La trésorerie a besoin de JavaScript : activez-le dans le navigateur.</p></noscript>
 </body>

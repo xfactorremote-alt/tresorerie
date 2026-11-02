@@ -52,7 +52,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 54
-        versionName = "0.46.2"
+        versionName = "0.46.3"
     }
     buildTypes {
         getByName("release") { isMinifyEnabled = false }

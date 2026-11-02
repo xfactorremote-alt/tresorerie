@@ -57,34 +57,50 @@ Deno.serve(async (req) => {
     const { data: m } = await sb.from('members').select('id, prenom, nom, email').eq('id', d.member_id).maybeSingle();
     if (!m) { r.erreur = 'Membre introuvable'; continue; }
     const { data: deja } = await sb.from('profiles').select('id').eq('member_id', m.id).maybeSingle();
-    if (deja) { r.erreur = 'A déjà un compte'; continue; }
+    if (deja) {
+      // Fiche déjà rattachée à un compte jamais confirmé ni utilisé : ouvert par quelqu'un qui n'a pas prouvé posséder
+      // l'adresse (invitation prise de vitesse) ; il est remplacé. Un compte réel n'est jamais touché.
+      const { data: du } = await sb.auth.admin.getUserById(deja.id);
+      if (du?.user && !du.user.email_confirmed_at && !du.user.last_sign_in_at) await sb.auth.admin.deleteUser(deja.id);
+      else { r.erreur = 'A déjà un compte'; continue; }
+    }
     const nom = `${m.prenom || ''} ${m.nom || ''}`.trim();
     // L'invitation porte la fonction et la fiche : le déclencheur de la base crée le profil à la création du compte
-    await sb.from('invitations').delete().eq('member_id', m.id).neq('email', email);
-    const { error: eInv } = await sb.from('invitations').upsert({ email, nom, role: d.role, member_id: m.id }, { onConflict: 'email' });
+    const preparer = async () => {
+      await sb.from('invitations').delete().eq('member_id', m.id).neq('email', email);
+      return (await sb.from('invitations').upsert({ email, nom, role: d.role, member_id: m.id }, { onConflict: 'email' })).error;
+    };
+    const eInv = await preparer();
     if (eInv) { r.erreur = 'Préparation impossible : ' + eInv.message; continue; }
-    const { data: cree, error } = await sb.auth.admin.createUser({ email, password: mdp, email_confirm: true, user_metadata: { nom } });
+    let { data: cree, error } = await sb.auth.admin.createUser({ email, password: mdp, email_confirm: true, user_metadata: { nom } });
     if (error || !cree?.user) {
       await sb.from('invitations').delete().eq('email', email);
       if (!/already|registered|exists/i.test(error?.message || '')) { r.erreur = 'Création refusée : ' + (error?.message || 'raison inconnue'); continue; }
-      // Adresse déjà inscrite (par exemple « Créer mon mot de passe » sans invitation) : on relie ce compte à la fiche,
-      // la personne garde le mot de passe qu'elle a choisi
       const existant = await utilisateurParEmail(sb, email);
       if (!existant) { r.erreur = 'Adresse déjà enregistrée mais compte introuvable'; continue; }
       const { data: p } = await sb.from('profiles').select('id, member_id').eq('id', existant.id).maybeSingle();
       if (p?.member_id && p.member_id !== m.id) { r.erreur = 'Cette adresse est déjà celle du compte d’un autre membre'; continue; }
-      if (p) await sb.from('profiles').update({ member_id: m.id, role: d.role, nom }).eq('id', p.id);
-      else {
-        const { error: eP } = await sb.from('profiles').insert({ id: existant.id, nom, role: d.role, member_id: m.id, mdp_provisoire: false });
-        if (eP) { r.erreur = 'Rattachement impossible : ' + eP.message; continue; }
+      if (p && existant.email_confirmed_at) {
+        // Compte réel déjà autorisé sur la plateforme (profil existant, adresse prouvée) : rattaché à la fiche, il garde son mot de passe
+        await sb.from('profiles').update({ member_id: m.id, role: d.role, nom }).eq('id', p.id);
+        if (!m.email) await sb.from('members').update({ email }).eq('id', m.id);
+        await sb.from('audit_log').insert({ user_id: moi.user.id, action: 'RELIER_COMPTE', table_name: 'profiles', row_id: existant.id, detail: { email, role: d.role, member_id: m.id } });
+        r.ok = true; r.existant = true;
+        continue;
       }
-      if (!existant.email_confirmed_at) await sb.auth.admin.updateUserById(existant.id, { email_confirm: true });
-      if (!m.email) await sb.from('members').update({ email }).eq('id', m.id);
-      await sb.from('audit_log').insert({ user_id: moi.user.id, action: 'RELIER_COMPTE', table_name: 'profiles', row_id: existant.id, detail: { email, role: d.role, member_id: m.id } });
-      r.ok = true; r.existant = true;
-      continue;
+      // Pré-inscription (« Créer mon mot de passe » sans invitation, ou adresse jamais confirmée) : n'importe qui peut ouvrir
+      // un compte au nom d'une adresse qu'il ne possède pas. Le relier en gardant son mot de passe donnait la fonction
+      // choisie (trésorier, président…) à celui qui l'avait ouvert. Ce compte, sans aucun droit ni donnée, est remplacé
+      // par un compte neuf au mot de passe provisoire : seul celui qui reçoit le message du bureau peut entrer.
+      const { error: eDel } = await sb.auth.admin.deleteUser(existant.id);
+      if (eDel) { r.erreur = 'Adresse déjà prise par un compte non vérifié : suppression impossible (' + eDel.message + ')'; continue; }
+      const eInv2 = await preparer();
+      if (eInv2) { r.erreur = 'Préparation impossible : ' + eInv2.message; continue; }
+      ({ data: cree, error } = await sb.auth.admin.createUser({ email, password: mdp, email_confirm: true, user_metadata: { nom } }));
+      if (error || !cree?.user) { await sb.from('invitations').delete().eq('email', email); r.erreur = 'Création refusée : ' + (error?.message || 'raison inconnue'); continue; }
+      await sb.from('audit_log').insert({ user_id: moi.user.id, action: 'REMPLACER_PREINSCRIPTION', table_name: 'profiles', row_id: existant.id, detail: { email } });
     }
-    const id = cree.user.id;
+    const id = cree!.user.id;
     const { data: profil } = await sb.from('profiles').select('id').eq('id', id).maybeSingle();
     if (profil) await sb.from('profiles').update({ mdp_provisoire: true }).eq('id', id);
     else await sb.from('profiles').insert({ id, nom, role: d.role, member_id: m.id, mdp_provisoire: true });

@@ -26,7 +26,8 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const eur = (n) => Number(n || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 const dateFr = (d) => d ? new Date(d + (String(d).length === 10 ? 'T12:00:00' : '')).toLocaleDateString('fr-FR') : '';
-const aujourdhui = () => new Date().toISOString().slice(0, 10);
+// Date du jour à l'heure de l'appareil (toISOString donnait la date de Greenwich : la veille entre minuit et 1 h ou 2 h en France)
+const aujourdhui = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const peut = (...d) => d.some((x) => S.droits.has(x));   // au moins un de ces droits
 const nomRole = (code) => S.roles.find((r) => r.code === code)?.nom || code;
 const initiales = (m) => ((m.prenom || '')[0] || '') + ((m.nom || '')[0] || '');
@@ -78,6 +79,7 @@ function traduireErreur(m) {
   if (/row-level security|permission denied/i.test(m)) return 'Action réservée à un autre rôle';
   if (/foreign key/i.test(m) && /roles|profiles_role/i.test(m)) return 'Ce rôle est encore attribué à quelqu’un';
   if (/rate limit/i.test(m)) return 'Trop de tentatives, réessayez dans quelques minutes';
+  if (/signups? not allowed|signup.*disabled/i.test(m)) return 'Les comptes sont ouverts par le bureau : demandez au trésorier de vous créer le vôtre';
   if (/duplicate key/i.test(m)) return 'Cet élément existe déjà';
   if (/function public\.supprimer|supprimer\(.*does not exist|Could not find the function.*supprimer/i.test(m)) return 'La corbeille n’est pas encore activée sur la base : le trésorier doit exécuter le fichier « A-EXECUTER-corbeille » dans Supabase';
   return m;
@@ -1042,7 +1044,8 @@ const ICONE_COMPTE = {
 
 async function pageTableau() {
   const mois = new Date().getMonth();
-  const anniv = await q(sb.rpc('anniversaires_du_mois'));
+  // Le mois est donné explicitement : la base raisonne à l'heure de Greenwich, le titre de la rubrique à l'heure de l'appareil
+  const anniv = await q(sb.rpc('anniversaires_du_mois', { p_mois: mois + 1 }));
   await chargerPhotos(anniv);
   if (!peut('consulter_finances')) return pageTableauAdherent(anniv, mois);
 
@@ -5912,10 +5915,14 @@ async function pageActivites() {
     titre = majuscule(`${MOIS[ref.getMonth()]} ${ref.getFullYear()}`);
   }
   const moisVus = P.vue === 'avenir' ? [] : [...new Set([debut, ajouterJours(debut, 15), fin, ref].map((d) => d.getMonth() + 1))];
+  // Seule la dernière demande s'affiche : sur un réseau lent, la réponse d'un mois déjà quitté (flèches touchées vite,
+  // mise à jour en temps réel, autre page ouverte) arrivait après celle du mois affiché et la recouvrait
+  const jeton = (S.jetonVue = (S.jetonVue || 0) + 1);
   const [evts, ...anniv] = await Promise.all([
     q(sb.rpc('planning_activites', { p_debut: isoLocal(debut), p_fin: isoLocal(fin) })),
     ...moisVus.map((m) => q(sb.rpc('anniversaires_du_mois', { p_mois: m })).then((l) => l.map((a) => ({ ...a, mois: m })))),
   ]);
+  if (jeton !== S.jetonVue || (location.hash.slice(1) || 'tableau') !== 'activites') return;
   const parJour = {};
   evts.forEach((e) => {
     let d = dateDe(e.date_debut); const f = dateDe(e.date_fin || e.date_debut);
