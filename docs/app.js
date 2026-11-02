@@ -128,9 +128,13 @@ async function compresserImage(file, max = 400, qualite = 0.8) {
 }
 
 // Export CSV lisible par Excel en français : séparateur « ; », virgule décimale, BOM UTF-8
+// Adresse e-mail pour un lien mailto : rien après l'adresse (?, &, # ajouteraient destinataires ou texte)
+const adresseMail = (a) => encodeURIComponent(String(a || '').trim().split(/[?&#\s]/)[0]).replace(/%40/g, '@');
+
 function telechargerCsv(nom, entetes, lignes) {
   const cell = (v) => {
     let s = typeof v === 'number' ? String(v).replace('.', ',') : String(v ?? '');
+    if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;   // pas de formule injectée dans Excel
     return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const csv = '﻿' + [entetes, ...lignes].map((l) => l.map(cell).join(';')).join('\r\n');
@@ -152,7 +156,7 @@ async function demarrer() {
     S.comptesDemo = { liste: COMPTES_DEMO, mdp: MOT_DE_PASSE };
     afficherBandeauDemo();
   } else {
-    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
     // « Rester connecté » : session gardée sur l'appareil ; sinon effacée à la fermeture du navigateur
     sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { storage: stockageSession } });
   }
@@ -2302,7 +2306,7 @@ function feuilleFicheMembre(m) {
       ${m.statut ? `<div class="ligne-detail"><span class="muted">Statut</span><span>${esc(m.statut)}</span></div>` : ''}
       ${m.nationalite ? `<div class="ligne-detail"><span class="muted">Nationalité</span><span>${esc(m.nationalite)}</span></div>` : ''}
       ${m.whatsapp ? `<div class="ligne-detail"><span class="muted">WhatsApp</span>${wa ? `<a href="https://wa.me/${wa}" target="_blank" rel="noopener">${esc(m.whatsapp)}</a>` : `<span>${esc(m.whatsapp)}</span>`}</div>` : ''}
-      ${m.email ? `<div class="ligne-detail"><span class="muted">E-mail</span><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div>` : ''}
+      ${m.email ? `<div class="ligne-detail"><span class="muted">E-mail</span><a href="mailto:${esc(adresseMail(m.email))}">${esc(m.email)}</a></div>` : ''}
     </div>
     ${actions.length ? `<ul class="liste liste-menu liste-actions-fiche">${actions.map(([k, ic, l, d]) => `<li><button type="button" class="action-fiche" data-action="${k}">${icone(ic, 18)}<span class="corps"><b>${l}</b><span>${d}</span></span>${icone('suivant', 16)}</button></li>`).join('')}</ul>` : ''}
     <div class="actions" style="justify-content:space-between">${gere ? `<button type="button" class="btn-texte btn-texte-danger" id="b-suppr-membre">${icone('corbeille', 16)} Supprimer</button>` : '<span></span>'}<button class="btn-primaire" id="b-fermer">Fermer</button></div>`, (root) => {
@@ -2406,7 +2410,7 @@ function feuilleAcces(m) {
           const wa = numeroWa(m.whatsapp || '');
           $('#apres-invit', root).innerHTML = `<div class="info"><b>Accès accordé.</b> ${esc(m.prenom)} crée son compte sur le site avec ${esc(email)}.
             <div class="actions-gauche" style="margin-top:8px">${wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(texte)}">Prévenir par WhatsApp</a>` : ''}
-            <a class="btn btn-texte btn-petit" href="mailto:${esc(email)}?subject=${encodeURIComponent('Accès à la trésorerie')}&body=${encodeURIComponent(texte)}">Prévenir par e-mail</a></div></div>`;
+            <a class="btn btn-texte btn-petit" href="mailto:${esc(adresseMail(email))}?subject=${encodeURIComponent('Accès à la trésorerie')}&body=${encodeURIComponent(texte)}">Prévenir par e-mail</a></div></div>`;
           f.querySelector('.actions').hidden = true;
           pageMembresEnFond();
           return;
@@ -4048,7 +4052,7 @@ async function paramCorbeille(zone) {
   const l = await q(sb.from('corbeille').select('*').order('supprime_le', { ascending: false }));
   const nom = (id) => (S.profils || []).find((p) => p.id === id)?.nom || (id === S.profil.id ? S.profil.nom : 'un membre du bureau');
   const enAttente = l.filter((x) => !x.restaure_le), restaures = l.filter((x) => x.restaure_le);
-  const ligne = (x) => `<li><span class="puce puce-neutre">${TYPES_CORBEILLE[x.table_nom] || x.table_nom}</span>
+  const ligne = (x) => `<li><span class="puce puce-neutre">${esc(TYPES_CORBEILLE[x.table_nom] || x.table_nom)}</span>
     <div class="corps"><b>${esc(x.libelle)}</b><span>Supprimé le ${dateFr(String(x.supprime_le).slice(0, 10))} par ${esc(nom(x.supprime_par))}${x.motif ? ' · ' + esc(x.motif) : ''}${x.restaure_le ? ` · restauré le ${dateFr(String(x.restaure_le).slice(0, 10))}` : ''}</span></div>
     ${x.restaure_le ? '<span class="puce puce-ok">Restauré</span>' : `<button class="btn-tonal btn-petit" data-restaurer="${x.id}">${icone('restaurer', 16)} Restaurer</button>`}</li>`;
   zone.innerHTML = `<section class="carte"><p class="muted" style="margin:0">Un élément supprimé n’est jamais perdu : il reste ici avec ses pièces jointes et ses liens, et «&nbsp;Restaurer&nbsp;» le remet exactement en place. Chaque suppression et chaque restauration est tracée.</p>
@@ -4849,7 +4853,7 @@ function feuilleActivite(p, apres, pre = {}) {
     <label class="champ">Description<textarea name="description" rows="2" maxlength="500">${esc(v.description || '')}</textarea></label>
     <label class="case"><input type="checkbox" name="visible" ${v.visible_adherents ? 'checked' : ''}> Visible de tous les membres <span class="muted">(décochez seulement pour un rendez-vous réservé au bureau)</span></label>
     <label class="case"><input type="checkbox" name="budget" ${v.type === 'activite' ? 'checked' : ''}> Suivre le budget de cette activité <span class="muted">(ressources, emplois et résultat dans Budget ; la date peut rester à fixer)</span></label>
-    ${p ? '' : `<label class="case"><input type="checkbox" name="part"> Demander une participation aux membres</label>
+    ${p ? '' : `<label class="case"><input type="checkbox" name="avecParticipation"> Demander une participation aux membres</label>
     <div class="champs champs-2" id="z-part" hidden>
       <label class="champ">Montant par personne (€)<input name="attendu" type="number" step="0.01" min="0.01" placeholder="Libre"></label>
       <label class="champ">Date limite<input name="limite" type="date"></label></div>`}
@@ -4857,7 +4861,7 @@ function feuilleActivite(p, apres, pre = {}) {
     const f = $('#f-act', root);
     const majDate = () => { f.debut.required = !f.budget.checked; };
     f.budget.addEventListener('change', majDate); majDate();
-    f.part?.addEventListener('change', () => { $('#z-part', root).hidden = !f.part.checked; });
+    f.avecParticipation?.addEventListener('change', () => { $('#z-part', root).hidden = !f.avecParticipation.checked; });
     $('#b-annuler', root).addEventListener('click', fermerFeuille);
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -4871,7 +4875,7 @@ function feuilleActivite(p, apres, pre = {}) {
         let id = p?.id;
         if (p) await q(sb.from('projects').update(d).eq('id', p.id));
         else id = (await q(sb.from('projects').insert(d).select()))[0].id;
-        if (f.part?.checked) await q(sb.from('collectes').insert({ nom: `Participation : ${d.nom}`, project_id: id,
+        if (f.avecParticipation?.checked) await q(sb.from('collectes').insert({ nom: `Participation : ${d.nom}`, project_id: id,
           montant_attendu: f.attendu.value ? Number(f.attendu.value) : null, date_limite: f.limite.value || null, tous_membres: true }));
         S.projets = await q(sb.from('projects').select('*').order('date_debut', { ascending: false }));
         if (peut('consulter_finances', 'gerer_cotisations', 'gerer_activites', 'saisir_ecritures')) S.collectes = await q(sb.from('collectes').select('*').order('created_at', { ascending: false }));
@@ -4990,7 +4994,7 @@ async function pageRapports() {
   const options = (l, choisi) => l.map(([v, t]) => `<option value="${v}" ${String(v) === String(choisi) ? 'selected' : ''}>${t}</option>`).join('');
   // Exercices déclarés (Paramètres, Exercices) : intitulé et dates exactes ; sinon l'année civile
   const exDe = (a2) => (S.exercices || []).find((e) => Number(e.debut.slice(0, 4)) === Number(a2));
-  const annees = [an, an - 1, an - 2].map((a2) => [a2, exDe(a2) ? `${exDe(a2).libelle} (${dateFr(exDe(a2).debut)} – ${dateFr(exDe(a2).fin)})` : a2]);
+  const annees = [an, an - 1, an - 2].map((a2) => [a2, exDe(a2) ? `${esc(exDe(a2).libelle)} (${dateFr(exDe(a2).debut)} – ${dateFr(exDe(a2).fin)})` : a2]);
   rendre(`<div class="page"><div class="page-titre"><h1>Rapports et exports</h1></div>
     <section class="carte export-carte">
       <form id="f-export" class="champs">
@@ -5243,7 +5247,7 @@ ${materiel.length ? `<tr><td>Matériel de l’association (hors prêts de tiers)
 function afficherDocument(titre, html, paysage = false) {
   let v = $('#rapport');
   if (!v) { v = document.createElement('div'); v.id = 'rapport'; document.body.appendChild(v); }
-  const pied = (t) => String(t).replace(/["\\]/g, ' ');
+  const pied = (t) => String(t).replace(/["\\<>]/g, ' ');
   v.innerHTML = `<style>@page{size:A4${paysage ? ' landscape' : ''};margin:14mm 12mm 16mm;@bottom-left{content:"${pied(S.org?.nom || '')} · ${pied(titre)}";font:9px system-ui;color:#5A5350}@bottom-right{content:"Page " counter(page) " sur " counter(pages);font:9px system-ui;color:#5A5350}}</style>
     <div class="rapport-barre"><b>${esc(titre)}</b><span><button class="btn-primaire btn-petit" id="rp-imprimer">Enregistrer en PDF</button> <button class="btn-tonal btn-petit" id="rp-fermer">Fermer</button></span></div>
     <div class="rapport-page${paysage ? ' paysage' : ''}">${html}</div>`;
@@ -5652,7 +5656,7 @@ async function feuilleLien(m) {
       <input id="i-lien" class="sr-only" readonly value="${esc(u)}" aria-label="Adresse du lien">
       <div class="actions-gauche">
         ${wa ? `<a class="btn btn-primaire btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(message(u))}">Envoyer par WhatsApp</a>` : ''}
-        ${m.email ? `<a class="btn btn-tonal btn-petit" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Votre page personnelle')}&body=${encodeURIComponent(message(u))}">Envoyer par e-mail</a>` : ''}
+        ${m.email ? `<a class="btn btn-tonal btn-petit" href="mailto:${esc(adresseMail(m.email))}?subject=${encodeURIComponent('Votre page personnelle')}&body=${encodeURIComponent(message(u))}">Envoyer par e-mail</a>` : ''}
         <button class="btn-tonal btn-petit" id="b-copier">Copier</button>
         <button class="btn-texte btn-petit" id="b-voir">Voir comme ${esc(m.prenom)}</button>
       </div>
@@ -5689,7 +5693,7 @@ async function feuilleLiens() {
     const l = S.liensMembres?.[m.id]; const wa = numeroWa(m.whatsapp || '');
     const msg = l ? messageLien(m, urlLien(l, m)) : '';
     return `<li>${avatar(m)}<div class="corps"><b>${esc(nomComplet(m))}</b><span>${!l ? 'Pas de lien' : l.nb_consultations ? `Ouvert ${l.nb_consultations} fois` : 'Pas encore ouvert'}${wa ? '' : ' · sans numéro WhatsApp'}</span></div>
-      ${l && wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}">WhatsApp</a>` : l && m.email ? `<a class="btn btn-texte btn-petit" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Votre page personnelle')}&body=${encodeURIComponent(msg)}">E-mail</a>` : ''}</li>`;
+      ${l && wa ? `<a class="btn btn-tonal btn-petit" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}">WhatsApp</a>` : l && m.email ? `<a class="btn btn-texte btn-petit" href="mailto:${esc(adresseMail(m.email))}?subject=${encodeURIComponent('Votre page personnelle')}&body=${encodeURIComponent(msg)}">E-mail</a>` : ''}</li>`;
   };
   ouvrirFeuille(`<h2>Liens personnels</h2>
     <p class="muted" style="margin:0">Chaque membre reçoit un lien qui ouvre sa page : cotisation, participations, rendez-vous. Pas de compte, pas d’installation.</p>

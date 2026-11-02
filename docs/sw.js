@@ -15,7 +15,8 @@ self.addEventListener('push', (e) => {
 self.addEventListener('notificationclick', (e) => {
   self.navigator.clearAppBadge?.().catch?.(() => {});
   e.notification.close();
-  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  let url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  if (!url.startsWith(self.registration.scope)) url = self.registration.scope;   // jamais un site extérieur
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((liste) => {
     const fen = liste.find((c) => c.url.startsWith(self.registration.scope));
     if (fen) { fen.focus(); return fen.navigate ? fen.navigate(url) : null; }
